@@ -68,7 +68,41 @@ python parse/parse.py --verify-only --database dumps/simplewiki.db
 
 ### Step 3: Query the Database
 
-Query articles using SQLite:
+**Option A: Python Function (Recommended)**
+
+Use the `query_database()` function in your Python scripts:
+
+```python
+from parse.parse import query_database
+
+# Table format (default) - formatted for terminal display
+result = query_database(
+    "SELECT title, text_bytes FROM articles WHERE title LIKE 'Python%' LIMIT 5"
+)
+print(result)
+
+# JSON format - for programmatic use
+result = query_database(
+    "SELECT title, page_id FROM articles LIMIT 3",
+    format="json"
+)
+# Returns: [{"title": "April", "page_id": 1}, ...]
+
+# Auto-discovers database from wiki name
+result = query_database(
+    "SELECT COUNT(*) FROM articles",
+    wiki="simplewiki"
+)
+```
+
+Run the example script:
+```bash
+python example_query.py
+```
+
+**Option B: SQLite CLI**
+
+Query directly using sqlite3:
 ```bash
 sqlite3 dumps/simplewiki.db
 ```

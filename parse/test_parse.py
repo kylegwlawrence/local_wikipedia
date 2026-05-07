@@ -1,5 +1,6 @@
 """Tests for parse.py."""
 import bz2
+import json
 import pathlib
 import sqlite3
 import xml.etree.ElementTree as ET
@@ -12,6 +13,7 @@ from parse.parse import (
     _parse_page_element,
     _batch_insert_articles,
     parse_dump,
+    query_database,
     verify_database,
     main,
 )
@@ -400,6 +402,129 @@ class TestParseDump:
 
         with pytest.raises(RuntimeError, match="Dump file not found"):
             parse_dump(dump_path, db_path)
+
+
+# ---------------------------------------------------------------------------
+# query_database
+# ---------------------------------------------------------------------------
+
+
+class TestQueryDatabase:
+    def test_table_format_default(self, tmp_path: pathlib.Path) -> None:
+        # Create test database
+        pages = [
+            {"page_id": 1, "title": "Article One", "text": "Content 1"},
+            {"page_id": 2, "title": "Article Two", "text": "Content 2"},
+        ]
+        dump_path = _create_test_dump(tmp_path, pages)
+        db_path = tmp_path / "test.db"
+        parse_dump(dump_path, db_path)
+
+        result = query_database("SELECT title, page_id FROM articles ORDER BY page_id", db_path=db_path)
+
+        assert isinstance(result, str)
+        assert "Article One" in result
+        assert "Article Two" in result
+        assert "2 row(s) returned" in result
+
+    def test_json_format(self, tmp_path: pathlib.Path) -> None:
+        pages = [
+            {"page_id": 1, "title": "Test Article", "text": "Test content"},
+        ]
+        dump_path = _create_test_dump(tmp_path, pages)
+        db_path = tmp_path / "test.db"
+        parse_dump(dump_path, db_path)
+
+        result = query_database(
+            "SELECT title, page_id, namespace FROM articles",
+            db_path=db_path,
+            format="json"
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["title"] == "Test Article"
+        assert result[0]["page_id"] == 1
+        assert result[0]["namespace"] == 0
+
+    def test_auto_discovers_database(self, monkeypatch, tmp_path: pathlib.Path) -> None:
+        pages = [{"page_id": 1, "title": "Test", "text": "Content"}]
+        dump_path = _create_test_dump(tmp_path, pages)
+        db_path = tmp_path / f"{WIKI}.db"
+        parse_dump(dump_path, db_path)
+
+        # Patch DUMPS_DIR
+        monkeypatch.setattr(parse_module, "DUMPS_DIR", tmp_path)
+
+        result = query_database("SELECT COUNT(*) as count FROM articles", wiki=WIKI, format="json")
+
+        assert len(result) == 1
+        assert result[0]["count"] == 1
+
+    def test_empty_result(self, tmp_path: pathlib.Path) -> None:
+        pages = [{"page_id": 1, "title": "Test", "text": "Content"}]
+        dump_path = _create_test_dump(tmp_path, pages)
+        db_path = tmp_path / "test.db"
+        parse_dump(dump_path, db_path)
+
+        result = query_database(
+            "SELECT * FROM articles WHERE title = 'NonExistent'",
+            db_path=db_path
+        )
+
+        assert "No results found" in result
+
+    def test_handles_null_values(self, tmp_path: pathlib.Path) -> None:
+        db_path = tmp_path / "test.db"
+        conn = sqlite3.connect(db_path)
+        _create_schema(conn)
+
+        # Insert article with NULL contributor
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO articles (page_id, title, namespace, revision_id, timestamp, text_bytes, text_content)
+            VALUES (1, 'Test', 0, 100, '2026-01-01T00:00:00Z', 10, 'Content')
+        """)
+        conn.commit()
+        conn.close()
+
+        result = query_database(
+            "SELECT title, contributor_username FROM articles",
+            db_path=db_path
+        )
+
+        assert "Test" in result
+        assert "NULL" in result
+
+    def test_truncates_long_text(self, tmp_path: pathlib.Path) -> None:
+        pages = [{"page_id": 1, "title": "Long Article", "text": "x" * 1000}]
+        dump_path = _create_test_dump(tmp_path, pages)
+        db_path = tmp_path / "test.db"
+        parse_dump(dump_path, db_path)
+
+        result = query_database(
+            "SELECT text_content FROM articles",
+            db_path=db_path
+        )
+
+        # Should truncate long content in table format
+        assert "..." in result
+        assert len(result.split("\n")[2]) < 100  # Row should be reasonably short
+
+    def test_missing_database_raises(self, tmp_path: pathlib.Path) -> None:
+        db_path = tmp_path / "nonexistent.db"
+
+        with pytest.raises(RuntimeError, match="Database not found"):
+            query_database("SELECT * FROM articles", db_path=db_path)
+
+    def test_invalid_sql_raises(self, tmp_path: pathlib.Path) -> None:
+        pages = [{"page_id": 1, "title": "Test", "text": "Content"}]
+        dump_path = _create_test_dump(tmp_path, pages)
+        db_path = tmp_path / "test.db"
+        parse_dump(dump_path, db_path)
+
+        with pytest.raises(RuntimeError, match="Query failed"):
+            query_database("INVALID SQL QUERY", db_path=db_path)
 
 
 # ---------------------------------------------------------------------------

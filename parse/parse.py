@@ -1,13 +1,14 @@
 """Parse Wikipedia dump XML and store articles in SQLite database."""
 import argparse
 import bz2
+import json
 import os
 import pathlib
 import sqlite3
 import sys
 import time
 import xml.etree.ElementTree as ET
-from typing import Any
+from typing import Any, Literal
 from tqdm import tqdm
 
 # Define constants
@@ -323,6 +324,113 @@ def parse_dump(
         except FileNotFoundError:
             pass
         raise RuntimeError(f"Database error: {e}")
+
+
+def query_database(
+    query: str,
+    db_path: pathlib.Path | None = None,
+    wiki: str = DEFAULT_WIKI,
+    format: Literal["table", "json"] = "table",
+) -> str | list[dict[str, Any]]:
+    """Execute a SQL query against the Wikipedia database.
+
+    Args:
+        query: SQL query string to execute.
+        db_path: Path to SQLite database. If None, auto-discovers from wiki name.
+        wiki: Wiki name for auto-discovery (default: simplewiki).
+        format: Output format - 'table' for formatted ASCII table, 'json' for JSON.
+
+    Returns:
+        If format='table': Formatted string with results in ASCII table.
+        If format='json': List of dictionaries with column names as keys.
+
+    Raises:
+        RuntimeError: If database not found or query fails.
+
+    Example:
+        >>> results = query_database("SELECT title, text_bytes FROM articles LIMIT 3")
+        >>> print(results)
+        >>> json_data = query_database("SELECT * FROM articles LIMIT 1", format='json')
+    """
+    # Auto-discover database path if not provided
+    if db_path is None:
+        db_path = DUMPS_DIR / f"{wiki}.db"
+
+    if not db_path.exists():
+        raise RuntimeError(f"Database not found: {db_path}")
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row  # Enable column access by name
+        cursor = conn.cursor()
+
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        # Get column names
+        column_names = [description[0] for description in cursor.description] if cursor.description else []
+
+        conn.close()
+
+        # Format output
+        if format == "json":
+            return [dict(row) for row in rows]
+        else:  # table format
+            return _format_table(rows, column_names)
+
+    except sqlite3.Error as e:
+        raise RuntimeError(f"Query failed: {e}")
+
+
+def _format_table(rows: list[sqlite3.Row], columns: list[str]) -> str:
+    """Format query results as an ASCII table.
+
+    Args:
+        rows: Query result rows.
+        columns: Column names.
+
+    Returns:
+        Formatted ASCII table as a string.
+    """
+    if not rows:
+        return "No results found."
+
+    # Convert rows to list of lists for easier processing
+    data = [[row[col] for col in columns] for row in rows]
+
+    # Calculate column widths
+    col_widths = [len(col) for col in columns]
+    for row in data:
+        for i, cell in enumerate(row):
+            # Truncate long text fields
+            cell_str = str(cell) if cell is not None else "NULL"
+            if len(cell_str) > 50:
+                cell_str = cell_str[:47] + "..."
+            col_widths[i] = max(col_widths[i], len(cell_str))
+
+    # Build table
+    lines = []
+
+    # Header
+    header = " | ".join(col.ljust(col_widths[i]) for i, col in enumerate(columns))
+    lines.append(header)
+    lines.append("-" * len(header))
+
+    # Rows
+    for row in data:
+        row_str = []
+        for i, cell in enumerate(row):
+            cell_str = str(cell) if cell is not None else "NULL"
+            if len(cell_str) > 50:
+                cell_str = cell_str[:47] + "..."
+            row_str.append(cell_str.ljust(col_widths[i]))
+        lines.append(" | ".join(row_str))
+
+    # Footer
+    lines.append("")
+    lines.append(f"{len(rows)} row(s) returned")
+
+    return "\n".join(lines)
 
 
 def verify_database(db_path: pathlib.Path) -> dict[str, Any]:

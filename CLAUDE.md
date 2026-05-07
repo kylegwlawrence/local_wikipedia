@@ -51,6 +51,13 @@ python parse/parse.py --verify-only --database dumps/simplewiki.db
 
 **Query the database**:
 ```bash
+# Using Python function
+python3 -c "from parse.parse import query_database; print(query_database('SELECT COUNT(*) FROM articles'))"
+
+# Using example script
+python example_query.py
+
+# Using SQLite CLI
 sqlite3 dumps/simplewiki.db "SELECT COUNT(*) FROM articles;"
 sqlite3 dumps/simplewiki.db "SELECT title FROM articles WHERE title LIKE 'Python%';"
 ```
@@ -93,9 +100,11 @@ pytest parse/test_parse.py::TestParseDump::test_happy_path -v
 
 ### Parse Module (`parse/parse.py`)
 - `parse_dump()` - Main parser that extracts articles from compressed XML dumps into SQLite
+- `query_database()` - Execute SQL queries with table or JSON output format
 - `_create_schema()` - Creates database tables with indexes
 - `_parse_page_element()` - Extracts article data from XML `<page>` elements
 - `_batch_insert_articles()` - Batch inserts for performance (1000 articles per batch)
+- `_format_table()` - Formats query results as ASCII table
 - `verify_database()` - Checks database integrity and returns statistics
 - `main()` - CLI entry point with --wiki, --dump, --database, --verify-only flags
 
