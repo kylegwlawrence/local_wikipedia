@@ -176,6 +176,36 @@ class TestArticle:
         assert "2026-01-01" in resp.text
 
 
+class TestWikitext:
+    """`/wikitext/{title}` returns the raw wikitext before Markdown conversion."""
+
+    def test_returns_raw_wikitext(self, client):
+        resp = client.get("/wikitext/April")
+        assert resp.status_code == 200
+        # Wikitext markup is present. Single quotes are HTML-escaped by Jinja2
+        # auto-escaping, so ''' becomes &#39;&#39;&#39;.
+        assert "&#39;&#39;&#39;April&#39;&#39;&#39;" in resp.text
+        assert "== Events ==" in resp.text
+
+    def test_not_converted_to_html(self, client):
+        resp = client.get("/wikitext/April")
+        # Wikitext bold (''' ''') must NOT have been rendered to <strong>.
+        assert "<strong>" not in resp.text
+
+    def test_title_with_spaces_and_parens(self, client):
+        resp = client.get("/wikitext/Python%20(programming%20language)")
+        assert resp.status_code == 200
+        assert "Python (programming language)" in resp.text
+
+    def test_missing_article_returns_404(self, client):
+        resp = client.get("/wikitext/NoSuchArticle")
+        assert resp.status_code == 404
+
+    def test_toggle_button_links_to_rendered_view(self, client):
+        resp = client.get("/wikitext/April")
+        assert 'hx-get="/article/' in resp.text
+
+
 class TestDatabaseMissing:
     """When the configured DB file is absent the app should fail loudly."""
 

@@ -185,6 +185,40 @@ def search(request: Request, q: str = "") -> HTMLResponse:
     )
 
 
+@app.get("/wikitext/{title:path}", response_class=HTMLResponse)
+def wikitext(request: Request, title: str) -> HTMLResponse:
+    """Return the raw wikitext for an article, bypassing the Markdown pipeline.
+
+    Paired with ``/article/{title}`` — the two endpoints toggle between the
+    rendered and raw views by swapping each other's fragment into ``#article``.
+
+    Args:
+        request: FastAPI request used by Jinja2.
+        title: Exact article title taken from the URL path.
+
+    Returns:
+        Rendered ``wikitext.html`` partial containing the raw wikitext in a
+        ``<pre>`` block.
+
+    Raises:
+        HTTPException: 404 when no article with that exact title exists.
+    """
+    row = _fetch_article(title)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Article not found: {title}")
+
+    return templates.TemplateResponse(
+        request,
+        "wikitext.html",
+        {
+            "title": row["title"],
+            "wikitext": row["text_content"],
+            "text_bytes": row["text_bytes"],
+            "timestamp": row["timestamp"],
+        },
+    )
+
+
 @app.get("/article/{title:path}", response_class=HTMLResponse)
 def article(request: Request, title: str) -> HTMLResponse:
     """Render a single article as HTML.
