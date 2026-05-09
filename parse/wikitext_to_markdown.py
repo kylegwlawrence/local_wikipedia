@@ -40,10 +40,10 @@ def convert_wikitext_to_markdown(
 
         # Apply conversions in order
         text = _convert_tables(text)
+        text = _convert_lists(text)
         text = _convert_headings(text)
         text = _convert_bold_italic(text)
         text = _convert_links(text, base_url)
-        text = _convert_lists(text)
         text = _clean_extra_markup(text)
 
         return text.strip()
@@ -233,36 +233,38 @@ def _convert_links(text: str, base_url: str = "https://en.wikipedia.org/wiki/") 
 
 
 def _convert_lists(text: str) -> str:
-    """Convert * and # lists to Markdown format.
+    """Convert wikitext lists to Markdown format.
 
-    Args:
-        text: Text with wikitext lists.
+    Handles all four wikitext list types and arbitrary nesting/mixing:
+      *  → unordered (- item)
+      #  → ordered (1. item)
+      ;  → definition term (**term**)
+      :  → definition description / indentation (> text)
 
-    Returns:
-        Text with Markdown lists.
+    The last prefix character determines type; prefix length determines depth.
+    Mixed prefixes like #* or *# are supported naturally.
     """
     lines = text.split("\n")
-    converted_lines = []
-
+    converted = []
     for line in lines:
-        # Bullet lists: * Item → - Item
-        if re.match(r"^\*+\s", line):
-            # Count asterisks for nesting level
-            asterisks = len(re.match(r"^\*+", line).group())
-            indent = "  " * (asterisks - 1)  # 2 spaces per level
-            content = re.sub(r"^\*+\s*", "", line)
-            converted_lines.append(f"{indent}- {content}")
-        # Numbered lists: # Item → 1. Item
-        # BUT: Don't match markdown headings which also use # (headings have multiple # with space after)
-        elif re.match(r"^#+\s", line) and not re.match(r"^#{2,}\s", line):
-            hashes = len(re.match(r"^#+", line).group())
-            indent = "  " * (hashes - 1)
-            content = re.sub(r"^#+\s*", "", line)
-            converted_lines.append(f"{indent}1. {content}")
-        else:
-            converted_lines.append(line)
-
-    return "\n".join(converted_lines)
+        m = re.match(r'^([*#;:]+)(.*)', line)
+        if not m:
+            converted.append(line)
+            continue
+        prefix = m.group(1)
+        content = m.group(2).lstrip()
+        level = len(prefix)
+        last = prefix[-1]
+        indent = "  " * (level - 1)
+        if last == '*':
+            converted.append(f"{indent}- {content}")
+        elif last == '#':
+            converted.append(f"{indent}1. {content}")
+        elif last == ';':
+            converted.append(f"**{content}**")
+        elif last == ':':
+            converted.append(f"{'>' * level} {content}")
+    return "\n".join(converted)
 
 
 def _strip_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:

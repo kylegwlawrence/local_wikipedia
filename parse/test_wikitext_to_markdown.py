@@ -117,15 +117,40 @@ class TestConvertLists:
         assert lines[1] == "  - Level 2"
         assert lines[2] == "    - Level 3"
 
-    @pytest.mark.skip(reason="Nested ## lists ambiguous with markdown headings after conversion")
     def test_nested_numbered_list(self) -> None:
-        # Test with full conversion since ## is ambiguous when testing _convert_lists alone
-        wikitext = "# Level 1\n## Level 2\n### Level 3"
-        result = convert_wikitext_to_markdown(wikitext)
+        text = "# Level 1\n## Level 2\n### Level 3"
+        result = _convert_lists(text)
         lines = result.split("\n")
-        assert "1. Level 1" in result
-        assert "  1. Level 2" in result
-        assert "    1. Level 3" in result
+        assert lines[0] == "1. Level 1"
+        assert lines[1] == "  1. Level 2"
+        assert lines[2] == "    1. Level 3"
+
+    def test_definition_term(self) -> None:
+        text = "; Python"
+        assert _convert_lists(text) == "**Python**"
+
+    def test_definition_description(self) -> None:
+        text = ": A programming language"
+        assert _convert_lists(text) == "> A programming language"
+
+    def test_deeper_indentation(self) -> None:
+        text = ":: Further indented"
+        assert _convert_lists(text) == ">> Further indented"
+
+    def test_definition_list(self) -> None:
+        text = "; Term\n: Description"
+        result = _convert_lists(text)
+        lines = result.split("\n")
+        assert lines[0] == "**Term**"
+        assert lines[1] == "> Description"
+
+    def test_mixed_ordered_then_bullet(self) -> None:
+        text = "#* Sub-bullet under numbered"
+        assert _convert_lists(text) == "  - Sub-bullet under numbered"
+
+    def test_mixed_bullet_then_ordered(self) -> None:
+        text = "*# Sub-number under bullet"
+        assert _convert_lists(text) == "  1. Sub-number under bullet"
 
     def test_mixed_content(self) -> None:
         text = "Normal text\n* List item\nMore text"
