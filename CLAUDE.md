@@ -63,9 +63,6 @@ python3 -c "from parse.parse import query_database; print(query_database('SELECT
 # Using example script
 python example_query.py
 
-# Get article with Markdown formatting
-python get_article.py "Python (programming language)"
-
 # Using SQLite CLI
 sqlite3 dumps/simplewiki.db "SELECT COUNT(*) FROM articles;"
 sqlite3 dumps/simplewiki.db "SELECT title FROM articles WHERE title LIKE 'Python%';"
@@ -216,11 +213,6 @@ pytest parse/test_parse.py::TestParseDump::test_happy_path -v
 - Source code in `download/` and `parse/` directories
 - Web app at the repo root: `app.py`, `templates/`, `static/`, `test_app.py`
 - Downloads and databases in `dumps/` (created automatically)
-- Helper scripts: `get_article.py`, `example_query.py` for querying
+- Helper scripts: `example_query.py` for querying
 - Virtual environment in `.venv/` (gitignored)
 - Import pattern: `from parse.parse import ...` for parse module tests; `import app as web_app` in `test_app.py`
-
-**Article display**:
-- `get_article.py` - Retrieves and displays articles in clean Markdown format
-- Automatically converts wikitext to readable Markdown
-- Shows article title, size, last edit timestamp, and formatted content

@@ -80,27 +80,7 @@ python parse/parse.py --verify-only --database dumps/simplewiki.db
 
 ### Step 3: Query the Database
 
-**Option A: Get Article with Markdown Formatting (Recommended)**
-
-Use `get_article.py` to display articles in clean, readable Markdown:
-
-```bash
-# Get article by title (automatically converts to Markdown)
-python get_article.py "Python (programming language)"
-python get_article.py "Art"
-```
-
-The wikitext is automatically converted from this:
-```
-'''Python''' is a [[programming language]].
-```
-
-To clean Markdown:
-```
-**Python** is a [programming language](https://simple.wikipedia.org/wiki/programming_language).
-```
-
-**Option B: Python Function**
+**Option A: Python Function**
 
 Use the `query_database()` function in your Python scripts:
 
@@ -126,7 +106,7 @@ Run the example script:
 python example_query.py
 ```
 
-**Option C: Web App**
+**Option B: Web App**
 
 Launch the FastAPI app for a browser-based search UI:
 
@@ -142,7 +122,7 @@ To point the app at a different database file, set `WIKI_DB`:
 WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
 ```
 
-**Option D: SQLite CLI**
+**Option C: SQLite CLI**
 
 Query directly using sqlite3:
 ```bash
@@ -241,7 +221,6 @@ pytest download/test_download.py::TestDownloadWithVerify
 ├── static/
 │   └── style.css                   # Web app styling
 ├── test_app.py                     # Web app test suite
-├── get_article.py                  # Script to display articles in Markdown
 ├── example_query.py                # Example database queries
 ├── requirements.txt                # Python dependencies
 ├── PLAN.md                         # Implementation plan
