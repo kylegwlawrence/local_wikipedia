@@ -11,7 +11,8 @@
                 <a href="#"
                    hx-get="/article/{{ title|urlencode }}"
                    hx-target="#article"
-                   hx-swap="innerHTML">{{ title }}</a>
+                   hx-swap="innerHTML"
+                   hx-on::after-request="document.getElementById('results').innerHTML=''">{{ title }}</a>
             </li>
         {% endfor %}
     </ul>
