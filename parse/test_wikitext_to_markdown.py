@@ -159,6 +159,15 @@ class TestConvertLists:
         assert "- List item" in result
         assert "More text" in result
 
+    def test_blank_line_inserted_before_list_after_paragraph(self) -> None:
+        text = "Statements include the following:\n* Item one\n* Item two"
+        result = _convert_lists(text)
+        lines = result.split("\n")
+        assert lines[0] == "Statements include the following:"
+        assert lines[1] == ""
+        assert lines[2] == "- Item one"
+        assert lines[3] == "- Item two"
+
 
 class TestExtractCellContent:
     def test_plain_content(self) -> None:
@@ -262,6 +271,11 @@ class TestConvertTables:
         assert "| A |" in result
         assert "| B |" in result
         assert "Some text" in result
+
+    def test_unclosed_table_does_not_eat_subsequent_content(self) -> None:
+        wikitext = "{| class='wikitable'\n| Cell\n* List item after unclosed table\n"
+        result = _convert_tables(wikitext)
+        assert "* List item after unclosed table" in result
 
     def test_empty_table_returns_empty(self) -> None:
         result = _convert_tables("{|\n|}")
@@ -390,6 +404,19 @@ See also:
         assert "more text" in result
         assert "<!--" not in result
         assert "comment" not in result
+
+    def test_list_items_with_inline_code(self) -> None:
+        wikitext = (
+            "===Statements and control flow===\n"
+            "Python's [[statement (computer science)|statements]] include the following:\n"
+            "* The [[Assignment (computer science)|assignment]] statement, "
+            "using a single equals sign <code>=</code>\n"
+            "* The <code>[[if-then-else|if]]</code> statement\n"
+            "* The <code>[[Foreach#Python|for]]</code> statement\n"
+        )
+        result = convert_wikitext_to_markdown(wikitext)
+        list_lines = [l for l in result.splitlines() if l.startswith("- ")]
+        assert len(list_lines) == 3
 
     def test_malformed_wikitext_graceful_fallback(self) -> None:
         # Test with intentionally broken wikitext that might cause parsing errors

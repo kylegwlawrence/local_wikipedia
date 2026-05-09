@@ -71,7 +71,11 @@ def _convert_tables(text: str) -> str:
                     depth -= 1
                 table_block.append(lines[i])
                 i += 1
-            out.append(_wikitext_table_to_markdown(table_block))
+            if depth > 0:
+                # Unclosed table — emit raw lines so no content is swallowed
+                out.extend(table_block)
+            else:
+                out.append(_wikitext_table_to_markdown(table_block))
         else:
             out.append(lines[i])
             i += 1
@@ -246,11 +250,18 @@ def _convert_lists(text: str) -> str:
     """
     lines = text.split("\n")
     converted = []
+    prev_was_list = False
     for line in lines:
         m = re.match(r'^([*#;:]+)(.*)', line)
         if not m:
             converted.append(line)
+            prev_was_list = False
             continue
+        # Insert a blank line when starting a new list directly after a
+        # non-blank, non-list line. Python-Markdown won't recognize a list
+        # otherwise — it folds the items into the preceding paragraph.
+        if not prev_was_list and converted and converted[-1].strip():
+            converted.append("")
         prefix = m.group(1)
         content = m.group(2).lstrip()
         level = len(prefix)
@@ -264,6 +275,7 @@ def _convert_lists(text: str) -> str:
             converted.append(f"**{content}**")
         elif last == ':':
             converted.append(f"{'>' * level} {content}")
+        prev_was_list = True
     return "\n".join(converted)
 
 
