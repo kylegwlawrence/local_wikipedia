@@ -66,31 +66,34 @@ class TestConvertHeadings:
 
 
 class TestConvertLinks:
+    EN = "https://en.wikipedia.org/wiki/"
+    SIMPLE = "https://en.wikipedia.org/wiki/"
+
     def test_simple_link(self) -> None:
         text = "See [[Python]]"
-        result = _convert_links(text)
-        assert result == "See [Python](https://simple.wikipedia.org/wiki/Python)"
+        assert _convert_links(text, self.EN) == "See [Python](https://en.wikipedia.org/wiki/Python)"
 
     def test_link_with_label(self) -> None:
         text = "See [[Python (programming language)|Python]]"
-        result = _convert_links(text)
-        assert result == "See [Python](https://simple.wikipedia.org/wiki/Python_(programming_language))"
+        assert _convert_links(text, self.EN) == "See [Python](https://en.wikipedia.org/wiki/Python_(programming_language))"
 
     def test_link_with_spaces(self) -> None:
         text = "[[United States]]"
-        result = _convert_links(text)
-        assert result == "[United States](https://simple.wikipedia.org/wiki/United_States)"
+        assert _convert_links(text, self.EN) == "[United States](https://en.wikipedia.org/wiki/United_States)"
 
     def test_multiple_links(self) -> None:
         text = "[[First]] and [[Second]]"
-        result = _convert_links(text)
-        assert "[First](https://simple.wikipedia.org/wiki/First)" in result
-        assert "[Second](https://simple.wikipedia.org/wiki/Second)" in result
+        result = _convert_links(text, self.EN)
+        assert "[First](https://en.wikipedia.org/wiki/First)" in result
+        assert "[Second](https://en.wikipedia.org/wiki/Second)" in result
 
     def test_link_in_sentence(self) -> None:
         text = "Programming in [[Python]] is fun"
-        result = _convert_links(text)
-        assert "Programming in [Python](https://simple.wikipedia.org/wiki/Python) is fun" == result
+        assert _convert_links(text, self.EN) == "Programming in [Python](https://en.wikipedia.org/wiki/Python) is fun"
+
+    def test_custom_base_url(self) -> None:
+        text = "See [[Python]]"
+        assert _convert_links(text, self.SIMPLE) == "See [Python](https://en.wikipedia.org/wiki/Python)"
 
 
 class TestConvertLists:
@@ -166,7 +169,7 @@ Python was created in the 1990s.
         assert "## Features" in result
         assert "- Easy to learn" in result
         assert "- Powerful" in result
-        assert "[Object-oriented](https://simple.wikipedia.org/wiki/Object-oriented_programming)" in result
+        assert "[Object-oriented](https://en.wikipedia.org/wiki/Object-oriented_programming)" in result
 
     def test_complex_formatting(self) -> None:
         wikitext = """'''''Python''''' is both '''powerful''' and ''easy''.
@@ -184,7 +187,7 @@ See also:
         assert "**powerful**" in result
         assert "*easy*" in result
         assert "### Syntax" in result
-        assert "[Programming language](https://simple.wikipedia.org/wiki/Programming_language)" in result
+        assert "[Programming language](https://en.wikipedia.org/wiki/Programming_language)" in result
 
     def test_empty_text(self) -> None:
         result = convert_wikitext_to_markdown("")
@@ -259,8 +262,8 @@ Art has existed since ancient times. See [[History of art]].
         assert "## History" in result
 
         # Check lists converted
-        assert "- [Painting](https://simple.wikipedia.org/wiki/Painting)" in result
-        assert "- [Sculpture](https://simple.wikipedia.org/wiki/Sculpture)" in result
+        assert "- [Painting](https://en.wikipedia.org/wiki/Painting)" in result
+        assert "- [Sculpture](https://en.wikipedia.org/wiki/Sculpture)" in result
 
         # Check links converted
-        assert "[History of art](https://simple.wikipedia.org/wiki/History_of_art)" in result
+        assert "[History of art](https://en.wikipedia.org/wiki/History_of_art)" in result

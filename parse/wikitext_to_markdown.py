@@ -3,11 +3,15 @@ import re
 import mwparserfromhell
 
 
-def convert_wikitext_to_markdown(wikitext: str) -> str:
+def convert_wikitext_to_markdown(
+    wikitext: str,
+    base_url: str = "https://en.wikipedia.org/wiki/",
+) -> str:
     """Convert wikitext to clean Markdown.
 
     Args:
         wikitext: Raw Wikipedia wikitext content.
+        base_url: Base URL for wikilinks (e.g. ``https://en.wikipedia.org/wiki/``).
 
     Returns:
         Formatted Markdown string.
@@ -37,7 +41,7 @@ def convert_wikitext_to_markdown(wikitext: str) -> str:
         # Apply conversions in order
         text = _convert_headings(text)
         text = _convert_bold_italic(text)
-        text = _convert_links(text)
+        text = _convert_links(text, base_url)
         text = _convert_lists(text)
         text = _clean_extra_markup(text)
 
@@ -90,26 +94,25 @@ def _convert_headings(text: str) -> str:
     return text
 
 
-def _convert_links(text: str) -> str:
+def _convert_links(text: str, base_url: str = "https://en.wikipedia.org/wiki/") -> str:
     """Convert [[Page]] and [[Page|Label]] to Markdown links.
 
     Args:
         text: Text with wikitext links.
+        base_url: Base URL prepended to each page slug.
 
     Returns:
         Text with Markdown links.
     """
-    # Convert [[Page|Label]] to [Label](https://simple.wikipedia.org/wiki/Page)
     text = re.sub(
         r"\[\[([^\]|]+)\|([^\]]+)\]\]",
-        lambda m: f"[{m.group(2)}](https://simple.wikipedia.org/wiki/{m.group(1).replace(' ', '_')})",
+        lambda m: f"[{m.group(2)}]({base_url}{m.group(1).replace(' ', '_')})",
         text
     )
 
-    # Convert [[Page]] to [Page](https://simple.wikipedia.org/wiki/Page)
     text = re.sub(
         r"\[\[([^\]|]+)\]\]",
-        lambda m: f"[{m.group(1)}](https://simple.wikipedia.org/wiki/{m.group(1).replace(' ', '_')})",
+        lambda m: f"[{m.group(1)}]({base_url}{m.group(1).replace(' ', '_')})",
         text
     )
 

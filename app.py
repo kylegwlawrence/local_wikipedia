@@ -26,7 +26,7 @@ from parse.wikitext_to_markdown import convert_wikitext_to_markdown
 
 # Resolve paths relative to this file so the app works regardless of CWD.
 BASE_DIR = pathlib.Path(__file__).parent
-DEFAULT_DB = BASE_DIR / "dumps" / "simplewiki.db"
+DEFAULT_DB = BASE_DIR / "dumps" / "enwiki.db"
 
 # Cap search results so the dropdown stays manageable and the LIKE scan
 # can stop early.
@@ -45,6 +45,16 @@ def _db_path() -> pathlib.Path:
     after the app object has already been constructed.
     """
     return pathlib.Path(os.environ.get("WIKI_DB", DEFAULT_DB))
+
+
+def _wiki_base_url() -> str:
+    """Derive the Wikipedia base URL from the database filename.
+
+    Strips the ``wiki`` suffix from the stem to get the language code:
+    ``simplewiki`` → ``simple``, ``enwiki`` → ``en``, ``frwiki`` → ``fr``.
+    """
+    lang = _db_path().stem.removesuffix("wiki") or "en"
+    return f"https://{lang}.wikipedia.org/wiki/"
 
 
 def _connect() -> sqlite3.Connection:
@@ -202,7 +212,7 @@ def article(request: Request, title: str) -> HTMLResponse:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
-    markdown_text = convert_wikitext_to_markdown(row["text_content"])
+    markdown_text = convert_wikitext_to_markdown(row["text_content"], _wiki_base_url())
     # The "extra" extension covers tables/fenced blocks; "sane_lists" stops
     # ordered/unordered lists from bleeding into each other.
     html = md_lib.markdown(markdown_text, extensions=["extra", "sane_lists"])
