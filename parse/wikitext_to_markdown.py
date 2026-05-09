@@ -39,6 +39,7 @@ def convert_wikitext_to_markdown(
         text = str(wikicode)
 
         # Apply conversions in order
+        text = _convert_tables(text)
         text = _convert_headings(text)
         text = _convert_bold_italic(text)
         text = _convert_links(text, base_url)
@@ -50,6 +51,118 @@ def convert_wikitext_to_markdown(
     except Exception as e:
         # Fallback to plain text if parsing fails
         return wikitext
+
+
+def _convert_tables(text: str) -> str:
+    """Convert wikitext {| ... |} tables to Markdown pipe tables."""
+    lines = text.split('\n')
+    out = []
+    i = 0
+    while i < len(lines):
+        if lines[i].lstrip().startswith('{|'):
+            table_block = [lines[i]]
+            i += 1
+            depth = 1
+            while i < len(lines) and depth > 0:
+                cur = lines[i].lstrip()
+                if cur.startswith('{|'):
+                    depth += 1
+                elif cur.startswith('|}'):
+                    depth -= 1
+                table_block.append(lines[i])
+                i += 1
+            out.append(_wikitext_table_to_markdown(table_block))
+        else:
+            out.append(lines[i])
+            i += 1
+    return '\n'.join(out)
+
+
+def _wikitext_table_to_markdown(table_lines: list[str]) -> str:
+    """Convert a collected {| ... |} block into a Markdown pipe table."""
+    header_cells: list[str] | None = None
+    rows: list[list[str]] = []
+    current_row: list[str] = []
+    nested_depth = 0
+
+    for idx, line in enumerate(table_lines):
+        stripped = line.strip()
+
+        if idx == 0:
+            continue  # {| opening line with table attributes
+
+        if stripped.startswith('{|'):
+            nested_depth += 1
+            continue
+        if stripped.startswith('|}'):
+            if nested_depth > 0:
+                nested_depth -= 1
+            continue
+        if nested_depth > 0:
+            continue  # skip nested table content
+
+        if stripped.startswith('|+'):
+            continue  # caption
+
+        if stripped.startswith('|-'):
+            if current_row:
+                rows.append(current_row)
+                current_row = []
+            continue
+
+        if stripped.startswith('!'):
+            cells = [_extract_cell_content(c) for c in re.split(r'!!', stripped[1:])]
+            if header_cells is None:
+                header_cells = cells
+            else:
+                header_cells.extend(cells)
+            continue
+
+        if stripped.startswith('|'):
+            cells = [_extract_cell_content(c) for c in re.split(r'\|\|', stripped[1:])]
+            current_row.extend(cells)
+            continue
+
+        if stripped and current_row:
+            current_row[-1] = f"{current_row[-1]} {stripped}"
+
+    if current_row:
+        rows.append(current_row)
+
+    if not rows and header_cells is None:
+        return ''
+
+    if header_cells is None:
+        header_cells = rows.pop(0)
+
+    col_count = max(len(header_cells), max((len(r) for r in rows), default=0))
+    if col_count == 0:
+        return ''
+
+    def _pad(cells: list[str]) -> list[str]:
+        return (cells + [''] * col_count)[:col_count]
+
+    md_lines = [
+        '| ' + ' | '.join(_pad(header_cells)) + ' |',
+        '| ' + ' | '.join(['---'] * col_count) + ' |',
+    ]
+    for row in rows:
+        md_lines.append('| ' + ' | '.join(_pad(row)) + ' |')
+
+    return '\n'.join(md_lines)
+
+
+def _extract_cell_content(cell: str) -> str:
+    """Strip wikitext cell attributes, returning only display content.
+
+    Handles patterns like ``style="..." | actual content`` where everything
+    before the first bare ``|`` (one not inside ``[[...]]``) is attributes.
+    """
+    cell = cell.strip()
+    pipe_idx = cell.find('|')
+    if pipe_idx != -1 and '[' not in cell[:pipe_idx]:
+        return cell[pipe_idx + 1:].strip()
+    return cell
 
 
 def _convert_bold_italic(text: str) -> str:

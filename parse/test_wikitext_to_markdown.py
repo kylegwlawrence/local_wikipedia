@@ -6,6 +6,8 @@ from parse.wikitext_to_markdown import (
     _convert_headings,
     _convert_links,
     _convert_lists,
+    _convert_tables,
+    _extract_cell_content,
     _clean_extra_markup,
 )
 
@@ -131,6 +133,141 @@ class TestConvertLists:
         assert "Normal text" in result
         assert "- List item" in result
         assert "More text" in result
+
+
+class TestExtractCellContent:
+    def test_plain_content(self) -> None:
+        assert _extract_cell_content(" value ") == "value"
+
+    def test_strips_style_attribute(self) -> None:
+        assert _extract_cell_content('style="text-align:center" | 42') == "42"
+
+    def test_strips_colspan_attribute(self) -> None:
+        assert _extract_cell_content("colspan=2 | text") == "text"
+
+    def test_preserves_wikilink_with_label(self) -> None:
+        # The | inside [[...]] must not be treated as an attribute separator
+        assert _extract_cell_content("[[Python (programming language)|Python]]") == "[[Python (programming language)|Python]]"
+
+    def test_strips_attrs_before_wikilink(self) -> None:
+        assert _extract_cell_content('align="center" | [[Link|Label]]') == "[[Link|Label]]"
+
+
+class TestConvertTables:
+    def test_basic_table_with_headers(self) -> None:
+        wikitext = (
+            "{| class=\"wikitable\"\n"
+            "|-\n"
+            "! Name !! Age\n"
+            "|-\n"
+            "| Alice || 30\n"
+            "|-\n"
+            "| Bob || 25\n"
+            "|}"
+        )
+        result = _convert_tables(wikitext)
+        assert "| Name | Age |" in result
+        assert "| --- | --- |" in result
+        assert "| Alice | 30 |" in result
+        assert "| Bob | 25 |" in result
+
+    def test_table_without_explicit_headers(self) -> None:
+        wikitext = (
+            "{|\n"
+            "|-\n"
+            "| A || B\n"
+            "|-\n"
+            "| C || D\n"
+            "|}"
+        )
+        result = _convert_tables(wikitext)
+        # First data row becomes the header
+        assert "| A | B |" in result
+        assert "| --- | --- |" in result
+        assert "| C | D |" in result
+
+    def test_caption_is_skipped(self) -> None:
+        wikitext = (
+            "{|\n"
+            "|+ My Caption\n"
+            "|-\n"
+            "! H1\n"
+            "|-\n"
+            "| D1\n"
+            "|}"
+        )
+        result = _convert_tables(wikitext)
+        assert "My Caption" not in result
+        assert "| H1 |" in result
+
+    def test_cell_attributes_stripped(self) -> None:
+        wikitext = (
+            "{|\n"
+            "|-\n"
+            '! style="width:50%" | Name\n'
+            "|-\n"
+            '| align="center" | Alice\n'
+            "|}"
+        )
+        result = _convert_tables(wikitext)
+        assert "style=" not in result
+        assert "align=" not in result
+        assert "Name" in result
+        assert "Alice" in result
+
+    def test_cells_on_separate_lines(self) -> None:
+        wikitext = (
+            "{|\n"
+            "|-\n"
+            "| Cell 1\n"
+            "| Cell 2\n"
+            "| Cell 3\n"
+            "|}"
+        )
+        result = _convert_tables(wikitext)
+        assert "| Cell 1 | Cell 2 | Cell 3 |" in result
+
+    def test_multiple_tables(self) -> None:
+        wikitext = (
+            "{|\n|-\n! A\n|-\n| 1\n|}\n"
+            "Some text\n"
+            "{|\n|-\n! B\n|-\n| 2\n|}"
+        )
+        result = _convert_tables(wikitext)
+        assert "| A |" in result
+        assert "| B |" in result
+        assert "Some text" in result
+
+    def test_empty_table_returns_empty(self) -> None:
+        result = _convert_tables("{|\n|}")
+        assert result.strip() == ""
+
+    def test_non_table_text_unchanged(self) -> None:
+        text = "Normal paragraph\nwith two lines"
+        assert _convert_tables(text) == text
+
+    def test_full_conversion_renders_table_links(self) -> None:
+        wikitext = (
+            "{| class=\"wikitable\"\n"
+            "|-\n"
+            "! Language !! Creator\n"
+            "|-\n"
+            "| [[Python (programming language)|Python]] || [[Guido van Rossum]]\n"
+            "|}"
+        )
+        result = convert_wikitext_to_markdown(wikitext)
+        assert "[Python](https://en.wikipedia.org/wiki/Python_(programming_language))" in result
+        assert "[Guido van Rossum](https://en.wikipedia.org/wiki/Guido_van_Rossum)" in result
+
+    def test_full_conversion_renders_table_bold(self) -> None:
+        wikitext = (
+            "{|\n"
+            "|-\n"
+            "| '''bold cell''' || normal cell\n"
+            "|}"
+        )
+        result = convert_wikitext_to_markdown(wikitext)
+        assert "**bold cell**" in result
 
 
 class TestCleanExtraMarkup:
