@@ -285,6 +285,19 @@ class TestConvertTables:
         text = "Normal paragraph\nwith two lines"
         assert _convert_tables(text) == text
 
+    def test_colon_prefixed_table_is_converted(self) -> None:
+        wikitext = (
+            ':{| class="wikitable"\n'
+            "|-\n"
+            "! Name !! Value\n"
+            "|-\n"
+            "| Foo || Bar\n"
+            "|}"
+        )
+        result = _convert_tables(wikitext)
+        assert "| Name | Value |" in result
+        assert "| Foo | Bar |" in result
+
     def test_full_conversion_renders_table_links(self) -> None:
         wikitext = (
             "{| class=\"wikitable\"\n"

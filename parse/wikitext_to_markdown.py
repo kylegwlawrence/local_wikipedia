@@ -53,21 +53,32 @@ def convert_wikitext_to_markdown(
         return wikitext
 
 
+_TABLE_OPEN_RE = re.compile(r'^[:\s]*\{\|')
+_TABLE_INNER_OPEN_RE = re.compile(r'^\s*\{\|')
+_TABLE_INNER_CLOSE_RE = re.compile(r'^\s*\|\}')
+
+
 def _convert_tables(text: str) -> str:
-    """Convert wikitext {| ... |} tables to Markdown pipe tables."""
+    """Convert wikitext {| ... |} tables to Markdown pipe tables.
+
+    Handles tables whose opening line is prefixed with a colon (``:{|``),
+    which MediaWiki renders as an indented table.
+    """
     lines = text.split('\n')
     out = []
     i = 0
     while i < len(lines):
-        if lines[i].lstrip().startswith('{|'):
-            table_block = [lines[i]]
+        if _TABLE_OPEN_RE.match(lines[i]):
+            # Normalise the opening line: strip any leading colon/whitespace so
+            # _wikitext_table_to_markdown receives a plain ``{|`` line.
+            table_block = [lines[i].lstrip(':').lstrip()]
             i += 1
             depth = 1
             while i < len(lines) and depth > 0:
                 cur = lines[i].lstrip()
-                if cur.startswith('{|'):
+                if _TABLE_INNER_OPEN_RE.match(lines[i]):
                     depth += 1
-                elif cur.startswith('|}'):
+                elif _TABLE_INNER_CLOSE_RE.match(lines[i]):
                     depth -= 1
                 table_block.append(lines[i])
                 i += 1
