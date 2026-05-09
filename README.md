@@ -20,6 +20,18 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 - Filters to main articles only (namespace 0)
 - Indexes for fast title/namespace/timestamp queries
 
+### Wikitext Converter
+- Converts Wikipedia wikitext to clean, readable Markdown
+- Automatic conversion when displaying articles
+- Handles bold, italic, headings, links, lists
+- Strips templates, references, and HTML markup
+
+### Web App
+- FastAPI + Jinja2 + HTMX single-page UI for browsing the parsed database
+- Search bar with debounced as-you-type title lookup (prefix match, with substring fallback)
+- Articles rendered server-side: wikitext → Markdown → HTML
+- No JavaScript build step; all logic stays in Python
+
 ## Installation
 
 1. Clone this repository
@@ -68,7 +80,27 @@ python parse/parse.py --verify-only --database dumps/simplewiki.db
 
 ### Step 3: Query the Database
 
-**Option A: Python Function (Recommended)**
+**Option A: Get Article with Markdown Formatting (Recommended)**
+
+Use `get_article.py` to display articles in clean, readable Markdown:
+
+```bash
+# Get article by title (automatically converts to Markdown)
+python get_article.py "Python (programming language)"
+python get_article.py "Art"
+```
+
+The wikitext is automatically converted from this:
+```
+'''Python''' is a [[programming language]].
+```
+
+To clean Markdown:
+```
+**Python** is a [programming language](https://simple.wikipedia.org/wiki/programming_language).
+```
+
+**Option B: Python Function**
 
 Use the `query_database()` function in your Python scripts:
 
@@ -87,12 +119,6 @@ result = query_database(
     format="json"
 )
 # Returns: [{"title": "April", "page_id": 1}, ...]
-
-# Auto-discovers database from wiki name
-result = query_database(
-    "SELECT COUNT(*) FROM articles",
-    wiki="simplewiki"
-)
 ```
 
 Run the example script:
@@ -100,7 +126,23 @@ Run the example script:
 python example_query.py
 ```
 
-**Option B: SQLite CLI**
+**Option C: Web App**
+
+Launch the FastAPI app for a browser-based search UI:
+
+```bash
+uvicorn app:app --reload
+```
+
+Then open `http://127.0.0.1:8000`. Type into the search box; matching titles appear below as you type, and clicking one renders the article as Markdown-formatted HTML.
+
+To point the app at a different database file, set `WIKI_DB`:
+
+```bash
+WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
+```
+
+**Option D: SQLite CLI**
 
 Query directly using sqlite3:
 ```bash
@@ -171,6 +213,11 @@ pytest download/test_download.py::TestDownloadWithVerify
 - **tqdm** (4.67.3) - Terminal progress bars
 - **pytest** (9.0.3) - Testing framework
 - **respx** (0.23.1) - HTTP mocking for tests
+- **mwparserfromhell** (0.6+) - MediaWiki wikitext parser for Markdown conversion
+- **fastapi** (0.115+) - Web framework for the browser UI
+- **uvicorn** (0.32+) - ASGI server for FastAPI
+- **jinja2** (3.1+) - HTML templating
+- **markdown** (3.7+) - Markdown to HTML rendering
 
 ## Project Structure
 
@@ -180,12 +227,25 @@ pytest download/test_download.py::TestDownloadWithVerify
 │   ├── download.py       # Main downloader module
 │   └── test_download.py  # Download test suite
 ├── parse/
-│   ├── parse.py         # Article parser and SQLite storage
-│   └── test_parse.py    # Parse test suite
-├── dumps/               # Downloaded files and databases
-├── requirements.txt     # Python dependencies
-├── PLAN.md             # Implementation plan
-└── README.md           # This file
+│   ├── parse.py                    # Article parser and SQLite storage
+│   ├── wikitext_to_markdown.py    # Wikitext to Markdown converter
+│   ├── test_parse.py               # Parse test suite
+│   └── test_wikitext_to_markdown.py # Converter test suite
+├── dumps/                          # Downloaded files and databases
+├── app.py                          # FastAPI web app (search + article view)
+├── templates/                      # Jinja2 templates for the web app
+│   ├── base.html
+│   ├── index.html
+│   ├── search_results.html
+│   └── article.html
+├── static/
+│   └── style.css                   # Web app styling
+├── test_app.py                     # Web app test suite
+├── get_article.py                  # Script to display articles in Markdown
+├── example_query.py                # Example database queries
+├── requirements.txt                # Python dependencies
+├── PLAN.md                         # Implementation plan
+└── README.md                       # This file
 ```
 
 ## Performance

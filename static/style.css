@@ -1,0 +1,154 @@
+/*
+ * Minimal styles for the Local Wikipedia UI.
+ * Layout goals:
+ *   - One readable column, capped width so long lines stay scannable.
+ *   - Search input is the visual anchor; results sit just below it.
+ *   - Article body uses prose-friendly line height and link colors.
+ */
+
+:root {
+    --max-width: 760px;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --link: #0645ad;       /* Wikipedia-ish link blue */
+    --link-visited: #0b0080;
+    --border: #e1e1e1;
+    --bg-soft: #f6f6f6;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--fg);
+    line-height: 1.55;
+    background: #fff;
+}
+
+main {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 1.5rem 1rem 4rem;
+}
+
+.site-header h1 {
+    font-size: 1.4rem;
+    margin: 0 0 1rem;
+    font-weight: 600;
+}
+
+/* --- Search input --------------------------------------------------- */
+
+.search-form {
+    margin-bottom: 1rem;
+}
+
+.search-form input[type="search"] {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    font-size: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    outline: none;
+}
+
+.search-form input[type="search"]:focus {
+    border-color: var(--link);
+    box-shadow: 0 0 0 2px rgba(6, 69, 173, 0.15);
+}
+
+/* --- Results list --------------------------------------------------- */
+
+.results {
+    margin-bottom: 1.5rem;
+}
+
+.result-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-soft);
+    /* Cap the dropdown so a flood of matches doesn't push the article
+       offscreen; it stays scrollable instead. */
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.result-list li {
+    border-bottom: 1px solid var(--border);
+}
+
+.result-list li:last-child {
+    border-bottom: none;
+}
+
+.result-list a {
+    display: block;
+    padding: 0.45rem 0.8rem;
+    color: var(--fg);
+    text-decoration: none;
+}
+
+.result-list a:hover,
+.result-list a:focus {
+    background: #eaeefa;
+}
+
+.no-results {
+    color: var(--muted);
+    font-style: italic;
+    padding: 0.5rem 0;
+    margin: 0;
+}
+
+/* --- Article -------------------------------------------------------- */
+
+.article:empty {
+    /* Hide the empty container so it doesn't leave dead space before
+       the user picks an article. */
+    display: none;
+}
+
+.article-header h2 {
+    margin: 0.5rem 0 0.25rem;
+    font-size: 1.6rem;
+}
+
+.article-meta {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: 0 0 1rem;
+}
+
+.article-body {
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+}
+
+.article-body h2 { font-size: 1.3rem; margin-top: 1.5rem; }
+.article-body h3 { font-size: 1.1rem; margin-top: 1.2rem; }
+.article-body h4 { font-size: 1rem;   margin-top: 1rem; }
+
+.article-body a { color: var(--link); }
+.article-body a:visited { color: var(--link-visited); }
+
+.article-body pre,
+.article-body code {
+    background: var(--bg-soft);
+    border-radius: 4px;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.9em;
+}
+
+.article-body pre {
+    padding: 0.6rem 0.8rem;
+    overflow-x: auto;
+}
+
+.article-body ul,
+.article-body ol {
+    padding-left: 1.5rem;
+}

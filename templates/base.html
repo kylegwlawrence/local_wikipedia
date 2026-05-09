@@ -1,0 +1,21 @@
+{# Base page shell. Loads HTMX from a CDN and the local stylesheet, and
+   exposes a `content` block for child templates to fill in. HTMX is only
+   needed on the index page, but keeping it in the base keeps the templates
+   uniform and the cost is one cached <script> tag. #}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Local Wikipedia{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+    {# HTMX 2.x — handles the search-on-keyup and click-to-load-article
+       interactions declaratively, no custom JS needed. #}
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

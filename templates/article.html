@@ -1,0 +1,14 @@
+{# Fragment returned by GET /article/{title}. Rendered into #article on
+   the index page. The body is pre-rendered HTML produced by the server's
+   wikitext -> Markdown -> HTML pipeline, so we mark it |safe. The source
+   is our own converter, not user input, so this is not an XSS vector. #}
+<header class="article-header">
+    <h2>{{ title }}</h2>
+    <p class="article-meta">
+        {{ "{:,}".format(text_bytes) }} bytes &middot; last edited {{ timestamp }}
+    </p>
+</header>
+
+<div class="article-body">
+    {{ html|safe }}
+</div>

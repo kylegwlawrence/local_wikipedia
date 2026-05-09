@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Wikipedia dump downloader and parser that:
+Wikipedia dump downloader, parser, and browser-based reader that:
 1. Downloads and SHA-1-verifies multistream dump files from Wikimedia
 2. Parses compressed XML dumps and extracts articles
 3. Stores articles in a local SQLite database for querying
+4. Serves a FastAPI + HTMX web UI for searching and reading articles as Markdown
 
-Downloads both the article dump (`.xml.bz2`) and its index (`.txt.bz2`) to the `dumps/` directory, then parses the XML to create a searchable SQLite database.
+Downloads both the article dump (`.xml.bz2`) and its index (`.txt.bz2`) to the `dumps/` directory, then parses the XML to create a searchable SQLite database. The web app (`app.py`) reads from that database and renders articles via the wikitext → Markdown → HTML pipeline.
 
 ## Setup and Dependencies
 
@@ -18,6 +19,11 @@ The project uses a Python virtual environment (`.venv`) with these dependencies:
 - `tqdm` (4.67.3) - Progress bar display
 - `pytest` (9.0.3) - Testing framework
 - `respx` (0.23.1) - HTTP mocking for tests
+- `mwparserfromhell` (0.6+) - MediaWiki wikitext parser for Markdown conversion
+- `fastapi` (0.115+) - Web framework for the browser UI
+- `uvicorn[standard]` (0.32+) - ASGI server for FastAPI
+- `jinja2` (3.1+) - HTML templating
+- `markdown` (3.7+) - Markdown to HTML rendering
 
 To set up from scratch:
 ```bash
@@ -57,9 +63,21 @@ python3 -c "from parse.parse import query_database; print(query_database('SELECT
 # Using example script
 python example_query.py
 
+# Get article with Markdown formatting
+python get_article.py "Python (programming language)"
+
 # Using SQLite CLI
 sqlite3 dumps/simplewiki.db "SELECT COUNT(*) FROM articles;"
 sqlite3 dumps/simplewiki.db "SELECT title FROM articles WHERE title LIKE 'Python%';"
+```
+
+**Run web app**:
+```bash
+uvicorn app:app --reload
+# then open http://127.0.0.1:8000
+
+# Override the database path:
+WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
 ```
 
 **Run all tests**:
@@ -75,6 +93,12 @@ pytest download/test_download.py -v
 **Run parse tests**:
 ```bash
 pytest parse/test_parse.py -v
+pytest parse/test_wikitext_to_markdown.py -v
+```
+
+**Run web app tests**:
+```bash
+pytest test_app.py -v
 ```
 
 **Run a specific test**:
@@ -108,6 +132,23 @@ pytest parse/test_parse.py::TestParseDump::test_happy_path -v
 - `verify_database()` - Checks database integrity and returns statistics
 - `main()` - CLI entry point with --wiki, --dump, --database, --verify-only flags
 
+### Wikitext Converter (`parse/wikitext_to_markdown.py`)
+- `convert_wikitext_to_markdown()` - Converts Wikipedia wikitext to clean Markdown
+- `_convert_bold_italic()` - Converts '''bold''' and ''italic'' to Markdown
+- `_convert_headings()` - Converts == Heading == to ## Heading
+- `_convert_links()` - Converts [[Page]] to Markdown links
+- `_convert_lists()` - Converts * and # lists to Markdown format
+- `_strip_templates()` - Removes {{template}} syntax
+- `_strip_refs()` - Removes <ref> citation tags
+- `_clean_extra_markup()` - Removes HTML and extra whitespace
+
+**Conversion features**:
+- Automatic wikitext to Markdown conversion for readable output
+- Handles bold, italic, headings, links, lists
+- Strips templates, references, comments, categories
+- Graceful fallback for malformed wikitext
+- Uses mwparserfromhell for robust parsing
+
 **Key design patterns**:
 - Memory-efficient streaming with `xml.etree.ElementTree.iterparse()`
 - Decompresses bz2 on-the-fly without creating intermediate files
@@ -122,6 +163,30 @@ pytest parse/test_parse.py::TestParseDump::test_happy_path -v
 - `parse_metadata` table tracks parse runs (wiki, source file, counts, duration)
 - SQLite tuning: WAL mode, page_size=4096, synchronous=NORMAL
 
+### Web App (`app.py`)
+- `index()` — `GET /`, renders the single-page UI shell (`index.html`)
+- `search()` — `GET /search?q=`, returns the `search_results.html` fragment
+- `article()` — `GET /article/{title:path}`, returns the `article.html` fragment
+- `_search_titles()` — prefix-first title lookup with substring fallback (LIKE-based)
+- `_fetch_article()` — exact-title row lookup
+- `_connect()` — per-request SQLite connection; raises 503 if the DB file is missing
+- `_db_path()` — resolves the DB path, honoring the `WIKI_DB` env var
+
+**Stack**:
+- FastAPI for the HTTP layer
+- Jinja2 templates in `templates/` (`base.html`, `index.html`, `search_results.html`, `article.html`)
+- HTMX (loaded from a CDN in `base.html`) for live search and click-to-load behavior — no JS build step
+- `markdown` library to convert the output of `convert_wikitext_to_markdown` to HTML
+- Static assets in `static/` (just `style.css`)
+
+**Key design patterns**:
+- Per-request SQLite connections (cheap; avoids cross-thread issues with FastAPI's threadpool)
+- `WIKI_DB` env var indirection so tests can swap the database without restarting
+- Fragment-only responses for `/search` and `/article` so HTMX can swap them directly into the page
+- Search uses two passes: indexed prefix LIKE first, substring LIKE only as a fallback
+- Trusted-HTML rendering: the `|safe` filter in `article.html` is sound because the HTML comes from our own converter, not user input
+- `{title:path}` route converter so titles containing slashes round-trip cleanly
+
 ### Test Coverage
 **download/test_download.py**:
 - Uses `respx` to mock HTTP calls for deterministic testing
@@ -134,8 +199,28 @@ pytest parse/test_parse.py::TestParseDump::test_happy_path -v
 - Verifies namespace filtering, atomic writes, and batch commit behavior
 - Uses `tmp_path` for filesystem isolation
 
+**parse/test_wikitext_to_markdown.py**:
+- Tests all wikitext conversion functions
+- Tests bold, italic, headings, links, lists conversion
+- Tests template/reference stripping
+- Integration tests with real article structures
+- 32 comprehensive tests
+
+**test_app.py**:
+- Uses FastAPI's `TestClient` against a hermetic in-tmp-path SQLite fixture
+- `WIKI_DB` env var is set per-test via `monkeypatch.setenv` so tests do not require a real Wikipedia dump
+- Covers index render, empty/prefix/substring/no-match search, article rendering with HTML output, URL-encoded titles, 404 on missing article, and 503 when the DB file is absent
+- 12 tests
+
 **File organization**:
 - Source code in `download/` and `parse/` directories
+- Web app at the repo root: `app.py`, `templates/`, `static/`, `test_app.py`
 - Downloads and databases in `dumps/` (created automatically)
+- Helper scripts: `get_article.py`, `example_query.py` for querying
 - Virtual environment in `.venv/` (gitignored)
-- Import pattern: `from parse.parse import ...` for parse module tests
+- Import pattern: `from parse.parse import ...` for parse module tests; `import app as web_app` in `test_app.py`
+
+**Article display**:
+- `get_article.py` - Retrieves and displays articles in clean Markdown format
+- Automatically converts wikitext to readable Markdown
+- Shows article title, size, last edit timestamp, and formatted content

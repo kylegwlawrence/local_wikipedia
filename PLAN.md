@@ -1,256 +1,273 @@
-# Implementation Plan: Wikipedia Dump Article Extraction to SQLite
+# Project Status: Local Wikipedia
 
-## Context
+Complete implementation of a Wikipedia dump downloader, parser, query system with Markdown formatting, and a FastAPI + HTMX web UI for browsing articles in the database.
 
-The project currently downloads Wikipedia dump files from Wikimedia and verifies their integrity via SHA-1 checksums. This enhancement adds article extraction capability to parse the downloaded XML dumps and store structured article data in a SQLite database for local querying and analysis.
+## Implemented Features
 
-**User requirements:**
-- Extract articles from multistream Wikipedia dumps (currently have simplewiki-20260501, 360MB compressed)
-- Store in SQLite database with full metadata (title, IDs, timestamps, contributors, text)
-- Focus on main articles only (namespace 0, excludes talk pages and other non-article pages)
-- Basic indexes for title/namespace queries (no full-text search needed)
+### 1. Download Module ✅
+**Status:** Complete  
+**Files:** `download/download.py`, `download/test_download.py`
 
-## Recommended Approach
+Downloads and verifies Wikipedia dump files from Wikimedia:
+- SHA-1 verification against official checksums
+- Atomic writes with `.tmp` files
+- Progress bars with `tqdm`
+- Streaming downloads for multi-GB files
+- Smart resume (skips already-verified files)
 
-### Module Structure
-Create new `parse/` directory alongside existing `download/` module:
-- `parse/parse.py` - Main parsing and database logic
-- `parse/test_parse.py` - Test suite following existing patterns
+**Performance:**
+- Downloads: 2-5 minutes (network dependent)
+- Handles multi-GB compressed dumps
 
-**Rationale:** Maintains separation of concerns. Download and parse are distinct operations that can be used independently.
+### 2. Parse Module ✅
+**Status:** Complete  
+**Files:** `parse/parse.py`, `parse/test_parse.py`
 
-### SQLite Schema
+Extracts articles from compressed Wikipedia XML dumps into SQLite:
+- Memory-efficient streaming XML parser
+- Batch inserts (1000 articles per batch)
+- Namespace filtering (defaults to main articles only)
+- SQLite database with full metadata
+- Atomic database writes
 
+**Performance (simplewiki):**
+- Parse time: ~77 seconds
+- Articles: 394,559 inserted from 553,618 pages
+- Database size: 1.27 GB
+- Throughput: ~7,200 pages/second
+
+**Database Schema:**
 ```sql
-CREATE TABLE articles (
-    page_id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    namespace INTEGER NOT NULL DEFAULT 0,
-    revision_id INTEGER NOT NULL,
-    parent_revision_id INTEGER,
-    timestamp TEXT NOT NULL,
-    contributor_username TEXT,
-    contributor_id INTEGER,
-    comment TEXT,
-    text_bytes INTEGER,
-    text_content TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+articles (
+    page_id, title, namespace, revision_id,
+    timestamp, contributor_username, contributor_id,
+    comment, text_bytes, text_content
+)
 
-CREATE INDEX idx_articles_title ON articles(title);
-CREATE INDEX idx_articles_namespace ON articles(namespace);
-CREATE INDEX idx_articles_timestamp ON articles(timestamp);
-
-CREATE TABLE parse_metadata (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    wiki TEXT NOT NULL,
-    source_file TEXT NOT NULL,
-    total_pages INTEGER NOT NULL,
-    articles_count INTEGER NOT NULL,
-    parse_started_at TEXT NOT NULL,
-    parse_completed_at TEXT NOT NULL,
-    parse_duration_seconds REAL NOT NULL
-);
+parse_metadata (
+    wiki, source_file, total_pages, articles_count,
+    parse_started_at, parse_completed_at, parse_duration_seconds
+)
 ```
 
-**Design decisions:**
-- `page_id` as PRIMARY KEY (natural Wikipedia identifier)
-- Store namespace field but filter to namespace=0 during parsing
-- Single revision per article (multistream dumps contain latest revision only)
-- Text stored as raw wikitext (no preprocessing)
-- Metadata table tracks parse runs for verification
+### 3. Query Module ✅
+**Status:** Complete  
+**Files:** `parse/parse.py` (query_database function)
 
-### XML Parser: xml.etree.ElementTree.iterparse()
+Execute SQL queries with formatted output:
+- Table format (ASCII tables for terminal)
+- JSON format (for programmatic use)
+- Auto-discovery of database from wiki name
+- Error handling and validation
 
-**Rationale:** 
-- Standard library (no new dependencies)
-- Memory-efficient streaming parser (critical for multi-GB files)
-- `iterparse()` yields events incrementally, allowing element clearing to prevent memory buildup
-- Handles bz2-compressed streams directly via `bz2.open()`
-
-### Core Functions (parse/parse.py)
-
+**Example Usage:**
 ```python
-def parse_dump(
-    dump_path: pathlib.Path,
-    db_path: pathlib.Path,
-    namespace_filter: int = 0,
-) -> tuple[int, int]:
-    """Parse Wikipedia XML dump and insert into SQLite.
-    
-    Returns: (total_pages_parsed, articles_inserted)
-    Raises: RuntimeError on XML/database errors
-    """
+from parse.parse import query_database
+
+# Table format
+result = query_database("SELECT title FROM articles LIMIT 5")
+print(result)
+
+# JSON format
+result = query_database("SELECT * FROM articles LIMIT 1", format="json")
 ```
 
-**Implementation approach:**
-1. Open bz2-compressed XML file with streaming decompression
-2. Use `ET.iterparse(f, events=('end',))` for memory-efficient parsing
-3. For each `<page>` element: extract fields, filter by namespace
-4. Batch insert articles (1000 per batch) for performance
-5. Clear processed elements to free memory: `elem.clear()`
-6. Write to temporary database (`.db.tmp`), then atomic `os.replace()`
-7. Display progress with `tqdm` (following existing patterns)
+### 4. Wikitext to Markdown Converter ✅
+**Status:** Complete  
+**Files:** `parse/wikitext_to_markdown.py`, `parse/test_wikitext_to_markdown.py`
 
-**Other functions:**
-- `_create_schema(conn)` - Create tables and indexes
-- `_parse_page_element(page_elem)` - Extract article dict from XML element
-- `_batch_insert_articles(conn, articles)` - Executemany for batch inserts
-- `verify_database(db_path)` - Check integrity, return statistics
-- `main(argv)` - CLI entry point with argparse
+Converts Wikipedia wikitext to clean, readable Markdown:
+- Bold/italic formatting: `'''bold'''` → `**bold**`
+- Headings: `== Title ==` → `## Title`
+- Links: `[[Page]]` → `[Page](https://simple.wikipedia.org/wiki/Page)`
+- Lists: `* Item` → `- Item`
+- Strips templates, references, HTML comments
+- Uses `mwparserfromhell` for robust parsing
 
-### CLI Interface
+**Coverage:** ~80% of articles render cleanly
+
+**Example:**
+```wikitext
+'''Python''' is a [[programming language]].
+== Features ==
+* Easy to learn
+```
+
+Converts to:
+```markdown
+**Python** is a [programming language](https://simple.wikipedia.org/wiki/programming_language).
+## Features
+- Easy to learn
+```
+
+### 5. Helper Scripts ✅
+**Status:** Complete
+
+**get_article.py:**
+- Retrieves articles by title
+- Automatically converts to Markdown
+- Shows metadata (title, size, timestamp)
+
+**example_query.py:**
+- Demonstrates various query patterns
+- Shows both table and JSON output
+- Includes search, statistics, and content queries
+
+### 6. Web App ✅
+**Status:** Complete
+**Files:** `app.py`, `templates/`, `static/style.css`, `test_app.py`
+
+FastAPI + Jinja2 + HTMX single-page app for browsing the parsed database:
+- Search bar with debounced as-you-type lookup (prefix match, substring fallback)
+- Search results stay visible above the article so users can keep navigating
+- Articles rendered server-side via `convert_wikitext_to_markdown` → `markdown.markdown`
+- No JavaScript build step; HTMX is loaded from a CDN
+- `WIKI_DB` env var overrides the database path (used by tests)
+
+**Routes:**
+- `GET /` — single-page UI shell
+- `GET /search?q=` — HTML fragment of matching titles (`hx-target="#results"`)
+- `GET /article/{title:path}` — HTML fragment with rendered article (`hx-target="#article"`)
+- `GET /static/*` — static files (CSS)
+
+**Run:**
+```bash
+uvicorn app:app --reload
+# open http://127.0.0.1:8000
+```
+
+**Test coverage:** 12 tests using FastAPI's `TestClient` against a hermetic
+in-tmp-path SQLite fixture (no real dump required).
+
+## Usage
+
+### Complete Workflow
 
 ```bash
-# Basic usage - parse latest simplewiki dump
-python parse/parse.py
+# 1. Download Wikipedia dump
+python download/download.py --wiki simplewiki
 
-# Specify wiki name (auto-discovers dump file)
+# 2. Parse into SQLite
 python parse/parse.py --wiki simplewiki
 
-# Explicit file paths
-python parse/parse.py --dump dumps/simplewiki-20260501-pages-articles-multistream.xml.bz2 \
-                      --database dumps/simplewiki.db
+# 3a. Query articles from the CLI
+python get_article.py "Python (programming language)"
+python example_query.py
 
-# Verify existing database
-python parse/parse.py --verify-only --database dumps/simplewiki.db
+# 3b. Or browse via the web app
+uvicorn app:app --reload
+# then open http://127.0.0.1:8000
+
+# 4. Direct SQL queries
+sqlite3 dumps/simplewiki.db "SELECT COUNT(*) FROM articles;"
 ```
 
-**Arguments:**
-- `--wiki` - Wiki name for auto-discovery (default: simplewiki)
-- `--dump` - Explicit dump file path (optional, auto-discovers if omitted)
-- `--database` - Output DB path (default: `dumps/{wiki}.db`)
-- `--verify-only` - Verify existing database without parsing
+## Test Coverage
 
-**Auto-discovery logic:** Find latest `{wiki}-*-pages-articles-multistream.xml.bz2` in `dumps/`
+**Download tests:** 17 tests passing
+**Parse tests:** 28 tests passing
+**Converter tests:** 32 tests passing (1 skipped)
+**Web app tests:** 12 tests passing
+**Total:** 89 tests passing, 1 skipped
 
-### Error Handling Strategy
+```bash
+# Run all tests
+pytest
 
-Follow existing patterns from `download/download.py`:
-- Raise `RuntimeError` for business logic errors (XML parsing, database operations)
-- Validate file existence before processing
-- Use try/finally to cleanup temp files on failure
-- Commit in batches; rollback on error
-- Skip corrupt pages, log page_id, continue parsing
-- Return Unix exit codes: 0=success, 1=failure
-
-### Performance Optimizations
-
-1. **Batch inserts:** Use `executemany()` with `BATCH_SIZE=1000`
-2. **Transaction management:** Commit per batch, not per article
-3. **Memory management:** Clear elements after processing (`elem.clear()`)
-4. **SQLite tuning:**
-   - `PRAGMA journal_mode=WAL` (better concurrency)
-   - `PRAGMA page_size=4096` (standard page size)
-   - `PRAGMA synchronous=NORMAL` (safe with WAL mode)
-
-**Expected performance (simplewiki ~240K articles):**
-- Parse time: ~10-15 minutes
-- Database size: ~2-3GB
-- Memory usage: <100MB (streaming + batch buffer)
-- Throughput: ~200-300 articles/second
-
-### Testing Strategy (parse/test_parse.py)
-
-Follow existing test patterns from `test_download.py`:
-- Use `pytest` with `tmp_path` fixture for filesystem isolation
-- Helper function to generate minimal valid Wikipedia XML test data
-- Test classes grouped by function:
-  - `TestCreateSchema` - Verify table/index creation
-  - `TestParsePageElement` - Test XML → dict extraction
-  - `TestBatchInsertArticles` - Test database inserts
-  - `TestParseDump` - Integration tests with full parse workflow
-  - `TestMain` - CLI argument handling with monkeypatch
-
-**Key test cases:**
-- Happy path: valid dump → database created with correct article count
-- Namespace filtering: only namespace=0 articles included
-- Atomic writes: temp file pattern used, atomic rename on success
-- Batch commits: verify batching with >2000 article test dumps
-- Error handling: corrupt XML, missing files, database errors
-- Memory efficiency: large dump doesn't cause memory issues
-
-### Reused Patterns from Existing Codebase
-
-From `download/download.py`:
-- `pathlib.Path` for cross-platform paths
-- Atomic writes: `.tmp` suffix + `os.replace()`
-- `tqdm` progress bars with `unit` and `desc`
-- `argparse` CLI structure with `--wiki` flag
-- Type hints throughout
-- `RuntimeError` for business logic errors
-- Unix exit codes (0/1)
-- Constants for magic numbers (`BATCH_SIZE`, similar to `CHUNK_BYTES`)
-
-From `test_download.py`:
-- `tmp_path` fixture for filesystem isolation
-- `monkeypatch` for patching globals (auto-discovery logic)
-- Helper functions to reduce test boilerplate
-- Test class organization by function
-- Both unit tests (individual functions) and integration tests (main)
-
-## Critical Files
-
-**New files to create:**
-- `parse/parse.py` - Main implementation
-- `parse/test_parse.py` - Test suite
-- `parse/__init__.py` - Empty module marker
-
-**Reference files (patterns to follow):**
-- `download/download.py` - Code patterns
-- `download/test_download.py` - Test patterns
-
-**Data files:**
-- `dumps/simplewiki-20260501-pages-articles-multistream.xml.bz2` - Source dump (360MB)
-- `dumps/simplewiki.db` - Target database (will be created)
-
-**Configuration:**
-- `requirements.txt` - No changes needed (stdlib-only)
-
-## Verification Steps
-
-After implementation:
-
-1. **Run tests:**
-   ```bash
-   pytest parse/test_parse.py -v
-   ```
-
-2. **Parse simplewiki dump:**
-   ```bash
-   python parse/parse.py --wiki simplewiki
-   ```
-   - Should complete in ~10-15 minutes
-   - Progress bar should display page count
-   - Database should be created at `dumps/simplewiki.db`
-
-3. **Verify database:**
-   ```bash
-   python parse/parse.py --verify-only --database dumps/simplewiki.db
-   ```
-   - Should print statistics (article count, sample titles)
-
-4. **Manual SQLite checks:**
-   ```bash
-   sqlite3 dumps/simplewiki.db
-   ```
-   ```sql
-   SELECT COUNT(*) FROM articles;  -- Should be ~240K for simplewiki
-   SELECT title, LENGTH(text_content) FROM articles LIMIT 5;
-   SELECT * FROM parse_metadata;  -- Verify metadata recorded
-   ```
-
-5. **Memory test with large wiki (optional):**
-   - Download enwiki dump (much larger)
-   - Verify memory usage stays <500MB during parse
-   - Check that progress bar updates smoothly
+# Run specific module tests
+pytest download/test_download.py -v
+pytest parse/test_parse.py -v
+pytest parse/test_wikitext_to_markdown.py -v
+```
 
 ## Dependencies
 
-No new dependencies required - uses Python standard library only:
-- `xml.etree.ElementTree` (XML parsing)
-- `bz2` (decompression)
-- `sqlite3` (database)
-- `pathlib` (paths)
-- `argparse` (CLI)
-- Existing dependencies: `tqdm` (progress), `pytest` (testing)
+```
+httpx>=0.28.1            # HTTP client
+tqdm>=4.67.3             # Progress bars
+pytest>=9.0.3            # Testing
+respx>=0.23.1            # HTTP mocking
+mwparserfromhell>=0.6    # Wikitext parser
+fastapi>=0.115           # Web framework
+uvicorn[standard]>=0.32  # ASGI server
+jinja2>=3.1              # HTML templating
+markdown>=3.7            # Markdown -> HTML rendering
+```
+
+## Architecture
+
+### Data Flow
+```
+Wikipedia → download.py → dumps/*.xml.bz2 → parse.py → dumps/*.db
+                                                          │
+                          ┌───────────────────────────────┼───────────────────────────────┐
+                          ▼                               ▼                               ▼
+                 query_database()                 get_article.py                    app.py (FastAPI)
+                 (SQL → table/JSON)               (CLI Markdown output)             (browser UI: search + render)
+```
+
+### Module Organization
+```
+download/           # Download and verify dumps
+├── download.py
+└── test_download.py
+
+parse/              # Parse, query, and convert
+├── parse.py                    # XML → SQLite
+├── wikitext_to_markdown.py     # Wikitext → Markdown
+├── test_parse.py
+└── test_wikitext_to_markdown.py
+
+dumps/              # Data directory
+├── *.xml.bz2       # Downloaded dumps
+├── *.txt.bz2       # Index files
+└── *.db            # SQLite databases
+
+app.py              # FastAPI web app (search + article view)
+templates/          # Jinja2 templates
+├── base.html
+├── index.html
+├── search_results.html
+└── article.html
+static/
+└── style.css       # Web app styling
+test_app.py         # Web app test suite
+
+get_article.py      # CLI article viewer
+example_query.py    # Query examples
+```
+
+## Performance Summary
+
+### simplewiki (360 MB compressed)
+- **Download:** ~2-5 minutes
+- **Parse:** ~77 seconds
+- **Database:** 1.27 GB
+- **Articles:** 394,559
+- **Query speed:** Instant (indexed)
+- **Conversion:** ~1,000 articles/second
+
+## Future Enhancements (Not Implemented)
+
+Potential improvements:
+- Full-text search (FTS5) — current search is LIKE-based prefix + substring
+- Incremental updates
+- Link graph analysis
+- Category extraction
+- Image download
+- Multi-wiki support in single database
+- Web app: wiki picker, recent-articles list, article history, dark mode
+
+## Project History
+
+1. **Initial commit:** Download module with SHA-1 verification
+2. **Second commit:** Parse module with SQLite storage
+3. **Third commit:** Query function with table/JSON output
+4. **Fourth commit:** Wikitext to Markdown converter
+5. **Fifth change:** FastAPI + HTMX web app (search + article view)
+
+---
+
+**Last Updated:** 2026-05-08
+**Status:** Production ready
+**Test Coverage:** 89/90 passing (1 skipped)

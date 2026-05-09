@@ -1,0 +1,37 @@
+{# Single-page UI: a search input, the search-results panel, and the
+   article panel. HTMX wires the input to /search and the result links to
+   /article/<title>; the server returns small HTML fragments that get
+   swapped into #results and #article without reloading the page. #}
+{% extends "base.html" %}
+
+{% block content %}
+<header class="site-header">
+    <h1>Local Wikipedia</h1>
+</header>
+
+{# Search box.
+   - hx-get          : endpoint that returns the result-list fragment.
+   - hx-trigger      : fire on keystrokes once typing has paused (300ms),
+                       and only when the value actually changed.
+   - hx-target       : where the returned HTML goes.
+   - hx-swap         : replace the inner HTML of the target.
+   - name="q"        : sent as the query param, matching FastAPI's `q` arg.
+   - autocomplete    : the browser's own dropdown would fight with ours. #}
+<form class="search-form" onsubmit="return false;">
+    <input
+        type="search"
+        name="q"
+        placeholder="Search articles by title..."
+        autocomplete="off"
+        autofocus
+        hx-get="/search"
+        hx-trigger="keyup changed delay:300ms, search"
+        hx-target="#results"
+        hx-swap="innerHTML">
+</form>
+
+{# Results stay visible after an article is loaded so the user can keep
+   navigating between matches. The two panels are independent HTMX targets. #}
+<section id="results" class="results"></section>
+<article id="article" class="article"></article>
+{% endblock %}
