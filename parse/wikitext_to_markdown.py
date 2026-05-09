@@ -225,8 +225,8 @@ def _parse_table_attributes(opening_line: str) -> dict[str, str]:
     class_match = re.search(r'class=["\']([^"\']+)["\']', line)
     if class_match:
         attrs['class'] = class_match.group(1)
-    elif line:
-        # Sometimes class is specified without quotes or key
+    else:
+        # Default to wikitable for clean Wikipedia-style table rendering
         attrs['class'] = 'wikitable'
 
     return attrs
@@ -541,7 +541,12 @@ def _wrap_paragraphs(text: str) -> str:
     Preserves existing HTML structure (headings, lists, tables, etc.).
     """
     # Block-level tags that should NOT be wrapped in <p>
-    block_tags = ('table', 'ul', 'ol', 'dl', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'p')
+    block_tags = (
+        'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
+        'ul', 'ol', 'dl', 'li', 'dt', 'dd',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'div', 'p', 'blockquote', 'pre'
+    )
 
     lines = text.split('\n')
     result = []

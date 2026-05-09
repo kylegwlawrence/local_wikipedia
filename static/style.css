@@ -198,6 +198,7 @@ main {
     margin: 1rem 0;
     border-collapse: collapse;
     background: #fff;
+    width: auto;
 }
 
 /* Wikitable styling (matches Wikipedia's default table style) */
@@ -207,25 +208,32 @@ main {
 }
 
 .article-body table.wikitable > caption {
-    font-weight: 600;
+    font-weight: bold;
     padding: 0.5rem;
+    text-align: left;
 }
 
 .article-body table.wikitable th,
 .article-body table.wikitable td {
     border: 1px solid #a2a9b1;
-    padding: 0.4rem 0.6rem;
+    padding: 0.5rem 0.7rem;
+    vertical-align: top;
 }
 
 .article-body table.wikitable > thead > tr > th {
     background-color: #eaecf0;
-    font-weight: 600;
+    font-weight: bold;
     text-align: center;
+    border-bottom: 2px solid #a2a9b1;
 }
 
 /* Zebra striping for table rows */
 .article-body table.wikitable > tbody > tr:nth-child(even) {
     background-color: #f8f9fa;
+}
+
+.article-body table.wikitable > tbody > tr:nth-child(odd) {
+    background-color: #fff;
 }
 
 /* Cell alignment classes */
