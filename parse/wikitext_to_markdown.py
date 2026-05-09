@@ -1,17 +1,17 @@
-"""Convert Wikipedia wikitext to clean, readable Markdown."""
+"""Convert Wikipedia wikitext to clean, readable HTML."""
 import re
 import mwparserfromhell
 
 
-def convert_wikitext_to_html(
-    wikitext: str,
-    base_url: str = "https://en.wikipedia.org/wiki/",
-) -> str:
+def convert_wikitext_to_html(wikitext: str) -> str:
     """Convert wikitext to clean HTML.
+
+    Wikilinks are rewritten to point at this app's ``/article/{title}``
+    endpoint and decorated with HTMX attributes so the front-end loads them
+    as fragments rather than full-page navigations.
 
     Args:
         wikitext: Raw Wikipedia wikitext content.
-        base_url: Base URL for wikilinks (e.g. ``https://en.wikipedia.org/wiki/``).
 
     Returns:
         Formatted HTML string.
@@ -45,12 +45,12 @@ def convert_wikitext_to_html(
 
         # Apply conversions in order
         # Block-level elements first (tables, lists, headings)
-        text = _convert_tables(text, base_url)
+        text = _convert_tables(text)
         text = _convert_lists(text)
         text = _convert_headings(text)
         # Then inline elements (bold, italic, links) - but tables handle their own
         text = _convert_bold_italic(text)
-        text = _convert_links(text, base_url)
+        text = _convert_links(text)
         # Wrap paragraphs
         text = _wrap_paragraphs(text)
         # Restore code blocks
@@ -67,15 +67,12 @@ def convert_wikitext_to_html(
 
 
 # Backward compatibility alias
-def convert_wikitext_to_markdown(
-    wikitext: str,
-    base_url: str = "https://en.wikipedia.org/wiki/",
-) -> str:
+def convert_wikitext_to_markdown(wikitext: str) -> str:
     """Deprecated: Use convert_wikitext_to_html instead.
 
     This function now returns HTML, not Markdown.
     """
-    return convert_wikitext_to_html(wikitext, base_url)
+    return convert_wikitext_to_html(wikitext)
 
 
 _TABLE_OPEN_RE = re.compile(r'^[:\s]*\{\|')
@@ -83,7 +80,7 @@ _TABLE_INNER_OPEN_RE = re.compile(r'^\s*\{\|')
 _TABLE_INNER_CLOSE_RE = re.compile(r'^\s*\|\}')
 
 
-def _convert_tables(text: str, base_url: str = "https://en.wikipedia.org/wiki/") -> str:
+def _convert_tables(text: str) -> str:
     """Convert wikitext {| ... |} tables to HTML tables.
 
     Handles tables whose opening line is prefixed with a colon (``:{|``),
@@ -111,14 +108,14 @@ def _convert_tables(text: str, base_url: str = "https://en.wikipedia.org/wiki/")
                 # Unclosed table — emit raw lines so no content is swallowed
                 out.extend(table_block)
             else:
-                out.append(_wikitext_table_to_html(table_block, base_url))
+                out.append(_wikitext_table_to_html(table_block))
         else:
             out.append(lines[i])
             i += 1
     return '\n'.join(out)
 
 
-def _wikitext_table_to_html(table_lines: list[str], base_url: str = "https://en.wikipedia.org/wiki/") -> str:
+def _wikitext_table_to_html(table_lines: list[str]) -> str:
     """Convert a collected {| ... |} block into an HTML table."""
     import html
 
@@ -202,7 +199,7 @@ def _wikitext_table_to_html(table_lines: list[str], base_url: str = "https://en.
         for row in header_rows:
             html_parts.append('<tr>')
             for cell in row:
-                html_parts.append(_render_cell(cell, tag='th', base_url=base_url))
+                html_parts.append(_render_cell(cell, tag='th'))
             html_parts.append('</tr>')
         html_parts.append('</thead>')
 
@@ -211,7 +208,7 @@ def _wikitext_table_to_html(table_lines: list[str], base_url: str = "https://en.
         for row in body_rows:
             html_parts.append('<tr>')
             for cell in row:
-                html_parts.append(_render_cell(cell, tag='td', base_url=base_url))
+                html_parts.append(_render_cell(cell, tag='td'))
             html_parts.append('</tr>')
         html_parts.append('</tbody>')
 
@@ -294,7 +291,7 @@ def _parse_cell(cell: str, is_header: bool = False) -> dict:
     return result
 
 
-def _render_cell(cell: dict, tag: str = 'td', base_url: str = "https://en.wikipedia.org/wiki/") -> str:
+def _render_cell(cell: dict, tag: str = 'td') -> str:
     """Render a cell dict as an HTML tag.
 
     Processes cell content through inline converters (bold, italic, links)
@@ -321,7 +318,7 @@ def _render_cell(cell: dict, tag: str = 'td', base_url: str = "https://en.wikipe
     content = html.unescape(content)
     # Apply inline converters
     content = _convert_bold_italic(content)
-    content = _convert_links(content, base_url)
+    content = _convert_links(content)
 
     attrs_str = ' ' + ' '.join(attrs) if attrs else ''
     return f'<{tag}{attrs_str}>{content}</{tag}>'
@@ -368,31 +365,63 @@ def _convert_headings(text: str) -> str:
     return text
 
 
-def _convert_links(text: str, base_url: str = "https://en.wikipedia.org/wiki/") -> str:
-    """Convert [[Page]] and [[Page|Label]] to HTML links.
+def _convert_links(text: str) -> str:
+    """Convert [[Page]] and [[Page|Label]] wikilinks to local article links.
+
+    Each link points at ``/article/{title}`` and carries HTMX attributes so
+    the front-end loads it as a fragment swap into ``#article`` rather than
+    a full-page navigation.
+
+    Title normalisation matches MediaWiki's convention:
+      - First letter is capitalised (``[[python]]`` → ``Python``)
+      - ``#anchor`` is split off the target and re-attached as the URL fragment
 
     Args:
         text: Text with wikitext links.
-        base_url: Base URL prepended to each page slug.
 
     Returns:
         Text with HTML links.
     """
     import html
+    from urllib.parse import quote
 
-    # Convert [[Page|Label]] links — labels may contain inline HTML like <code>
-    # tags from the source wikitext, so we don't escape them.
+    def render(target: str, label: str, escape_label: bool) -> str:
+        title, _, anchor = target.partition("#")
+        # Apply MediaWiki's first-letter capitalisation. str.capitalize()
+        # would lowercase the rest, so do it manually.
+        title = title.strip()
+        if title:
+            title = title[:1].upper() + title[1:]
+        # Build the local URL. quote() handles spaces, slashes, and other
+        # path-unsafe characters; matches what search_results.html does.
+        href = f"/article/{quote(title)}"
+        hx_url = href  # HTMX attribute uses the same URL
+        if anchor:
+            href = f"{href}#{quote(anchor)}"
+        # The href value is interpolated into an HTML attribute, so escape it.
+        href_attr = html.escape(href, quote=True)
+        hx_attr = html.escape(hx_url, quote=True)
+        rendered_label = html.escape(label) if escape_label else label
+        return (
+            f'<a href="{href_attr}" '
+            f'hx-get="{hx_attr}" '
+            f'hx-target="#article" '
+            f'hx-swap="innerHTML">{rendered_label}</a>'
+        )
+
+    # [[Page|Label]] — labels may contain inline HTML (e.g. <code>), so
+    # don't escape them.
     text = re.sub(
         r"\[\[([^\]|]+)\|([^\]]+)\]\]",
-        lambda m: f'<a href="{base_url}{html.escape(m.group(1).replace(" ", "_"))}">{m.group(2)}</a>',
-        text
+        lambda m: render(m.group(1), m.group(2), escape_label=False),
+        text,
     )
 
-    # Convert [[Page]] links — page name is plain text, safe to escape.
+    # [[Page]] — the page name doubles as the visible label and is plain text.
     text = re.sub(
         r"\[\[([^\]|]+)\]\]",
-        lambda m: f'<a href="{base_url}{html.escape(m.group(1).replace(" ", "_"))}">{html.escape(m.group(1))}</a>',
-        text
+        lambda m: render(m.group(1), m.group(1), escape_label=True),
+        text,
     )
 
     return text

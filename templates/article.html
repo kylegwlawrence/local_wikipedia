@@ -4,6 +4,9 @@
    is our own converter, not user input, so this is not an XSS vector. #}
 <header class="article-header">
     <h2>{{ title }}</h2>
+    {% if redirected_from %}
+    <p class="article-redirect">Redirected from <em>{{ redirected_from }}</em></p>
+    {% endif %}
     <p class="article-meta">
         {{ "{:,}".format(text_bytes) }} bytes &middot; last edited {{ timestamp }}
     </p>

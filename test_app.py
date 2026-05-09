@@ -37,6 +37,30 @@ FIXTURE_ARTICLES = [
         "title": "Python (programming language)",
         "wikitext": "'''Python''' is a [[programming language]].",
     },
+    # Single-hop redirect — content is just the redirect stub.
+    {
+        "page_id": 4,
+        "title": "Apples",
+        "wikitext": "#REDIRECT [[Apple]]",
+    },
+    # Two-hop redirect: Pyton -> Python (programming language) -> nothing.
+    # Tests the chain follows past one hop.
+    {
+        "page_id": 5,
+        "title": "Pyton",
+        "wikitext": "#REDIRECT [[Python (programming language)]]",
+    },
+    # Cyclic redirect to test the cycle guard.
+    {
+        "page_id": 6,
+        "title": "LoopA",
+        "wikitext": "#REDIRECT [[LoopB]]",
+    },
+    {
+        "page_id": 7,
+        "title": "LoopB",
+        "wikitext": "#REDIRECT [[LoopA]]",
+    },
 ]
 
 
@@ -174,6 +198,54 @@ class TestArticle:
         # The header shows byte size and timestamp from the DB row.
         assert "bytes" in resp.text
         assert "2026-01-01" in resp.text
+
+    def test_internal_links_point_at_local_endpoint(self, client):
+        # The Python article links to [[programming language]]; the rendered
+        # output should rewrite that to a local /article/ link with HTMX
+        # attributes so the front-end loads it as a fragment swap.
+        resp = client.get("/article/Python%20(programming%20language)")
+        assert resp.status_code == 200
+        # Title is capitalised per MediaWiki convention.
+        assert 'href="/article/Programming%20language"' in resp.text
+        assert 'hx-get="/article/Programming%20language"' in resp.text
+        assert 'hx-target="#article"' in resp.text
+        # And nothing should still be pointing at en.wikipedia.org.
+        assert "en.wikipedia.org" not in resp.text
+
+
+class TestRedirects:
+    """`_fetch_article` follows ``#REDIRECT`` chains."""
+
+    def test_single_hop_redirect_follows_to_target(self, client):
+        # 'Apples' redirects to 'Apple'; we should see Apple's content.
+        resp = client.get("/article/Apples")
+        assert resp.status_code == 200
+        assert "<h2>Apple</h2>" in resp.text
+        assert "An <strong>apple</strong>" in resp.text
+
+    def test_redirect_displays_redirected_from_note(self, client):
+        resp = client.get("/article/Apples")
+        # The note tells the user they were redirected, citing the title
+        # they originally clicked.
+        assert "Redirected from" in resp.text
+        assert "Apples" in resp.text
+
+    def test_non_redirect_has_no_redirected_from_note(self, client):
+        resp = client.get("/article/Apple")
+        assert "Redirected from" not in resp.text
+
+    def test_multi_hop_redirect_chain(self, client):
+        # Pyton -> Python (programming language).
+        resp = client.get("/article/Pyton")
+        assert resp.status_code == 200
+        assert "<h2>Python (programming language)</h2>" in resp.text
+        assert "Redirected from" in resp.text
+
+    def test_redirect_cycle_returns_404(self, client):
+        # LoopA -> LoopB -> LoopA. The cycle guard should bail out and the
+        # endpoint should surface a 404 rather than hanging.
+        resp = client.get("/article/LoopA")
+        assert resp.status_code == 404
 
 
 class TestWikitext:

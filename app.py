@@ -14,6 +14,7 @@ which is what the tests use to point at a temporary fixture database.
 """
 import os
 import pathlib
+import re
 import sqlite3
 
 from fastapi import FastAPI, HTTPException, Request
@@ -31,6 +32,17 @@ DEFAULT_DB = BASE_DIR / "dumps" / "enwiki.db"
 # can stop early.
 SEARCH_LIMIT = 20
 
+# Cap redirect-chain following so a cycle can't hang the request. MediaWiki's
+# own limit is 5 hops; matching that is conservative.
+REDIRECT_MAX_HOPS = 5
+
+# Match a wikitext redirect line, e.g. ``#REDIRECT [[Target]]``. MediaWiki
+# accepts case-insensitive ``REDIRECT`` and ignores leading whitespace.
+_REDIRECT_RE = re.compile(
+    r"^\s*#\s*REDIRECT\s*\[\[\s*([^\]\|#]+?)\s*(?:#[^\]\|]*)?(?:\|[^\]]*)?\s*\]\]",
+    re.IGNORECASE,
+)
+
 app = FastAPI(title="Local Wikipedia")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
@@ -44,16 +56,6 @@ def _db_path() -> pathlib.Path:
     after the app object has already been constructed.
     """
     return pathlib.Path(os.environ.get("WIKI_DB", DEFAULT_DB))
-
-
-def _wiki_base_url() -> str:
-    """Derive the Wikipedia base URL from the database filename.
-
-    Strips the ``wiki`` suffix from the stem to get the language code:
-    ``simplewiki`` → ``simple``, ``enwiki`` → ``en``, ``frwiki`` → ``fr``.
-    """
-    lang = _db_path().stem.removesuffix("wiki") or "en"
-    return f"https://{lang}.wikipedia.org/wiki/"
 
 
 def _connect() -> sqlite3.Connection:
@@ -124,27 +126,67 @@ def _search_titles(q: str) -> list[str]:
         conn.close()
 
 
-def _fetch_article(title: str) -> sqlite3.Row | None:
-    """Look up a single article by exact title.
+def _fetch_article(title: str) -> tuple[sqlite3.Row | None, str | None]:
+    """Look up an article by title, following ``#REDIRECT`` chains.
+
+    A third of the rows in a typical enwiki dump are redirect stubs whose
+    ``text_content`` is just ``#REDIRECT [[Target]]``. Follow those up to
+    ``REDIRECT_MAX_HOPS`` times so the user sees the real target article.
 
     Args:
         title: The article's exact title (case-sensitive, matching what the
             search endpoint returned).
 
     Returns:
-        A ``sqlite3.Row`` with ``title``, ``text_content``, ``text_bytes``,
-        and ``timestamp`` columns, or ``None`` if no row matches.
+        A tuple ``(row, redirected_from)`` where ``row`` is the resolved
+        article row (or ``None`` if not found / redirect target missing),
+        and ``redirected_from`` is the *original* title the caller asked
+        for if at least one redirect was followed, otherwise ``None``.
     """
     conn = _connect()
     try:
-        cur = conn.execute(
-            "SELECT title, text_content, text_bytes, timestamp "
-            "FROM articles WHERE title = ?",
-            (title,),
-        )
-        return cur.fetchone()
+        original_title = title
+        seen: set[str] = set()
+        for _ in range(REDIRECT_MAX_HOPS + 1):
+            if title in seen:
+                break  # cycle
+            seen.add(title)
+            cur = conn.execute(
+                "SELECT title, text_content, text_bytes, timestamp "
+                "FROM articles WHERE title = ?",
+                (title,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None, None
+            target = _redirect_target(row["text_content"])
+            if target is None:
+                redirected_from = original_title if title != original_title else None
+                return row, redirected_from
+            title = target
+        # Hit the hop cap — bail out and return what we have.
+        return None, None
     finally:
         conn.close()
+
+
+def _redirect_target(text_content: str | None) -> str | None:
+    """Return the redirect target if ``text_content`` is a redirect stub.
+
+    MediaWiki redirects look like ``#REDIRECT [[Target]]`` (case-insensitive)
+    optionally followed by a section anchor or display label which we drop
+    since neither affects the resolved article.
+    """
+    if not text_content:
+        return None
+    m = _REDIRECT_RE.match(text_content)
+    if not m:
+        return None
+    target = m.group(1).strip()
+    # MediaWiki capitalises the first letter of every page title.
+    if target:
+        target = target[:1].upper() + target[1:]
+    return target or None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -202,7 +244,7 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     Raises:
         HTTPException: 404 when no article with that exact title exists.
     """
-    row = _fetch_article(title)
+    row, _redirected_from = _fetch_article(title)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
@@ -240,11 +282,11 @@ def article(request: Request, title: str) -> HTMLResponse:
     Raises:
         HTTPException: 404 when no article with that exact title exists.
     """
-    row = _fetch_article(title)
+    row, redirected_from = _fetch_article(title)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
-    html = convert_wikitext_to_html(row["text_content"], _wiki_base_url())
+    html = convert_wikitext_to_html(row["text_content"])
 
     return templates.TemplateResponse(
         request,
@@ -254,5 +296,6 @@ def article(request: Request, title: str) -> HTMLResponse:
             "html": html,
             "text_bytes": row["text_bytes"],
             "timestamp": row["timestamp"],
+            "redirected_from": redirected_from,
         },
     )

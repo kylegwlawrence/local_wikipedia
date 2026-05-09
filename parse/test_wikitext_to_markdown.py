@@ -69,34 +69,62 @@ class TestConvertHeadings:
 
 
 class TestConvertLinks:
-    EN = "https://en.wikipedia.org/wiki/"
-    SIMPLE = "https://en.wikipedia.org/wiki/"
-
     def test_simple_link(self) -> None:
         text = "See [[Python]]"
-        assert _convert_links(text, self.EN) == 'See <a href="https://en.wikipedia.org/wiki/Python">Python</a>'
+        result = _convert_links(text)
+        assert 'href="/article/Python"' in result
+        assert 'hx-get="/article/Python"' in result
+        assert 'hx-target="#article"' in result
+        assert ">Python</a>" in result
 
     def test_link_with_label(self) -> None:
         text = "See [[Python (programming language)|Python]]"
-        assert _convert_links(text, self.EN) == 'See <a href="https://en.wikipedia.org/wiki/Python_(programming_language)">Python</a>'
+        result = _convert_links(text)
+        assert 'href="/article/Python%20%28programming%20language%29"' in result
+        assert 'hx-get="/article/Python%20%28programming%20language%29"' in result
+        assert ">Python</a>" in result
 
     def test_link_with_spaces(self) -> None:
         text = "[[United States]]"
-        assert _convert_links(text, self.EN) == '<a href="https://en.wikipedia.org/wiki/United_States">United States</a>'
+        result = _convert_links(text)
+        assert 'href="/article/United%20States"' in result
+        assert ">United States</a>" in result
 
     def test_multiple_links(self) -> None:
         text = "[[First]] and [[Second]]"
-        result = _convert_links(text, self.EN)
-        assert '<a href="https://en.wikipedia.org/wiki/First">First</a>' in result
-        assert '<a href="https://en.wikipedia.org/wiki/Second">Second</a>' in result
+        result = _convert_links(text)
+        assert 'href="/article/First"' in result
+        assert 'href="/article/Second"' in result
 
     def test_link_in_sentence(self) -> None:
         text = "Programming in [[Python]] is fun"
-        assert _convert_links(text, self.EN) == 'Programming in <a href="https://en.wikipedia.org/wiki/Python">Python</a> is fun'
+        result = _convert_links(text)
+        assert 'href="/article/Python"' in result
+        assert "Programming in " in result
+        assert "</a> is fun" in result
 
-    def test_custom_base_url(self) -> None:
-        text = "See [[Python]]"
-        assert _convert_links(text, self.SIMPLE) == 'See <a href="https://en.wikipedia.org/wiki/Python">Python</a>'
+    def test_lowercase_first_letter_capitalised(self) -> None:
+        # MediaWiki capitalises the first letter of every wikilink target.
+        text = "[[python]]"
+        result = _convert_links(text)
+        assert 'href="/article/Python"' in result
+        # The visible label keeps the original casing the author wrote.
+        assert ">python</a>" in result
+
+    def test_anchor_split_into_url_fragment(self) -> None:
+        # [[Foo#Bar]] should look up "Foo" but keep "#Bar" as the URL fragment.
+        text = "[[Python#History]]"
+        result = _convert_links(text)
+        assert 'href="/article/Python#History"' in result
+        # The hx-get URL should NOT include the anchor — it's not a different
+        # endpoint, just a scroll target on the same article.
+        assert 'hx-get="/article/Python"' in result
+
+    def test_label_can_contain_inline_code(self) -> None:
+        # Labels are not HTML-escaped so inline tags survive.
+        text = "[[Python|<code>print()</code>]]"
+        result = _convert_links(text)
+        assert "<code>print()</code></a>" in result
 
 
 class TestConvertLists:
@@ -371,8 +399,10 @@ class TestConvertTables:
             "|}"
         )
         result = convert_wikitext_to_html(wikitext)
-        assert '<a href="https://en.wikipedia.org/wiki/Python_(programming_language)">Python</a>' in result
-        assert '<a href="https://en.wikipedia.org/wiki/Guido_van_Rossum">Guido van Rossum</a>' in result
+        assert 'href="/article/Python%20%28programming%20language%29"' in result
+        assert ">Python</a>" in result
+        assert 'href="/article/Guido%20van%20Rossum"' in result
+        assert ">Guido van Rossum</a>" in result
 
     def test_full_conversion_renders_table_bold(self) -> None:
         wikitext = (
@@ -417,7 +447,8 @@ Python was created in the 1990s.
         assert "<ul>" in result
         assert "<li>Easy to learn</li>" in result
         assert "<li>Powerful</li>" in result
-        assert '<a href="https://en.wikipedia.org/wiki/Object-oriented_programming">Object-oriented</a>' in result
+        assert 'href="/article/Object-oriented%20programming"' in result
+        assert ">Object-oriented</a>" in result
 
     def test_complex_formatting(self) -> None:
         wikitext = """'''''Python''''' is both '''powerful''' and ''easy''.
@@ -435,7 +466,8 @@ See also:
         assert "<strong>powerful</strong>" in result
         assert "<em>easy</em>" in result
         assert "<h3>Syntax</h3>" in result
-        assert '<a href="https://en.wikipedia.org/wiki/Programming_language">Programming language</a>' in result
+        assert 'href="/article/Programming%20language"' in result
+        assert ">Programming language</a>" in result
 
     def test_empty_text(self) -> None:
         result = convert_wikitext_to_html("")
@@ -524,9 +556,12 @@ Art has existed since ancient times. See [[History of art]].
         assert "<h2>History</h2>" in result
 
         # Check lists converted
-        assert '<a href="https://en.wikipedia.org/wiki/Painting">Painting</a>' in result
-        assert '<a href="https://en.wikipedia.org/wiki/Sculpture">Sculpture</a>' in result
+        assert 'href="/article/Painting"' in result
+        assert ">Painting</a>" in result
+        assert 'href="/article/Sculpture"' in result
+        assert ">Sculpture</a>" in result
         assert "<ul>" in result
 
         # Check links converted
-        assert '<a href="https://en.wikipedia.org/wiki/History_of_art">History of art</a>' in result
+        assert 'href="/article/History%20of%20art"' in result
+        assert ">History of art</a>" in result

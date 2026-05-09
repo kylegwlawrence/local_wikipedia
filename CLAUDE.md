@@ -72,6 +72,8 @@ Pipeline order matters — stages are applied in sequence:
 8. `_clean_extra_markup()`
 
 **Non-obvious decisions**:
+- Wikilinks point at the local `/article/{title}` endpoint and carry HTMX attributes (`hx-get`, `hx-target="#article"`, `hx-swap="innerHTML"`) so clicks load fragments in-place rather than full-page navigating
+- Link target titles are first-letter-capitalised (MediaWiki convention: `[[python]]` resolves to `Python`); `#anchor` is split off the lookup target and re-attached as a URL fragment
 - Link labels (`[[Page|Label]]`) are **not** HTML-escaped so that inline `<code>` and other tags in the label survive
 - List item content is **not** HTML-escaped for the same reason
 - The syntaxhighlight placeholder is a `<div data-codeblock="n">` so `_wrap_paragraphs` treats it as block-level and doesn't wrap it in `<p>`
@@ -90,6 +92,7 @@ Pipeline order matters — stages are applied in sequence:
 - `WIKI_DB` env var overrides the DB path — tests use `monkeypatch.setenv` to point at a fixture DB without restarting the app
 - `{title:path}` route converter so titles with slashes round-trip cleanly
 - `|safe` in `article.html` is intentional: the HTML comes from our own converter, not user input
+- `_fetch_article()` follows `#REDIRECT [[Target]]` chains up to `REDIRECT_MAX_HOPS` (5) and returns the original title as `redirected_from` so the template can show a "Redirected from X" note. A cycle guard surfaces a 404 rather than hanging.
 
 ### Test organisation
 
