@@ -2,6 +2,7 @@
 """Simple script to get article text by title."""
 import sys
 from parse.parse import query_database
+from parse.wikitext_to_markdown import convert_wikitext_to_markdown
 
 def get_article(title):
     """Get the full text of an article by its exact title."""
@@ -30,9 +31,12 @@ if __name__ == "__main__":
     article = get_article(title)
     
     if article:
+        # Convert wikitext to clean, readable Markdown
+        markdown_content = convert_wikitext_to_markdown(article['text_content'])
+
         print(f"Title: {article['title']}")
         print(f"Size: {article['text_bytes']:,} bytes")
         print(f"Last edited: {article['timestamp']}")
         print(f"\n{'='*80}")
-        print(article['text_content'])
+        print(markdown_content)
         print(f"{'='*80}")
