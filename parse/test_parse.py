@@ -403,6 +403,38 @@ class TestParseDump:
         with pytest.raises(RuntimeError, match="Dump file not found"):
             parse_dump(dump_path, db_path)
 
+    def test_truncated_dump_saves_partial_results(self, tmp_path: pathlib.Path) -> None:
+        # Simulate a partial download by writing a bz2 file whose XML is valid
+        # for the first two articles but is cut off mid-document (no closing
+        # </mediawiki>). The bz2 layer decompresses fine; the XML parser raises
+        # ET.ParseError at the truncation point.
+        ns = "http://www.mediawiki.org/xml/export-0.11/"
+        complete_pages = "".join(
+            _minimal_page_xml(page_id=i, title=f"Article {i}", text=f"Content {i}")
+            for i in range(1, 3)
+        )
+        # Intentionally omit the closing </mediawiki> tag
+        truncated_xml = f'<mediawiki xmlns="{ns}"><siteinfo></siteinfo>{complete_pages}'
+
+        truncated_path = tmp_path / "enwiki-20260501-pages-articles.xml.bz2.tmp"
+        with bz2.open(truncated_path, "wb") as f:
+            f.write(truncated_xml.encode("utf-8"))
+
+        db_path = tmp_path / "enwiki.db"
+
+        # Should not raise — partial results are saved
+        total_pages, articles_inserted = parse_dump(truncated_path, db_path)
+
+        assert db_path.exists()
+        assert articles_inserted == 2
+
+        # Metadata row must be present
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM parse_metadata")
+        assert cursor.fetchone()[0] == 1
+        conn.close()
+
 
 # ---------------------------------------------------------------------------
 # query_database

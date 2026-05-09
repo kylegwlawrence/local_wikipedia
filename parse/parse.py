@@ -258,32 +258,44 @@ def parse_dump(
 
         print(f"Parsing {dump_path.name} ...", flush=True)
 
+        truncated = False
         with bz2.open(dump_path, "rb") as f:
             # Use iterparse for memory-efficient streaming
             context = ET.iterparse(f, events=("end",))
 
             with tqdm(unit="pages", desc="Parsing dump") as pbar:
-                for event, elem in context:
-                    # Process each <page> element
-                    if elem.tag == "{http://www.mediawiki.org/xml/export-0.11/}page":
-                        total_pages += 1
+                try:
+                    for event, elem in context:
+                        # Process each <page> element
+                        if elem.tag == "{http://www.mediawiki.org/xml/export-0.11/}page":
+                            total_pages += 1
 
-                        article = _parse_page_element(elem)
+                            article = _parse_page_element(elem)
 
-                        # Filter by namespace
-                        if article and article["namespace"] == namespace_filter:
-                            batch.append(article)
-                            articles_inserted += 1
+                            # Filter by namespace
+                            if article and article["namespace"] == namespace_filter:
+                                batch.append(article)
+                                articles_inserted += 1
 
-                            # Batch insert for performance
-                            if len(batch) >= BATCH_SIZE:
-                                _batch_insert_articles(conn, batch)
-                                conn.commit()
-                                batch.clear()
+                                # Batch insert for performance
+                                if len(batch) >= BATCH_SIZE:
+                                    _batch_insert_articles(conn, batch)
+                                    conn.commit()
+                                    batch.clear()
 
-                        # Clear element to free memory
-                        elem.clear()
-                        pbar.update(1)
+                            # Clear element to free memory
+                            elem.clear()
+                            pbar.update(1)
+                except (ET.ParseError, EOFError):
+                    # Truncated file (e.g. partial download) — save what we have
+                    truncated = True
+
+        if truncated:
+            print(
+                f"Warning: dump truncated — saving {articles_inserted:,} articles "
+                "parsed before end of file",
+                flush=True,
+            )
 
         # Insert remaining batch
         if batch:
@@ -310,13 +322,6 @@ def parse_dump(
 
         return total_pages, articles_inserted
 
-    except ET.ParseError as e:
-        # Cleanup temp file on error
-        try:
-            tmp_db.unlink()
-        except FileNotFoundError:
-            pass
-        raise RuntimeError(f"XML parsing failed: {e}")
     except sqlite3.Error as e:
         # Cleanup temp file on error
         try:
@@ -478,6 +483,9 @@ def verify_database(db_path: pathlib.Path) -> dict[str, Any]:
 def _find_latest_dump(wiki: str) -> pathlib.Path | None:
     """Find the latest dump file for a given wiki in the dumps directory.
 
+    Checks patterns in preference order: multistream (for random-access wikis
+    like simplewiki), monolithic, then partial .tmp downloads.
+
     Args:
         wiki: Wiki name (e.g., simplewiki, enwiki).
 
@@ -487,11 +495,16 @@ def _find_latest_dump(wiki: str) -> pathlib.Path | None:
     if not DUMPS_DIR.exists():
         return None
 
-    # Find all matching dump files
-    pattern = f"{wiki}-*-pages-articles-multistream.xml.bz2"
-    matches = sorted(DUMPS_DIR.glob(pattern), reverse=True)
+    for pattern in [
+        f"{wiki}-*-pages-articles-multistream.xml.bz2",
+        f"{wiki}-*-pages-articles.xml.bz2",
+        f"{wiki}-*-pages-articles.xml.bz2.tmp",
+    ]:
+        matches = sorted(DUMPS_DIR.glob(pattern), reverse=True)
+        if matches:
+            return matches[0]
 
-    return matches[0] if matches else None
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
