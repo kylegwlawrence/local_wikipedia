@@ -158,17 +158,33 @@ main {
 .article-body a { color: var(--link); }
 .article-body a:visited { color: var(--link-visited); }
 
-.article-body pre,
+/* Inline code */
 .article-body code {
     background: var(--bg-soft);
     border-radius: 4px;
     padding: 0.1rem 0.3rem;
     font-size: 0.9em;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
+/* Code blocks */
 .article-body pre {
-    padding: 0.6rem 0.8rem;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.8rem 1rem;
     overflow-x: auto;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+/* Code inside pre blocks should not have additional styling */
+.article-body pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    border-radius: 0;
 }
 
 .article-body ul,

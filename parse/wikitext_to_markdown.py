@@ -29,7 +29,9 @@ def convert_wikitext_to_html(
         # Parse wikitext into structured object
         wikicode = mwparserfromhell.parse(wikitext)
 
-        # Strip unwanted elements first
+        # Convert code templates before stripping all templates
+        _convert_code_templates(wikicode)
+        # Strip unwanted elements
         _strip_templates(wikicode)
         _strip_refs(wikicode)
         _strip_comments(wikicode)
@@ -37,6 +39,9 @@ def convert_wikitext_to_html(
 
         # Convert to string for text-based transformations
         text = str(wikicode)
+
+        # Extract and protect code blocks from further processing
+        text, code_blocks = _extract_syntaxhighlight(text)
 
         # Apply conversions in order
         # Block-level elements first (tables, lists, headings)
@@ -48,6 +53,8 @@ def convert_wikitext_to_html(
         text = _convert_links(text, base_url)
         # Wrap paragraphs
         text = _wrap_paragraphs(text)
+        # Restore code blocks
+        text = _restore_code_blocks(text, code_blocks)
         # Clean up
         text = _clean_extra_markup(text)
 
@@ -373,14 +380,15 @@ def _convert_links(text: str, base_url: str = "https://en.wikipedia.org/wiki/") 
     """
     import html
 
-    # Convert [[Page|Label]] links
+    # Convert [[Page|Label]] links — labels may contain inline HTML like <code>
+    # tags from the source wikitext, so we don't escape them.
     text = re.sub(
         r"\[\[([^\]|]+)\|([^\]]+)\]\]",
-        lambda m: f'<a href="{base_url}{html.escape(m.group(1).replace(" ", "_"))}">{html.escape(m.group(2))}</a>',
+        lambda m: f'<a href="{base_url}{html.escape(m.group(1).replace(" ", "_"))}">{m.group(2)}</a>',
         text
     )
 
-    # Convert [[Page]] links
+    # Convert [[Page]] links — page name is plain text, safe to escape.
     text = re.sub(
         r"\[\[([^\]|]+)\]\]",
         lambda m: f'<a href="{base_url}{html.escape(m.group(1).replace(" ", "_"))}">{html.escape(m.group(1))}</a>',
@@ -402,8 +410,6 @@ def _convert_lists(text: str) -> str:
     The last prefix character determines type; prefix length determines depth.
     Mixed prefixes like #* or *# are supported naturally.
     """
-    import html
-
     lines = text.split("\n")
     converted = []
     stack = []  # Track open list tags: [type_char, ...]
@@ -428,7 +434,9 @@ def _convert_lists(text: str) -> str:
             continue
 
         prefix = m.group(1)
-        content = html.escape(m.group(2).lstrip())
+        # Don't escape — list content may contain inline HTML like <code> tags
+        # from the trusted wikitext source.
+        content = m.group(2).lstrip()
 
         # Determine what lists should be open at each level
         target_stack = list(prefix)
@@ -476,6 +484,97 @@ def _convert_lists(text: str) -> str:
     close_lists_to_level(0)
 
     return "\n".join(converted)
+
+
+def _convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert {{code|...}} templates to <code> tags.
+
+    Handles templates like {{code|lang=python|print("hello")}} and converts
+    them to <code>print("hello")</code>.
+
+    Args:
+        wikicode: Parsed wikicode object (modified in-place).
+    """
+    import html
+
+    for template in wikicode.filter_templates():
+        template_name = str(template.name).strip().lower()
+        if template_name in ('code', 'codes', 'codett', 'c', 'mono', 'tt', 'kbd'):
+            # Extract the code content from template params
+            # Format: {{code|lang=python|actual code here}}
+            # or: {{code|actual code here}}
+            params = list(template.params)
+            if params:
+                # Find the last param that doesn't look like lang= or similar
+                code_content = None
+                for param in reversed(params):
+                    param_str = str(param).strip()
+                    if '=' not in param_str or not param_str.split('=')[0].strip().isalpha():
+                        # This is the code content (either positional or named param with code)
+                        if '=' in param_str:
+                            code_content = param_str.split('=', 1)[1].strip()
+                        else:
+                            code_content = param_str
+                        break
+
+                if code_content:
+                    # Replace template with <code> tag
+                    replacement = f'<code>{html.escape(code_content)}</code>'
+                    try:
+                        wikicode.replace(template, replacement)
+                    except ValueError:
+                        pass
+
+
+def _extract_syntaxhighlight(text: str) -> tuple[str, dict[str, str]]:
+    """Extract <syntaxhighlight> blocks and replace with placeholders.
+
+    This prevents code content from being processed by other converters.
+
+    Args:
+        text: Wikitext string.
+
+    Returns:
+        Tuple of (text with placeholders, dict of placeholder -> code block HTML).
+    """
+    import html
+
+    code_blocks = {}
+    counter = 0
+
+    # Match <syntaxhighlight ...>content</syntaxhighlight>
+    pattern = r'<syntaxhighlight[^>]*>(.*?)</syntaxhighlight>'
+
+    def replace_with_placeholder(match):
+        nonlocal counter
+        content = match.group(1).strip()
+        # Escape the content for HTML
+        escaped = html.escape(content)
+        code_html = f'<pre><code>{escaped}</code></pre>'
+
+        # Use a placeholder that looks like a block element to avoid being wrapped in <p>
+        placeholder = f'<div data-codeblock="{counter}"></div>'
+        code_blocks[placeholder] = code_html
+        counter += 1
+        return placeholder
+
+    text = re.sub(pattern, replace_with_placeholder, text, flags=re.DOTALL | re.IGNORECASE)
+    return text, code_blocks
+
+
+def _restore_code_blocks(text: str, code_blocks: dict[str, str]) -> str:
+    """Restore code blocks from placeholders.
+
+    Args:
+        text: Text with placeholders.
+        code_blocks: Dict of placeholder -> code block HTML.
+
+    Returns:
+        Text with code blocks restored.
+    """
+    for placeholder, code_html in code_blocks.items():
+        text = text.replace(placeholder, code_html)
+    return text
 
 
 def _strip_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
@@ -545,7 +644,7 @@ def _wrap_paragraphs(text: str) -> str:
         'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
         'ul', 'ol', 'dl', 'li', 'dt', 'dd',
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'div', 'p', 'blockquote', 'pre'
+        'div', 'p', 'blockquote', 'pre', 'syntaxhighlight'
     )
 
     lines = text.split('\n')
