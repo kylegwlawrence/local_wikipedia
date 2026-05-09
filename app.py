@@ -5,24 +5,23 @@ Serves three things:
 - ``GET /search?q=...`` — an HTML fragment listing matching article titles,
   intended to be swapped into the page by HTMX.
 - ``GET /article/{title}`` — an HTML fragment with the article rendered
-  from wikitext to Markdown to HTML.
+  from wikitext to HTML.
 
 The app reads from the SQLite database produced by ``parse/parse.py`` and
-reuses ``parse.wikitext_to_markdown`` for the wikitext conversion step. The
-database path can be overridden with the ``WIKI_DB`` environment variable,
+uses ``parse.wikitext_to_markdown.convert_wikitext_to_html`` for conversion.
+The database path can be overridden with the ``WIKI_DB`` environment variable,
 which is what the tests use to point at a temporary fixture database.
 """
 import os
 import pathlib
 import sqlite3
 
-import markdown as md_lib
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from parse.wikitext_to_markdown import convert_wikitext_to_markdown
+from parse.wikitext_to_markdown import convert_wikitext_to_html
 
 # Resolve paths relative to this file so the app works regardless of CWD.
 BASE_DIR = pathlib.Path(__file__).parent
@@ -225,8 +224,7 @@ def article(request: Request, title: str) -> HTMLResponse:
 
     The conversion pipeline is:
         SQLite ``text_content`` (wikitext)
-            → ``convert_wikitext_to_markdown`` (cleans templates/refs, etc.)
-            → ``markdown.markdown`` (renders Markdown to HTML)
+            → ``convert_wikitext_to_html`` (converts to HTML directly)
 
     The ``{title:path}`` converter is used so titles containing slashes —
     rare but legal in MediaWiki — round-trip correctly.
@@ -246,10 +244,7 @@ def article(request: Request, title: str) -> HTMLResponse:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
-    markdown_text = convert_wikitext_to_markdown(row["text_content"], _wiki_base_url())
-    # The "extra" extension covers tables/fenced blocks; "sane_lists" stops
-    # ordered/unordered lists from bleeding into each other.
-    html = md_lib.markdown(markdown_text, extensions=["extra", "sane_lists"])
+    html = convert_wikitext_to_html(row["text_content"], _wiki_base_url())
 
     return templates.TemplateResponse(
         request,

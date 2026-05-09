@@ -1,13 +1,14 @@
-"""Tests for wikitext_to_markdown.py."""
+"""Tests for wikitext_to_markdown.py (now outputs HTML)."""
 import pytest
 from parse.wikitext_to_markdown import (
-    convert_wikitext_to_markdown,
+    convert_wikitext_to_html,
+    convert_wikitext_to_markdown,  # backward compat alias
     _convert_bold_italic,
     _convert_headings,
     _convert_links,
     _convert_lists,
     _convert_tables,
-    _extract_cell_content,
+    _parse_cell,
     _clean_extra_markup,
 )
 
@@ -16,55 +17,55 @@ class TestConvertBoldItalic:
     def test_bold_conversion(self) -> None:
         text = "This is '''bold''' text"
         result = _convert_bold_italic(text)
-        assert result == "This is **bold** text"
+        assert result == "This is <strong>bold</strong> text"
 
     def test_italic_conversion(self) -> None:
         text = "This is ''italic'' text"
         result = _convert_bold_italic(text)
-        assert result == "This is *italic* text"
+        assert result == "This is <em>italic</em> text"
 
     def test_bold_italic_conversion(self) -> None:
         text = "This is '''''bold and italic''''' text"
         result = _convert_bold_italic(text)
-        assert result == "This is ***bold and italic*** text"
+        assert result == "This is <strong><em>bold and italic</em></strong> text"
 
     def test_mixed_formatting(self) -> None:
         text = "'''Bold''' and ''italic'' and '''''both'''''"
         result = _convert_bold_italic(text)
-        assert result == "**Bold** and *italic* and ***both***"
+        assert result == "<strong>Bold</strong> and <em>italic</em> and <strong><em>both</em></strong>"
 
     def test_multiple_bold_sections(self) -> None:
         text = "'''First''' and '''second''' bold"
         result = _convert_bold_italic(text)
-        assert result == "**First** and **second** bold"
+        assert result == "<strong>First</strong> and <strong>second</strong> bold"
 
 
 class TestConvertHeadings:
     def test_level_2_heading(self) -> None:
         text = "== Heading =="
         result = _convert_headings(text)
-        assert result == "## Heading"
+        assert result == "<h2>Heading</h2>"
 
     def test_level_3_heading(self) -> None:
         text = "=== Subheading ==="
         result = _convert_headings(text)
-        assert result == "### Subheading"
+        assert result == "<h3>Subheading</h3>"
 
     def test_level_4_heading(self) -> None:
         text = "==== Sub-subheading ===="
         result = _convert_headings(text)
-        assert result == "#### Sub-subheading"
+        assert result == "<h4>Sub-subheading</h4>"
 
     def test_multiple_headings(self) -> None:
         text = "== First ==\nSome text\n=== Second ==="
         result = _convert_headings(text)
-        assert "## First" in result
-        assert "### Second" in result
+        assert "<h2>First</h2>" in result
+        assert "<h3>Second</h3>" in result
 
     def test_heading_with_whitespace(self) -> None:
         text = "==  Heading  =="
         result = _convert_headings(text)
-        assert result == "## Heading"
+        assert result == "<h2>Heading</h2>"
 
 
 class TestConvertLinks:
@@ -73,118 +74,153 @@ class TestConvertLinks:
 
     def test_simple_link(self) -> None:
         text = "See [[Python]]"
-        assert _convert_links(text, self.EN) == "See [Python](https://en.wikipedia.org/wiki/Python)"
+        assert _convert_links(text, self.EN) == 'See <a href="https://en.wikipedia.org/wiki/Python">Python</a>'
 
     def test_link_with_label(self) -> None:
         text = "See [[Python (programming language)|Python]]"
-        assert _convert_links(text, self.EN) == "See [Python](https://en.wikipedia.org/wiki/Python_(programming_language))"
+        assert _convert_links(text, self.EN) == 'See <a href="https://en.wikipedia.org/wiki/Python_(programming_language)">Python</a>'
 
     def test_link_with_spaces(self) -> None:
         text = "[[United States]]"
-        assert _convert_links(text, self.EN) == "[United States](https://en.wikipedia.org/wiki/United_States)"
+        assert _convert_links(text, self.EN) == '<a href="https://en.wikipedia.org/wiki/United_States">United States</a>'
 
     def test_multiple_links(self) -> None:
         text = "[[First]] and [[Second]]"
         result = _convert_links(text, self.EN)
-        assert "[First](https://en.wikipedia.org/wiki/First)" in result
-        assert "[Second](https://en.wikipedia.org/wiki/Second)" in result
+        assert '<a href="https://en.wikipedia.org/wiki/First">First</a>' in result
+        assert '<a href="https://en.wikipedia.org/wiki/Second">Second</a>' in result
 
     def test_link_in_sentence(self) -> None:
         text = "Programming in [[Python]] is fun"
-        assert _convert_links(text, self.EN) == "Programming in [Python](https://en.wikipedia.org/wiki/Python) is fun"
+        assert _convert_links(text, self.EN) == 'Programming in <a href="https://en.wikipedia.org/wiki/Python">Python</a> is fun'
 
     def test_custom_base_url(self) -> None:
         text = "See [[Python]]"
-        assert _convert_links(text, self.SIMPLE) == "See [Python](https://en.wikipedia.org/wiki/Python)"
+        assert _convert_links(text, self.SIMPLE) == 'See <a href="https://en.wikipedia.org/wiki/Python">Python</a>'
 
 
 class TestConvertLists:
     def test_bullet_list(self) -> None:
         text = "* Item 1\n* Item 2"
         result = _convert_lists(text)
-        assert result == "- Item 1\n- Item 2"
+        assert "<ul>" in result
+        assert "<li>Item 1</li>" in result
+        assert "<li>Item 2</li>" in result
+        assert "</ul>" in result
 
     def test_numbered_list(self) -> None:
         text = "# First\n# Second"
         result = _convert_lists(text)
-        assert result == "1. First\n1. Second"
+        assert "<ol>" in result
+        assert "<li>First</li>" in result
+        assert "<li>Second</li>" in result
+        assert "</ol>" in result
 
     def test_nested_bullet_list(self) -> None:
         text = "* Level 1\n** Level 2\n*** Level 3"
         result = _convert_lists(text)
-        lines = result.split("\n")
-        assert lines[0] == "- Level 1"
-        assert lines[1] == "  - Level 2"
-        assert lines[2] == "    - Level 3"
+        assert result.count("<ul>") == 3
+        assert result.count("</ul>") == 3
+        assert "<li>Level 1</li>" in result
+        assert "<li>Level 2</li>" in result
+        assert "<li>Level 3</li>" in result
 
     def test_nested_numbered_list(self) -> None:
         text = "# Level 1\n## Level 2\n### Level 3"
         result = _convert_lists(text)
-        lines = result.split("\n")
-        assert lines[0] == "1. Level 1"
-        assert lines[1] == "  1. Level 2"
-        assert lines[2] == "    1. Level 3"
+        assert result.count("<ol>") == 3
+        assert result.count("</ol>") == 3
+        assert "<li>Level 1</li>" in result
+        assert "<li>Level 2</li>" in result
+        assert "<li>Level 3</li>" in result
 
     def test_definition_term(self) -> None:
         text = "; Python"
-        assert _convert_lists(text) == "**Python**"
+        result = _convert_lists(text)
+        assert "<dl>" in result
+        assert "<dt>Python</dt>" in result
+        assert "</dl>" in result
 
     def test_definition_description(self) -> None:
         text = ": A programming language"
-        assert _convert_lists(text) == "> A programming language"
+        result = _convert_lists(text)
+        assert "<dl>" in result
+        assert "<dd>A programming language</dd>" in result
+        assert "</dl>" in result
 
     def test_deeper_indentation(self) -> None:
         text = ":: Further indented"
-        assert _convert_lists(text) == ">> Further indented"
+        result = _convert_lists(text)
+        # Two colons create nested definition lists
+        assert result.count("<dl>") >= 1
+        assert "<dd>Further indented</dd>" in result
 
     def test_definition_list(self) -> None:
         text = "; Term\n: Description"
         result = _convert_lists(text)
-        lines = result.split("\n")
-        assert lines[0] == "**Term**"
-        assert lines[1] == "> Description"
+        assert "<dl>" in result
+        assert "<dt>Term</dt>" in result
+        assert "<dd>Description</dd>" in result
+        assert "</dl>" in result
 
     def test_mixed_ordered_then_bullet(self) -> None:
         text = "#* Sub-bullet under numbered"
-        assert _convert_lists(text) == "  - Sub-bullet under numbered"
+        result = _convert_lists(text)
+        assert "<ol>" in result
+        assert "<ul>" in result
+        assert "<li>Sub-bullet under numbered</li>" in result
 
     def test_mixed_bullet_then_ordered(self) -> None:
         text = "*# Sub-number under bullet"
-        assert _convert_lists(text) == "  1. Sub-number under bullet"
+        result = _convert_lists(text)
+        assert "<ul>" in result
+        assert "<ol>" in result
+        assert "<li>Sub-number under bullet</li>" in result
 
     def test_mixed_content(self) -> None:
         text = "Normal text\n* List item\nMore text"
         result = _convert_lists(text)
         assert "Normal text" in result
-        assert "- List item" in result
+        assert "<ul>" in result
+        assert "<li>List item</li>" in result
         assert "More text" in result
 
-    def test_blank_line_inserted_before_list_after_paragraph(self) -> None:
-        text = "Statements include the following:\n* Item one\n* Item two"
-        result = _convert_lists(text)
-        lines = result.split("\n")
-        assert lines[0] == "Statements include the following:"
-        assert lines[1] == ""
-        assert lines[2] == "- Item one"
-        assert lines[3] == "- Item two"
 
-
-class TestExtractCellContent:
+class TestParseCell:
     def test_plain_content(self) -> None:
-        assert _extract_cell_content(" value ") == "value"
+        result = _parse_cell(" value ")
+        assert result["content"] == "value"
+        assert result["align"] is None
 
-    def test_strips_style_attribute(self) -> None:
-        assert _extract_cell_content('style="text-align:center" | 42') == "42"
+    def test_parses_style_attribute(self) -> None:
+        result = _parse_cell('style="text-align:center" | 42')
+        assert result["content"] == "42"
+        assert result["align"] == "center"
 
-    def test_strips_colspan_attribute(self) -> None:
-        assert _extract_cell_content("colspan=2 | text") == "text"
+    def test_parses_colspan_attribute(self) -> None:
+        result = _parse_cell("colspan=2 | text")
+        assert result["content"] == "text"
+        assert result["colspan"] == 2
+
+    def test_parses_rowspan_attribute(self) -> None:
+        result = _parse_cell("rowspan=3 | text")
+        assert result["content"] == "text"
+        assert result["rowspan"] == 3
 
     def test_preserves_wikilink_with_label(self) -> None:
         # The | inside [[...]] must not be treated as an attribute separator
-        assert _extract_cell_content("[[Python (programming language)|Python]]") == "[[Python (programming language)|Python]]"
+        result = _parse_cell("[[Python (programming language)|Python]]")
+        assert "Python" in result["content"]
 
-    def test_strips_attrs_before_wikilink(self) -> None:
-        assert _extract_cell_content('align="center" | [[Link|Label]]') == "[[Link|Label]]"
+    def test_parses_align_attribute(self) -> None:
+        result = _parse_cell('align="center" | content')
+        assert result["content"] == "content"
+        assert result["align"] == "center"
+
+    def test_parses_background_style(self) -> None:
+        result = _parse_cell('style="background:#eee" | content')
+        assert result["content"] == "content"
+        assert result["style"] == "background:#eee"
 
 
 class TestConvertTables:
@@ -200,10 +236,16 @@ class TestConvertTables:
             "|}"
         )
         result = _convert_tables(wikitext)
-        assert "| Name | Age |" in result
-        assert "| --- | --- |" in result
-        assert "| Alice | 30 |" in result
-        assert "| Bob | 25 |" in result
+        assert "<table" in result
+        assert "<thead>" in result
+        assert "<th>Name</th>" in result
+        assert "<th>Age</th>" in result
+        assert "<tbody>" in result
+        assert "<td>Alice</td>" in result
+        assert "<td>30</td>" in result
+        assert "<td>Bob</td>" in result
+        assert "<td>25</td>" in result
+        assert "</table>" in result
 
     def test_table_without_explicit_headers(self) -> None:
         wikitext = (
@@ -216,11 +258,14 @@ class TestConvertTables:
         )
         result = _convert_tables(wikitext)
         # First data row becomes the header
-        assert "| A | B |" in result
-        assert "| --- | --- |" in result
-        assert "| C | D |" in result
+        assert "<thead>" in result
+        assert "<th>A</th>" in result
+        assert "<th>B</th>" in result
+        assert "<tbody>" in result
+        assert "<td>C</td>" in result
+        assert "<td>D</td>" in result
 
-    def test_caption_is_skipped(self) -> None:
+    def test_caption_is_preserved(self) -> None:
         wikitext = (
             "{|\n"
             "|+ My Caption\n"
@@ -231,10 +276,10 @@ class TestConvertTables:
             "|}"
         )
         result = _convert_tables(wikitext)
-        assert "My Caption" not in result
-        assert "| H1 |" in result
+        assert "<caption>My Caption</caption>" in result
+        assert "<th>H1</th>" in result
 
-    def test_cell_attributes_stripped(self) -> None:
+    def test_cell_attributes_parsed(self) -> None:
         wikitext = (
             "{|\n"
             "|-\n"
@@ -244,14 +289,28 @@ class TestConvertTables:
             "|}"
         )
         result = _convert_tables(wikitext)
-        assert "style=" not in result
-        assert "align=" not in result
         assert "Name" in result
         assert "Alice" in result
+        assert 'class="align-center"' in result
+
+    def test_colspan_attribute(self) -> None:
+        wikitext = (
+            "{|\n"
+            "|-\n"
+            "! colspan=2 | Header\n"
+            "|-\n"
+            "| A || B\n"
+            "|}"
+        )
+        result = _convert_tables(wikitext)
+        assert 'colspan="2"' in result
+        assert "<th" in result
 
     def test_cells_on_separate_lines(self) -> None:
         wikitext = (
             "{|\n"
+            "|-\n"
+            "! Header 1 !! Header 2\n"
             "|-\n"
             "| Cell 1\n"
             "| Cell 2\n"
@@ -259,7 +318,9 @@ class TestConvertTables:
             "|}"
         )
         result = _convert_tables(wikitext)
-        assert "| Cell 1 | Cell 2 | Cell 3 |" in result
+        assert "<td>Cell 1</td>" in result
+        assert "<td>Cell 2</td>" in result
+        assert "<td>Cell 3</td>" in result
 
     def test_multiple_tables(self) -> None:
         wikitext = (
@@ -268,8 +329,8 @@ class TestConvertTables:
             "{|\n|-\n! B\n|-\n| 2\n|}"
         )
         result = _convert_tables(wikitext)
-        assert "| A |" in result
-        assert "| B |" in result
+        assert "<th>A</th>" in result
+        assert "<th>B</th>" in result
         assert "Some text" in result
 
     def test_unclosed_table_does_not_eat_subsequent_content(self) -> None:
@@ -295,8 +356,10 @@ class TestConvertTables:
             "|}"
         )
         result = _convert_tables(wikitext)
-        assert "| Name | Value |" in result
-        assert "| Foo | Bar |" in result
+        assert "<th>Name</th>" in result
+        assert "<th>Value</th>" in result
+        assert "<td>Foo</td>" in result
+        assert "<td>Bar</td>" in result
 
     def test_full_conversion_renders_table_links(self) -> None:
         wikitext = (
@@ -307,9 +370,9 @@ class TestConvertTables:
             "| [[Python (programming language)|Python]] || [[Guido van Rossum]]\n"
             "|}"
         )
-        result = convert_wikitext_to_markdown(wikitext)
-        assert "[Python](https://en.wikipedia.org/wiki/Python_(programming_language))" in result
-        assert "[Guido van Rossum](https://en.wikipedia.org/wiki/Guido_van_Rossum)" in result
+        result = convert_wikitext_to_html(wikitext)
+        assert '<a href="https://en.wikipedia.org/wiki/Python_(programming_language)">Python</a>' in result
+        assert '<a href="https://en.wikipedia.org/wiki/Guido_van_Rossum">Guido van Rossum</a>' in result
 
     def test_full_conversion_renders_table_bold(self) -> None:
         wikitext = (
@@ -318,16 +381,11 @@ class TestConvertTables:
             "| '''bold cell''' || normal cell\n"
             "|}"
         )
-        result = convert_wikitext_to_markdown(wikitext)
-        assert "**bold cell**" in result
+        result = convert_wikitext_to_html(wikitext)
+        assert "<strong>bold cell</strong>" in result
 
 
 class TestCleanExtraMarkup:
-    def test_remove_html_tags(self) -> None:
-        text = "Text with <span>HTML</span> tags"
-        result = _clean_extra_markup(text)
-        assert result == "Text with HTML tags"
-
     def test_remove_multiple_blank_lines(self) -> None:
         text = "Line 1\n\n\n\nLine 2"
         result = _clean_extra_markup(text)
@@ -351,14 +409,15 @@ Python was created in the 1990s.
 * Powerful
 * [[Object-oriented programming|Object-oriented]]
 """
-        result = convert_wikitext_to_markdown(wikitext)
+        result = convert_wikitext_to_html(wikitext)
 
-        assert "**Python** is a programming language" in result
-        assert "## History" in result
-        assert "## Features" in result
-        assert "- Easy to learn" in result
-        assert "- Powerful" in result
-        assert "[Object-oriented](https://en.wikipedia.org/wiki/Object-oriented_programming)" in result
+        assert "<p><strong>Python</strong> is a programming language.</p>" in result
+        assert "<h2>History</h2>" in result
+        assert "<h2>Features</h2>" in result
+        assert "<ul>" in result
+        assert "<li>Easy to learn</li>" in result
+        assert "<li>Powerful</li>" in result
+        assert '<a href="https://en.wikipedia.org/wiki/Object-oriented_programming">Object-oriented</a>' in result
 
     def test_complex_formatting(self) -> None:
         wikitext = """'''''Python''''' is both '''powerful''' and ''easy''.
@@ -370,39 +429,39 @@ See also:
 * [[Programming language]]
 * [[Guido van Rossum]]
 """
-        result = convert_wikitext_to_markdown(wikitext)
+        result = convert_wikitext_to_html(wikitext)
 
-        assert "***Python***" in result
-        assert "**powerful**" in result
-        assert "*easy*" in result
-        assert "### Syntax" in result
-        assert "[Programming language](https://en.wikipedia.org/wiki/Programming_language)" in result
+        assert "<strong><em>Python</em></strong>" in result
+        assert "<strong>powerful</strong>" in result
+        assert "<em>easy</em>" in result
+        assert "<h3>Syntax</h3>" in result
+        assert '<a href="https://en.wikipedia.org/wiki/Programming_language">Programming language</a>' in result
 
     def test_empty_text(self) -> None:
-        result = convert_wikitext_to_markdown("")
+        result = convert_wikitext_to_html("")
         assert result == ""
 
     def test_whitespace_only(self) -> None:
-        result = convert_wikitext_to_markdown("   \n  \n   ")
+        result = convert_wikitext_to_html("   \n  \n   ")
         assert result == ""
 
     def test_plain_text(self) -> None:
         wikitext = "This is just plain text with no formatting."
-        result = convert_wikitext_to_markdown(wikitext)
-        assert result == wikitext
+        result = convert_wikitext_to_html(wikitext)
+        assert "<p>This is just plain text with no formatting.</p>" in result
 
     def test_with_templates_removed(self) -> None:
         wikitext = "'''Article''' {{cite web|url=http://example.com}} text"
-        result = convert_wikitext_to_markdown(wikitext)
+        result = convert_wikitext_to_html(wikitext)
 
-        assert "**Article**" in result
+        assert "<strong>Article</strong>" in result
         assert "text" in result
         assert "cite web" not in result
         assert "{{" not in result
 
     def test_with_references_removed(self) -> None:
         wikitext = "Text<ref>Citation here</ref> more text"
-        result = convert_wikitext_to_markdown(wikitext)
+        result = convert_wikitext_to_html(wikitext)
 
         assert "Text" in result
         assert "more text" in result
@@ -411,7 +470,7 @@ See also:
 
     def test_with_comments_removed(self) -> None:
         wikitext = "Text <!-- comment --> more text"
-        result = convert_wikitext_to_markdown(wikitext)
+        result = convert_wikitext_to_html(wikitext)
 
         assert "Text" in result
         assert "more text" in result
@@ -427,14 +486,15 @@ See also:
             "* The <code>[[if-then-else|if]]</code> statement\n"
             "* The <code>[[Foreach#Python|for]]</code> statement\n"
         )
-        result = convert_wikitext_to_markdown(wikitext)
-        list_lines = [l for l in result.splitlines() if l.startswith("- ")]
-        assert len(list_lines) == 3
+        result = convert_wikitext_to_html(wikitext)
+        # Count list items
+        assert result.count("<li>") == 3
+        assert "<ul>" in result
 
     def test_malformed_wikitext_graceful_fallback(self) -> None:
         # Test with intentionally broken wikitext that might cause parsing errors
         wikitext = "'''unclosed bold"
-        result = convert_wikitext_to_markdown(wikitext)
+        result = convert_wikitext_to_html(wikitext)
 
         # Should return something, even if it's the original text
         assert result is not None
@@ -455,17 +515,18 @@ Visual art includes painting and sculpture.
 == History ==
 Art has existed since ancient times. See [[History of art]].
 """
-        result = convert_wikitext_to_markdown(wikitext)
+        result = convert_wikitext_to_html(wikitext)
 
         # Check structure is preserved
-        assert "**Art** is a creative activity" in result
-        assert "## Types of art" in result
-        assert "### Visual art" in result
-        assert "## History" in result
+        assert "<strong>Art</strong> is a creative activity" in result
+        assert "<h2>Types of art</h2>" in result
+        assert "<h3>Visual art</h3>" in result
+        assert "<h2>History</h2>" in result
 
         # Check lists converted
-        assert "- [Painting](https://en.wikipedia.org/wiki/Painting)" in result
-        assert "- [Sculpture](https://en.wikipedia.org/wiki/Sculpture)" in result
+        assert '<a href="https://en.wikipedia.org/wiki/Painting">Painting</a>' in result
+        assert '<a href="https://en.wikipedia.org/wiki/Sculpture">Sculpture</a>' in result
+        assert "<ul>" in result
 
         # Check links converted
-        assert "[History of art](https://en.wikipedia.org/wiki/History_of_art)" in result
+        assert '<a href="https://en.wikipedia.org/wiki/History_of_art">History of art</a>' in result

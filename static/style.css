@@ -191,3 +191,71 @@ main {
     margin: 0;
     overflow-x: auto;
 }
+
+/* --- Wikipedia-style tables ----------------------------------------- */
+
+.article-body table {
+    margin: 1rem 0;
+    border-collapse: collapse;
+    background: #fff;
+}
+
+/* Wikitable styling (matches Wikipedia's default table style) */
+.article-body table.wikitable {
+    border: 1px solid #a2a9b1;
+    color: var(--fg);
+}
+
+.article-body table.wikitable > caption {
+    font-weight: 600;
+    padding: 0.5rem;
+}
+
+.article-body table.wikitable th,
+.article-body table.wikitable td {
+    border: 1px solid #a2a9b1;
+    padding: 0.4rem 0.6rem;
+}
+
+.article-body table.wikitable > thead > tr > th {
+    background-color: #eaecf0;
+    font-weight: 600;
+    text-align: center;
+}
+
+/* Zebra striping for table rows */
+.article-body table.wikitable > tbody > tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+/* Cell alignment classes */
+.article-body table td.align-left,
+.article-body table th.align-left {
+    text-align: left;
+}
+
+.article-body table td.align-center,
+.article-body table th.align-center {
+    text-align: center;
+}
+
+.article-body table td.align-right,
+.article-body table th.align-right {
+    text-align: right;
+}
+
+/* Simple tables without wikitable class */
+.article-body table:not(.wikitable) {
+    border: 1px solid var(--border);
+}
+
+.article-body table:not(.wikitable) th,
+.article-body table:not(.wikitable) td {
+    border: 1px solid var(--border);
+    padding: 0.4rem 0.6rem;
+}
+
+.article-body table:not(.wikitable) th {
+    background-color: var(--bg-soft);
+    font-weight: 600;
+}
