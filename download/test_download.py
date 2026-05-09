@@ -8,6 +8,7 @@ import download
 from download import (
     BASE_URL,
     CHUNK_BYTES,
+    FALLBACK_SUFFIXES,
     TARGET_SUFFIXES,
     _hash_file,
     download_with_verify,
@@ -28,12 +29,21 @@ def _sha1(data: bytes) -> str:
 
 
 def _manifest_text(wiki: str, overrides: dict[str, str] | None = None) -> str:
-    """Build a valid sha1sums manifest for the two target files."""
+    """Build a valid sha1sums manifest for the two multistream target files."""
     lines = []
     for suffix in TARGET_SUFFIXES:
         filename = f"{wiki}{suffix}"
         sha1 = (overrides or {}).get(filename, _sha1(filename.encode()))
         lines.append(f"{sha1}  {filename}")
+    return "\n".join(lines) + "\n"
+
+
+def _fallback_manifest_text(wiki: str) -> str:
+    """Build a manifest containing only the monolithic articles dump (no multistream)."""
+    lines = []
+    for suffix in FALLBACK_SUFFIXES:
+        filename = f"{wiki}{suffix}"
+        lines.append(f"{_sha1(filename.encode())}  {filename}")
     return "\n".join(lines) + "\n"
 
 
@@ -126,6 +136,26 @@ class TestFetchSha1sums:
         respx.get(self._manifest_url(WIKI)).mock(return_value=httpx.Response(404))
 
         with pytest.raises(httpx.HTTPStatusError):
+            fetch_sha1sums(WIKI)
+
+    @respx.mock
+    def test_fallback_to_monolithic_when_no_multistream(self) -> None:
+        body = _fallback_manifest_text(WIKI)
+        respx.get(self._manifest_url(WIKI)).mock(return_value=httpx.Response(200, text=body))
+
+        result = fetch_sha1sums(WIKI)
+
+        assert len(result) == len(FALLBACK_SUFFIXES)
+        for suffix in FALLBACK_SUFFIXES:
+            filename = f"{WIKI}{suffix}"
+            assert filename in result
+
+    @respx.mock
+    def test_no_article_files_raises(self) -> None:
+        body = f"{'a' * 40}  {WIKI}-something-else.sql.gz\n"
+        respx.get(self._manifest_url(WIKI)).mock(return_value=httpx.Response(200, text=body))
+
+        with pytest.raises(RuntimeError, match="no article dump files"):
             fetch_sha1sums(WIKI)
 
 

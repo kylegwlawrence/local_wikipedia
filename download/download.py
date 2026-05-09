@@ -15,29 +15,35 @@ TARGET_SUFFIXES = (
     "-pages-articles-multistream.xml.bz2",
     "-pages-articles-multistream-index.txt.bz2",
 )
+# Fallback for wikis (e.g. enwiki) that publish a monolithic dump without
+# the multistream format.
+FALLBACK_SUFFIXES = ("-pages-articles.xml.bz2",)
 
-#
 CHUNK_BYTES = 1 << 20
 
 
 def fetch_sha1sums(wiki: str) -> dict[str, str]:
     """Fetch Wikimedia's sha1sums manifest for the target dump files.
 
+    Prefers the multistream format (TARGET_SUFFIXES). Falls back to the
+    monolithic articles dump (FALLBACK_SUFFIXES) for wikis such as enwiki
+    that do not publish multistream files.
+
     Args:
         wiki: The wiki identifier (e.g. ``simplewiki``, ``enwiki``).
 
     Returns:
-        A dict mapping filename to its expected hex SHA-1 digest, containing
-        only the entries matching ``TARGET_SUFFIXES``.
+        A dict mapping filename to its expected hex SHA-1 digest.
 
     Raises:
-        RuntimeError: If any expected target file is absent from the manifest.
+        RuntimeError: If neither multistream nor fallback files are present.
         httpx.HTTPStatusError: If the manifest URL returns a non-2xx response.
     """
     url = f"{BASE_URL}/{wiki}/latest/{wiki}-latest-sha1sums.txt"
     resp = httpx.get(url, timeout=30.0)
     resp.raise_for_status()
 
+    all_targets = TARGET_SUFFIXES + FALLBACK_SUFFIXES
     manifest: dict[str, str] = {}
     for line in resp.text.splitlines():
         line = line.strip()
@@ -47,16 +53,27 @@ def fetch_sha1sums(wiki: str) -> dict[str, str]:
         sha1, _, filename = line.partition("  ")
         if not filename:
             continue
-        if filename.startswith(wiki) and filename.endswith(TARGET_SUFFIXES):
+        if filename.startswith(wiki) and filename.endswith(all_targets):
             manifest[filename] = sha1
 
-    matched_suffixes = {s for f in manifest for s in TARGET_SUFFIXES if f.endswith(s)}
-    missing_suffixes = set(TARGET_SUFFIXES) - matched_suffixes
-    if missing_suffixes:
-        raise RuntimeError(
-            f"sha1sums manifest is missing target file(s): {sorted(missing_suffixes)}"
-        )
-    return manifest
+    multistream = {f: s for f, s in manifest.items() if f.endswith(TARGET_SUFFIXES)}
+    fallback = {f: s for f, s in manifest.items() if f.endswith(FALLBACK_SUFFIXES)}
+
+    if multistream:
+        matched = {s for f in multistream for s in TARGET_SUFFIXES if f.endswith(s)}
+        missing = set(TARGET_SUFFIXES) - matched
+        if missing:
+            raise RuntimeError(
+                f"sha1sums manifest is missing target file(s): {sorted(missing)}"
+            )
+        return multistream
+
+    if fallback:
+        return fallback
+
+    raise RuntimeError(
+        f"sha1sums manifest contains no article dump files for {wiki!r}"
+    )
 
 
 def _hash_file(path: pathlib.Path) -> str:
