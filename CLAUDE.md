@@ -64,6 +64,9 @@ python -m parse.cli --wiki simplewiki
 # Verify database integrity
 python -m parse.cli --verify-only --database dumps/simplewiki.db
 
+# Add FTS5 to an existing database without re-parsing
+python -m parse.cli --rebuild-fts --database dumps/enwiki.db
+
 # Run web app (open http://127.0.0.1:8000)
 uvicorn app:app --reload
 WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
@@ -117,9 +120,19 @@ Pipeline order matters — stages are applied in sequence:
 
 - `pipeline.parse_dump` streams bz2-compressed XML with `iterparse()` and clears elements after use to stay memory-efficient on multi-GB dumps
 - Batch inserts (1000 articles/batch) with WAL-mode SQLite (configured in `schema.create_schema`)
+- After all batches are committed, `parse_dump` issues `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` to bulk-populate the FTS5 index in one pass
 - Atomic database writes: parsed to `.db.tmp` then renamed; `try/finally` ensures the tmp file is removed on any failure including `KeyboardInterrupt`
 - Namespace 0 only by default (main articles)
 - `cli.main` is the CLI entry; `cli._find_latest_dump` reads `cli.DUMPS_DIR` at call time so tests can monkeypatch it
+- `--rebuild-fts` flag adds/rebuilds the FTS5 index on an existing database without re-parsing
+
+### FTS5 title search (`articles_fts`)
+
+- Virtual table: `CREATE VIRTUAL TABLE articles_fts USING fts5(title, content=articles, content_rowid=page_id, tokenize='trigram')`
+- `content=articles` makes it a content table — no data duplication, FTS index references the backing `articles` table
+- `tokenize='trigram'` supports both prefix and substring matches (e.g. searching "ril" finds "April") in a single indexed query
+- Results are ordered by BM25 relevance rank rather than alphabetically
+- Queries shorter than 3 characters fall back to an indexed prefix LIKE on `idx_articles_title` (trigram requires ≥3 chars)
 
 ### Web app (`app.py`)
 
@@ -128,7 +141,7 @@ Pipeline order matters — stages are applied in sequence:
 - `DEFAULT_DB` is derived from `paths.db_path_for(DEFAULT_WIKI)` so the default database path is never built inline twice
 - `{title:path}` route converter so titles with slashes round-trip cleanly
 - `|safe` in `article.html` is intentional: the HTML comes from our own converter, not user input
-- `_search_titles` escapes SQL LIKE wildcards (`%` and `_`) in user input via `_escape_like` + `ESCAPE '\\'` so a query like `foo_bar` doesn't silently match `foo bar`
+- `_search_titles` uses FTS5 MATCH via `_escape_fts5` (wraps input in phrase quotes); short queries (<3 chars) fall back to prefix LIKE
 - `_fetch_article()` follows `#REDIRECT [[Target]]` chains up to `REDIRECT_MAX_HOPS` (5) and returns the original title as `redirected_from` so the template can show a "Redirected from X" note. A cycle guard surfaces a 404 rather than hanging.
 
 ### Test organisation

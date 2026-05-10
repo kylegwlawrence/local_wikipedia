@@ -76,59 +76,46 @@ def _connect() -> sqlite3.Connection:
     return wiki_db.connect(path)
 
 
-def _escape_like(s: str) -> str:
-    """Escape SQL LIKE wildcards (% _) and the escape char itself.
-
-    Without this, a query like ``foo_bar`` would silently match ``foo bar``,
-    ``foo-bar``, etc. since ``_`` is a single-char wildcard in SQL LIKE.
-    Paired with ``ESCAPE '\\'`` in the query.
-    """
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+def _escape_fts5(q: str) -> str:
+    """Wrap a raw query in FTS5 phrase quotes, escaping internal double-quotes."""
+    return '"' + q.replace('"', '""') + '"'
 
 
 def _search_titles(q: str) -> list[str]:
-    """Find article titles matching ``q``, preferring prefix matches.
+    """Find article titles matching ``q`` using the FTS5 trigram index.
 
-    Strategy: run a fast prefix query (``title LIKE 'q%'``) first — this hits
-    ``idx_articles_title`` directly. If that returns fewer than ``SEARCH_LIMIT``
-    rows, fall back to a substring query (``title LIKE '%q%'``) for the
-    remainder, excluding titles already returned by the prefix pass.
+    The ``articles_fts`` virtual table uses the ``trigram`` tokenizer, which
+    supports both prefix and substring matching in a single indexed query.
+    Queries shorter than 3 characters fall back to a prefix LIKE on
+    ``idx_articles_title`` because the trigram index requires at least 3 chars.
 
     Args:
-        q: Raw search query from the user; whitespace is trimmed and SQL
-            LIKE wildcards (``%`` and ``_``) are escaped.
+        q: Raw search query from the user; whitespace is trimmed.
 
     Returns:
-        Up to ``SEARCH_LIMIT`` titles in alphabetical order within each pass.
+        Up to ``SEARCH_LIMIT`` titles ordered by BM25 relevance rank.
     """
     q = q.strip()
     if not q:
         return []
-    needle = _escape_like(q)
 
     conn = _connect()
     try:
-        # Prefix pass: indexed, sub-millisecond on ~395k rows.
-        cur = conn.execute(
-            "SELECT title FROM articles WHERE title LIKE ? ESCAPE '\\' "
-            "ORDER BY title LIMIT ?",
-            (needle + "%", SEARCH_LIMIT),
-        )
-        rows = [r["title"] for r in cur.fetchall()]
-
-        # Substring fallback: only run if the prefix pass didn't fill the
-        # quota. The NOT LIKE clause prevents duplicates between passes.
-        if len(rows) < SEARCH_LIMIT:
-            seen = set(rows)
+        if len(q) < 3:
+            needle = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             cur = conn.execute(
                 "SELECT title FROM articles WHERE title LIKE ? ESCAPE '\\' "
-                "AND title NOT LIKE ? ESCAPE '\\' ORDER BY title LIMIT ?",
-                (f"%{needle}%", needle + "%", SEARCH_LIMIT - len(rows)),
+                "ORDER BY title LIMIT ?",
+                (needle + "%", SEARCH_LIMIT),
             )
-            for r in cur.fetchall():
-                if r["title"] not in seen:
-                    rows.append(r["title"])
-        return rows
+            return [r["title"] for r in cur.fetchall()]
+
+        cur = conn.execute(
+            "SELECT title FROM articles_fts WHERE articles_fts MATCH ? "
+            "ORDER BY rank LIMIT ?",
+            (_escape_fts5(q), SEARCH_LIMIT),
+        )
+        return [r["title"] for r in cur.fetchall()]
     finally:
         conn.close()
 

@@ -131,6 +131,18 @@ class TestCreateSchema:
 
         conn.close()
 
+    def test_creates_fts_table(self, tmp_path: pathlib.Path) -> None:
+        db_path = tmp_path / "test.db"
+        conn = sqlite3.connect(db_path)
+        _create_schema(conn)
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {row[0] for row in cursor.fetchall()}
+        assert "articles_fts" in tables
+
+        conn.close()
+
     def test_creates_metadata_table(self, tmp_path: pathlib.Path) -> None:
         db_path = tmp_path / "test.db"
         conn = sqlite3.connect(db_path)

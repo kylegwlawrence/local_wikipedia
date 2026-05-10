@@ -28,6 +28,15 @@ def create_schema(conn: sqlite3.Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_articles_timestamp ON articles(timestamp)")
 
     cursor.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
+            title,
+            content=articles,
+            content_rowid=page_id,
+            tokenize='trigram'
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS parse_metadata (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             wiki TEXT NOT NULL,

@@ -1,10 +1,12 @@
 """Command-line entry point for parsing a dump into SQLite."""
 import argparse
 import pathlib
+import sqlite3
 import sys
 
 from paths import DEFAULT_WIKI, DUMPS_DIR
 from parse.pipeline import NAMESPACE_MAIN, parse_dump
+from parse.schema import create_schema
 from parse.verify import verify_database
 
 
@@ -36,9 +38,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dump", type=pathlib.Path)
     parser.add_argument("--database", type=pathlib.Path)
     parser.add_argument("--verify-only", action="store_true")
+    parser.add_argument("--rebuild-fts", action="store_true")
 
     args = parser.parse_args(argv)
     db_path = args.database or DUMPS_DIR / f"{args.wiki}.db"
+
+    if args.rebuild_fts:
+        if not db_path.exists():
+            print(f"ERROR: Database not found: {db_path}", file=sys.stderr)
+            return 1
+        try:
+            conn = sqlite3.connect(db_path)
+            create_schema(conn)
+            print("Rebuilding FTS5 index…", flush=True)
+            conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
+            conn.commit()
+            conn.close()
+            print("Done.", flush=True)
+            return 0
+        except Exception as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
 
     if args.verify_only:
         try:

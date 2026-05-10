@@ -131,6 +131,10 @@ def parse_dump(
             _batch_insert_articles(conn, batch)
             conn.commit()
 
+        print("Building FTS5 index…", flush=True)
+        conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
+        conn.commit()
+
         end_time = time.time()
         _record_metadata(
             conn,

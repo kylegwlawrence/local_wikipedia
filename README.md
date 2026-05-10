@@ -18,7 +18,8 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 - Memory-efficient streaming parser for multi-GB files
 - Batch inserts for optimal performance
 - Filters to main articles only (namespace 0)
-- Indexes for fast title/namespace/timestamp queries
+- B-tree indexes for title/namespace/timestamp queries
+- FTS5 trigram index for fast title search (prefix and substring)
 
 ### Wikitext Converter
 - Converts Wikipedia wikitext to clean, readable HTML
@@ -29,7 +30,7 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 
 ### Web App
 - FastAPI + Jinja2 + HTMX single-page UI for browsing the parsed database
-- Search bar with debounced as-you-type title lookup (prefix match, with substring fallback)
+- Search bar with debounced as-you-type title lookup via FTS5 (instant even on enwiki's 6M+ articles)
 - Articles rendered server-side: wikitext → HTML
 - Follows `#REDIRECT` chains up to 5 hops
 - No JavaScript build step; all logic stays in Python
@@ -82,6 +83,11 @@ python -m parse.cli --wiki simplewiki
 Verify an existing database:
 ```bash
 python -m parse.cli --verify-only --database dumps/simplewiki.db
+```
+
+Add FTS5 to an already-parsed database (no re-parse needed):
+```bash
+python -m parse.cli --rebuild-fts --database dumps/enwiki.db
 ```
 
 ### Step 3: Query the Database
@@ -142,7 +148,7 @@ SELECT title, timestamp FROM articles ORDER BY timestamp DESC LIMIT 10;
 3. Extracts metadata: title, IDs, timestamps, contributors, text content
 4. Filters to main articles only (namespace 0)
 5. Batch inserts articles into SQLite (1000 per batch)
-6. Creates indexes for fast querying
+6. Creates B-tree indexes and an FTS5 trigram index on title for fast querying
 7. Records parse metadata for verification
 
 ## Testing

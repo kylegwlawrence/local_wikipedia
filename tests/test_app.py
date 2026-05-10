@@ -102,6 +102,15 @@ def _build_fixture_db(path: Path) -> None:
             for a in FIXTURE_ARTICLES
         ],
     )
+    conn.execute("""
+        CREATE VIRTUAL TABLE articles_fts USING fts5(
+            title,
+            content=articles,
+            content_rowid=page_id,
+            tokenize='trigram'
+        )
+    """)
+    conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
     conn.commit()
     conn.close()
 
