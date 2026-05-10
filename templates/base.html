@@ -12,6 +12,25 @@
     {# HTMX 2.x — handles the search-on-keyup and click-to-load-article
        interactions declaratively, no custom JS needed. #}
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    {# KaTeX math rendering — vendored locally so the app works fully offline. #}
+    <link rel="stylesheet" href="{{ url_for('static', path='katex/katex.min.css') }}">
+    <script defer src="{{ url_for('static', path='katex/katex.min.js') }}"></script>
+    <script defer src="{{ url_for('static', path='katex/contrib/auto-render.min.js') }}"
+            onload="initMath()"></script>
+    <script>
+        function renderMath(el) {
+            renderMathInElement(el, {
+                delimiters: [
+                    {left: "$$", right: "$$", display: true},
+                    {left: "\\(", right: "\\)", display: false}
+                ],
+                throwOnError: false
+            });
+        }
+        function initMath() { renderMath(document.body); }
+        // Re-render after every HTMX fragment swap (articles load without a page reload).
+        document.addEventListener("htmx:afterSwap", function(e) { renderMath(e.target); });
+    </script>
 </head>
 <body>
     <main>

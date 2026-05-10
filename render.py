@@ -29,7 +29,8 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # Parse wikitext into structured object
         wikicode = mwparserfromhell.parse(wikitext)
 
-        # Convert code templates before stripping all templates
+        # Convert math and code templates before stripping all templates
+        _convert_math_templates(wikicode)
         _convert_code_templates(wikicode)
         # Strip unwanted elements
         _strip_templates(wikicode)
@@ -40,8 +41,9 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # Convert to string for text-based transformations
         text = str(wikicode)
 
-        # Extract and protect code blocks from further processing
+        # Extract and protect code/math blocks from further processing
         text, code_blocks = _extract_syntaxhighlight(text)
+        text, math_blocks = _extract_math_tags(text)
 
         # Apply conversions in order
         # Block-level elements first (tables, lists, headings)
@@ -53,8 +55,9 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         text = _convert_links(text)
         # Wrap paragraphs
         text = _wrap_paragraphs(text)
-        # Restore code blocks
+        # Restore code and math blocks
         text = _restore_code_blocks(text, code_blocks)
+        text = _restore_math_tags(text, math_blocks)
         # Clean up
         text = _clean_extra_markup(text)
 
@@ -594,6 +597,73 @@ def _restore_code_blocks(text: str, code_blocks: dict[str, str]) -> str:
     """
     for placeholder, code_html in code_blocks.items():
         text = text.replace(placeholder, code_html)
+    return text
+
+
+_MATH_TEMPLATE_NAMES = {"math", "mvar", "math block", "bigmath"}
+
+_MATH_BLOCK_RE = re.compile(
+    r'<math\b[^>]*\bdisplay\s*=\s*["\']block["\'][^>]*>(.*?)</math>',
+    re.DOTALL | re.IGNORECASE,
+)
+_MATH_INLINE_RE = re.compile(
+    r'<math(?:\s[^>]*)?>(.*?)</math>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _convert_math_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert {{math|...}} and {{mvar|...}} templates to <math> tags.
+
+    Must run before _strip_templates so the LaTeX content is preserved.
+    """
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name in _MATH_TEMPLATE_NAMES:
+            # Use str(param) (not param.value) so that an `=` inside the math
+            # expression isn't lost — mwparserfromhell treats `{{math|a = b}}`
+            # as a named parameter where `a ` is the key and ` b` the value.
+            content = str(template.params[0]) if template.params else ""
+            try:
+                wikicode.replace(template, f"<math>{content}</math>")
+            except ValueError:
+                pass
+
+
+def _extract_math_tags(text: str) -> tuple[str, dict[str, str]]:
+    """Extract <math> tags and replace with placeholders to protect LaTeX from other passes.
+
+    Block math (display="block") gets a <div> placeholder so _wrap_paragraphs
+    treats it as block-level. Inline math gets a <span> placeholder.
+
+    Returns:
+        Tuple of (text with placeholders, dict of placeholder -> final HTML).
+    """
+    math_blocks: dict[str, str] = {}
+
+    def replace_block(m: re.Match) -> str:
+        idx = len(math_blocks)
+        placeholder = f'<div data-mathblock="{idx}"></div>'
+        math_blocks[placeholder] = (
+            f'<div class="math-display">$$\n{m.group(1).strip()}\n$$</div>'
+        )
+        return placeholder
+
+    def replace_inline(m: re.Match) -> str:
+        idx = len(math_blocks)
+        placeholder = f'<span data-mathinline="{idx}"></span>'
+        math_blocks[placeholder] = f'\\({m.group(1).strip()}\\)'
+        return placeholder
+
+    text = _MATH_BLOCK_RE.sub(replace_block, text)
+    text = _MATH_INLINE_RE.sub(replace_inline, text)
+    return text, math_blocks
+
+
+def _restore_math_tags(text: str, math_blocks: dict[str, str]) -> str:
+    """Restore math placeholders to their KaTeX delimiter strings."""
+    for placeholder, rendered in math_blocks.items():
+        text = text.replace(placeholder, rendered)
     return text
 
 

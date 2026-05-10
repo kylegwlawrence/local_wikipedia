@@ -9,6 +9,8 @@ from render import (
     _convert_tables,
     _parse_cell,
     _clean_extra_markup,
+    _extract_math_tags,
+    _restore_math_tags,
 )
 
 
@@ -564,3 +566,71 @@ Art has existed since ancient times. See [[History of art]].
         # Check links converted
         assert 'href="/article/History%20of%20art"' in result
         assert ">History of art</a>" in result
+
+
+# ---------------------------------------------------------------------------
+# Math rendering
+# ---------------------------------------------------------------------------
+
+
+class TestMathRendering:
+    def test_inline_math_becomes_katex_delimiter(self) -> None:
+        result = convert_wikitext_to_html("The value <math>x^2</math> is positive.")
+        assert "\\(x^2\\)" in result
+
+    def test_block_math_becomes_display_delimiter(self) -> None:
+        result = convert_wikitext_to_html('<math display="block">Z = \\frac{x}{y}</math>')
+        assert "$$" in result
+        assert "Z = \\frac{x}{y}" in result
+        assert 'class="math-display"' in result
+
+    def test_block_math_display_single_quotes(self) -> None:
+        result = convert_wikitext_to_html("<math display='block'>\\sigma</math>")
+        assert "$$" in result
+        assert "\\sigma" in result
+
+    def test_z_test_se_formula(self) -> None:
+        formula = r"\mathrm{SE} = \frac{\sigma}{\sqrt n} = \frac{12}{\sqrt{55}} = \frac{12}{7.42} = 1.62"
+        result = convert_wikitext_to_html(f"<math>{formula}</math>")
+        assert formula in result
+        assert "\\(" in result
+        assert "\\)" in result
+
+    def test_math_not_mangled_by_bold_italic_pass(self) -> None:
+        # LaTeX uses '' in \text{} constructs; bold/italic pass must not touch it
+        result = convert_wikitext_to_html(r"<math>\text{if } x > 0</math>")
+        assert r"\text{if } x > 0" in result
+
+    def test_math_template_converted(self) -> None:
+        result = convert_wikitext_to_html("Let {{math|x^2 + y^2 = z^2}}.")
+        assert "\\(x^2 + y^2 = z^2\\)" in result
+
+    def test_mvar_template_converted(self) -> None:
+        result = convert_wikitext_to_html("The variable {{mvar|\\sigma}} represents standard deviation.")
+        assert "\\(\\sigma\\)" in result
+
+    def test_multiple_inline_formulas(self) -> None:
+        result = convert_wikitext_to_html(
+            "When <math>\\mu = 0</math> and <math>\\sigma = 1</math>."
+        )
+        assert result.count("\\(") == 2
+        assert result.count("\\)") == 2
+        assert "\\mu = 0" in result
+        assert "\\sigma = 1" in result
+
+    def test_extract_and_restore_roundtrip(self) -> None:
+        text = r'Inline <math>a + b</math> and block <math display="block">c = d</math>.'
+        processed, math_blocks = _extract_math_tags(text)
+        # Placeholders replace originals
+        assert "<math>" not in processed
+        assert "a + b" not in processed
+        # Restore
+        restored = _restore_math_tags(processed, math_blocks)
+        assert "\\(a + b\\)" in restored
+        assert "$$" in restored
+        assert "c = d" in restored
+
+    def test_empty_math_tag(self) -> None:
+        # Empty math tags should not crash
+        result = convert_wikitext_to_html("<math></math>")
+        assert result is not None

@@ -21,9 +21,10 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 - Indexes for fast title/namespace/timestamp queries
 
 ### Wikitext Converter
-- Converts Wikipedia wikitext to clean, readable Markdown
+- Converts Wikipedia wikitext to clean, readable HTML
 - Automatic conversion when displaying articles
-- Handles bold, italic, headings, links, lists
+- Handles bold, italic, headings, links, lists, tables, code blocks
+- Renders mathematical formulas using KaTeX (vendored locally — no internet required)
 - Strips templates, references, and HTML markup
 
 ### Web App
@@ -43,6 +44,10 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
+   ```
+4. Download KaTeX for offline math rendering (one-time, ~1MB):
+   ```bash
+   python download/download_katex.py
    ```
 
 ## Usage

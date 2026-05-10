@@ -27,5 +27,6 @@ htmlcov/
 
 # Project-specific
 dumps/
+static/katex/
 *.tmp
 *.bak
