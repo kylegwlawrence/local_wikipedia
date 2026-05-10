@@ -18,6 +18,44 @@ _MONTH_NAMES = (
     'July', 'August', 'September', 'October', 'November', 'December',
 )
 
+_LANG_NAMES: dict[str, str] = {
+    'af': 'Afrikaans', 'ar': 'Arabic', 'az': 'Azerbaijani',
+    'be': 'Belarusian', 'bg': 'Bulgarian', 'bn': 'Bengali',
+    'bs': 'Bosnian', 'ca': 'Catalan', 'cs': 'Czech',
+    'cy': 'Welsh', 'da': 'Danish', 'de': 'German',
+    'el': 'Greek', 'eo': 'Esperanto', 'es': 'Spanish',
+    'et': 'Estonian', 'eu': 'Basque', 'fa': 'Persian',
+    'fi': 'Finnish', 'fr': 'French', 'ga': 'Irish',
+    'gl': 'Galician', 'gu': 'Gujarati', 'he': 'Hebrew',
+    'hi': 'Hindi', 'hr': 'Croatian', 'hu': 'Hungarian',
+    'hy': 'Armenian', 'id': 'Indonesian', 'is': 'Icelandic',
+    'it': 'Italian', 'ja': 'Japanese', 'ka': 'Georgian',
+    'kk': 'Kazakh', 'km': 'Khmer', 'kn': 'Kannada',
+    'ko': 'Korean', 'ku': 'Kurdish', 'ky': 'Kyrgyz',
+    'la': 'Latin', 'lb': 'Luxembourgish', 'lt': 'Lithuanian',
+    'lv': 'Latvian', 'mk': 'Macedonian', 'ml': 'Malayalam',
+    'mn': 'Mongolian', 'mr': 'Marathi', 'ms': 'Malay',
+    'mt': 'Maltese', 'my': 'Burmese', 'nb': 'Norwegian Bokmål',
+    'ne': 'Nepali', 'nl': 'Dutch', 'nn': 'Norwegian Nynorsk',
+    'no': 'Norwegian', 'pa': 'Punjabi', 'pl': 'Polish',
+    'ps': 'Pashto', 'pt': 'Portuguese', 'ro': 'Romanian',
+    'ru': 'Russian', 'sc': 'Sardinian', 'sd': 'Sindhi',
+    'si': 'Sinhala', 'sk': 'Slovak', 'sl': 'Slovenian',
+    'sq': 'Albanian', 'sr': 'Serbian', 'sv': 'Swedish',
+    'sw': 'Swahili', 'ta': 'Tamil', 'te': 'Telugu',
+    'tg': 'Tajik', 'th': 'Thai', 'tk': 'Turkmen',
+    'tl': 'Filipino', 'tr': 'Turkish', 'tt': 'Tatar',
+    'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek',
+    'vi': 'Vietnamese', 'yi': 'Yiddish', 'zh': 'Chinese',
+    'zu': 'Zulu',
+}
+
+
+def _lang_code_to_name(code: str) -> str:
+    """Return the English name for an ISO 639 language code, or the code itself."""
+    base = code.lower().split('-')[0].split('_')[0]
+    return _LANG_NAMES.get(base, code)
+
 
 def convert_wikitext_to_html(wikitext: str) -> str:
     """Convert wikitext to clean HTML.
@@ -180,7 +218,9 @@ def _render_infobox_value_template(template) -> str | None:
         positional = [str(p.value).strip() for p in params if str(p.name).strip().isdigit()]
         # positional[0] = language code, positional[1] = text content
         if len(positional) >= 2:
-            return positional[-1]
+            lang_name = _lang_code_to_name(positional[0])
+            text = positional[-1]
+            return f'{lang_name}: <em>{text}</em>'
         return None
 
     # Simple pass-through wrappers: first positional param is the content
@@ -802,7 +842,7 @@ def _convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> Non
 
 
 def _convert_lang_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
-    """Replace {{lang|XX|text}} and {{langx|XX|...|text}} with their text content."""
+    """Replace {{lang|XX|text}} and {{langx|XX|...|text}} with 'Language: <em>text</em>'."""
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
         if name not in ('lang', 'langx'):
@@ -813,10 +853,15 @@ def _convert_lang_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> Non
             if str(p.name).strip().isdigit()
         ]
         # positional[0] = language code, positional[1] = text
-        text = positional[-1] if len(positional) >= 2 else None
+        if len(positional) >= 2:
+            lang_name = _lang_code_to_name(positional[0])
+            text = positional[-1]
+            replacement = f'{lang_name}: <em>{text}</em>'
+        else:
+            replacement = None
         try:
-            if text:
-                wikicode.replace(template, text)
+            if replacement:
+                wikicode.replace(template, replacement)
             else:
                 wikicode.remove(template)
         except ValueError:
