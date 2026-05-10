@@ -33,6 +33,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         _convert_math_templates(wikicode)
         _convert_code_templates(wikicode)
         _convert_indicator_templates(wikicode)
+        _convert_section_link_templates(wikicode)
         # Strip unwanted elements
         _strip_templates(wikicode)
         _strip_refs(wikicode)
@@ -341,7 +342,10 @@ def _convert_bold_italic(text: str) -> str:
 
 
 def _convert_headings(text: str) -> str:
-    """Convert == Heading == to <h2>Heading</h2>.
+    """Convert == Heading == to <h2 id="...">Heading</h2>.
+
+    Adds id attributes to headings so anchor links can scroll to them.
+    The id is generated from the heading text (spaces become underscores).
 
     Args:
         text: Text with wikitext headings.
@@ -349,13 +353,31 @@ def _convert_headings(text: str) -> str:
     Returns:
         Text with HTML headings.
     """
+    import html
+
+    def make_heading_id(heading_text: str) -> str:
+        """Generate a heading id from heading text.
+
+        Matches MediaWiki's convention: spaces to underscores, basic normalization.
+        """
+        # Remove HTML tags if any (from earlier conversions)
+        heading_id = re.sub(r'<[^>]+>', '', heading_text)
+        # Replace spaces with underscores
+        heading_id = heading_id.strip().replace(' ', '_')
+        return html.escape(heading_id, quote=True)
+
     # Handle heading levels 2-6 (MediaWiki uses 2+ equals)
     for level in range(6, 1, -1):  # Start from highest level to avoid partial matches
         equals = "=" * level
         # Match: ===Title=== with optional whitespace
         pattern = rf"^{re.escape(equals)}\s*(.+?)\s*{re.escape(equals)}\s*$"
-        replacement = rf"<h{level}>\1</h{level}>"
-        text = re.sub(pattern, replacement, text, flags=re.MULTILINE)
+
+        def replace_heading(match):
+            heading_text = match.group(1).strip()
+            heading_id = make_heading_id(heading_text)
+            return f'<h{level} id="{heading_id}">{heading_text}</h{level}>'
+
+        text = re.sub(pattern, replace_heading, text, flags=re.MULTILINE)
 
     return text
 
@@ -589,6 +611,37 @@ def _convert_indicator_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -
                 wikicode.replace(template, replacement)
             except ValueError:
                 pass
+
+
+def _convert_section_link_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert {{Section link|...}} templates to wikilinks.
+
+    Handles templates like {{Section link|Ferrofluid#Heat transfer}} and converts
+    them to [[Ferrofluid#Heat transfer]].
+
+    Args:
+        wikicode: Parsed wikicode object (modified in-place).
+    """
+    for template in wikicode.filter_templates():
+        template_name = str(template.name).strip().lower()
+        if template_name == 'section link':
+            params = list(template.params)
+            if params:
+                # First param is the target (e.g., "Ferrofluid#Heat transfer")
+                target = str(params[0]).strip()
+                # Second param (if exists) is custom label
+                label = str(params[1]).strip() if len(params) > 1 else None
+
+                # Convert to wikilink format
+                if label:
+                    replacement = f'[[{target}|{label}]]'
+                else:
+                    replacement = f'[[{target}]]'
+
+                try:
+                    wikicode.replace(template, replacement)
+                except ValueError:
+                    pass
 
 
 def _extract_syntaxhighlight(text: str) -> tuple[str, dict[str, str]]:

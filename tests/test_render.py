@@ -45,28 +45,33 @@ class TestConvertHeadings:
     def test_level_2_heading(self) -> None:
         text = "== Heading =="
         result = _convert_headings(text)
-        assert result == "<h2>Heading</h2>"
+        assert result == '<h2 id="Heading">Heading</h2>'
 
     def test_level_3_heading(self) -> None:
         text = "=== Subheading ==="
         result = _convert_headings(text)
-        assert result == "<h3>Subheading</h3>"
+        assert result == '<h3 id="Subheading">Subheading</h3>'
 
     def test_level_4_heading(self) -> None:
         text = "==== Sub-subheading ===="
         result = _convert_headings(text)
-        assert result == "<h4>Sub-subheading</h4>"
+        assert result == '<h4 id="Sub-subheading">Sub-subheading</h4>'
 
     def test_multiple_headings(self) -> None:
         text = "== First ==\nSome text\n=== Second ==="
         result = _convert_headings(text)
-        assert "<h2>First</h2>" in result
-        assert "<h3>Second</h3>" in result
+        assert '<h2 id="First">First</h2>' in result
+        assert '<h3 id="Second">Second</h3>' in result
 
     def test_heading_with_whitespace(self) -> None:
         text = "==  Heading  =="
         result = _convert_headings(text)
-        assert result == "<h2>Heading</h2>"
+        assert result == '<h2 id="Heading">Heading</h2>'
+
+    def test_heading_with_spaces_in_text(self) -> None:
+        text = "== Heat transfer =="
+        result = _convert_headings(text)
+        assert result == '<h2 id="Heat_transfer">Heat transfer</h2>'
 
 
 class TestConvertLinks:
@@ -443,8 +448,8 @@ Python was created in the 1990s.
         result = convert_wikitext_to_html(wikitext)
 
         assert "<p><strong>Python</strong> is a programming language.</p>" in result
-        assert "<h2>History</h2>" in result
-        assert "<h2>Features</h2>" in result
+        assert '<h2 id="History">History</h2>' in result
+        assert '<h2 id="Features">Features</h2>' in result
         assert "<ul>" in result
         assert "<li>Easy to learn</li>" in result
         assert "<li>Powerful</li>" in result
@@ -466,7 +471,7 @@ See also:
         assert "<strong><em>Python</em></strong>" in result
         assert "<strong>powerful</strong>" in result
         assert "<em>easy</em>" in result
-        assert "<h3>Syntax</h3>" in result
+        assert '<h3 id="Syntax">Syntax</h3>' in result
         assert 'href="/article/Programming%20language"' in result
         assert ">Programming language</a>" in result
 
@@ -552,9 +557,9 @@ Art has existed since ancient times. See [[History of art]].
 
         # Check structure is preserved
         assert "<strong>Art</strong> is a creative activity" in result
-        assert "<h2>Types of art</h2>" in result
-        assert "<h3>Visual art</h3>" in result
-        assert "<h2>History</h2>" in result
+        assert '<h2 id="Types_of_art">Types of art</h2>' in result
+        assert '<h3 id="Visual_art">Visual art</h3>' in result
+        assert '<h2 id="History">History</h2>' in result
 
         # Check lists converted
         assert 'href="/article/Painting"' in result
@@ -670,3 +675,28 @@ class TestMathRendering:
         assert 'indicator-no' in convert_wikitext_to_html("{{cross}}")
         assert 'indicator-unknown' in convert_wikitext_to_html("{{dunno}}")
         assert 'indicator-na' in convert_wikitext_to_html("{{n/a}}")
+
+
+class TestSectionLinkTemplates:
+    def test_section_link_basic(self) -> None:
+        """Test basic {{Section link|Page#Section}} conversion."""
+        result = convert_wikitext_to_html("{{Section link|Ferrofluid#Heat transfer}}")
+        assert 'href="/article/Ferrofluid#Heat%20transfer"' in result
+        assert ">Ferrofluid#Heat transfer</a>" in result
+
+    def test_section_link_with_label(self) -> None:
+        """Test {{Section link|Page#Section|Label}} with custom label."""
+        result = convert_wikitext_to_html("{{Section link|Ferrofluid#Heat transfer|heat transfer}}")
+        assert 'href="/article/Ferrofluid#Heat%20transfer"' in result
+        assert ">heat transfer</a>" in result
+
+    def test_section_link_in_list(self) -> None:
+        """Test section link within a list context."""
+        wikitext = """== See also ==
+* [[Ferrofluid]]
+* {{Section link|Ferrofluid#Heat transfer}}
+* [[Audio system]]"""
+        result = convert_wikitext_to_html(wikitext)
+        assert 'href="/article/Ferrofluid"' in result
+        assert 'href="/article/Ferrofluid#Heat%20transfer"' in result
+        assert 'href="/article/Audio%20system"' in result

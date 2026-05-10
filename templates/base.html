@@ -28,8 +28,37 @@
             });
         }
         function initMath() { renderMath(document.body); }
-        // Re-render after every HTMX fragment swap (articles load without a page reload).
-        document.addEventListener("htmx:afterSwap", function(e) { renderMath(e.target); });
+
+        // Capture any anchor from a clicked HTMX link before the swap fires.
+        var pendingAnchor = null;
+        document.addEventListener('click', function(e) {
+            var link = e.target.closest('a[hx-get]');
+            if (link && link.href) {
+                var hash = link.href.split('#')[1];
+                // Heading IDs use underscores (MediaWiki convention); %20-encoded
+                // spaces must be decoded then converted.
+                pendingAnchor = hash
+                    ? decodeURIComponent(hash).replace(/ /g, '_')
+                    : null;
+            } else {
+                pendingAnchor = null;
+            }
+        });
+
+        // Re-render math and scroll to anchor after every HTMX fragment swap.
+        document.addEventListener("htmx:afterSwap", function(e) {
+            renderMath(e.target);
+            if (pendingAnchor) {
+                var anchor = pendingAnchor;
+                pendingAnchor = null;
+                requestAnimationFrame(function() {
+                    var targetEl = document.getElementById(anchor);
+                    if (targetEl) {
+                        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                });
+            }
+        });
     </script>
 </head>
 <body>
