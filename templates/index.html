@@ -80,4 +80,11 @@
     </div>
   </div>
 </section>
+<script>
+document.addEventListener('click', function (e) {
+    if (!e.target.closest('.search-form') && !e.target.closest('#results')) {
+        document.getElementById('results').innerHTML = '';
+    }
+});
+</script>
 {% endblock %}
