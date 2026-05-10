@@ -354,6 +354,26 @@ def convert_indicator_templates(wikicode: mwparserfromhell.wikicode.Wikicode) ->
                 pass
 
 
+def convert_annotated_link_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Replace {{annotated link|Title|Label}} with the equivalent [[wikilink]].
+
+    Output is wikitext — the link converter picks it up later in the pipeline.
+    """
+    for template in wikicode.filter_templates():
+        if str(template.name).strip().lower() != 'annotated link':
+            continue
+        params = list(template.params)
+        if not params:
+            continue
+        target = str(params[0].value).strip()
+        label = str(params[1].value).strip() if len(params) > 1 else None
+        replacement = f'[[{target}|{label}]]' if label else f'[[{target}]]'
+        try:
+            wikicode.replace(template, replacement)
+        except ValueError:
+            pass
+
+
 def convert_section_link_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
     """Replace {{Section link|Page#Section}} with the equivalent [[wikilink]].
 

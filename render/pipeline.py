@@ -31,6 +31,7 @@ from render.protect import (
 from render.tables import convert_tables
 from render.templates import (
     collect_inline_refs,
+    convert_annotated_link_templates,
     convert_citation_templates,
     convert_code_templates,
     convert_indicator_templates,
@@ -64,6 +65,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
 
         # 1. Wikicode-level templates that produce output (must run before strip).
         convert_wikidata_templates(wikicode)
+        convert_annotated_link_templates(wikicode)
         convert_infobox_templates(wikicode)
         convert_math_templates(wikicode)
         convert_code_templates(wikicode)
