@@ -91,6 +91,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         _convert_lang_templates(wikicode)
         _convert_indicator_templates(wikicode)
         _convert_section_link_templates(wikicode)
+        _convert_citation_templates(wikicode)
         collected_refs = _collect_inline_refs(wikicode)
         _convert_reflist_template(wikicode, collected_refs)
         # Strip unwanted elements
@@ -940,6 +941,30 @@ def _convert_section_link_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                     pass
 
 
+def _convert_citation_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert {{cite ...}} and {{citation}} templates to formatted HTML.
+
+    Handles citation templates that appear directly in article text (e.g., in
+    "Further reading" sections) rather than inside <ref> tags.
+
+    Uses recursive=False to only process top-level templates, not those nested
+    inside <ref> tags (which are handled by _collect_inline_refs).
+
+    Args:
+        wikicode: Parsed wikicode object (modified in-place).
+    """
+    for template in wikicode.filter_templates(recursive=False):
+        template_name = str(template.name).strip().lower()
+        # Check if this is a citation template
+        if any(template_name.startswith(prefix) for prefix in _CITE_TEMPLATE_PREFIXES):
+            formatted = _format_cite_template(template)
+            if formatted:
+                try:
+                    wikicode.replace(template, formatted)
+                except ValueError:
+                    pass
+
+
 _CITE_TEMPLATE_PREFIXES = ('cite ', 'citation')
 
 _CITE_FIELD_ORDER = ('author', 'last', 'title', 'url', 'work', 'website',
@@ -960,10 +985,23 @@ def _format_cite_template(template) -> str:
 
     parts = []
 
-    author = fields.get('author') or (
-        (fields.get('last', '') + ', ' + fields.get('first', '')).strip(', ')
-        if 'last' in fields else ''
-    )
+    # Handle author field(s): 'author', or 'last'+'first', or 'last1'+'first1', etc.
+    author = fields.get('author')
+    if not author:
+        # Try unnumbered first
+        if 'last' in fields:
+            author = (fields.get('last', '') + ', ' + fields.get('first', '')).strip(', ')
+        else:
+            # Try numbered fields (last1, first1, last2, first2, ...)
+            authors = []
+            for i in range(1, 10):  # Support up to 9 authors
+                last = fields.get(f'last{i}')
+                first = fields.get(f'first{i}')
+                if last:
+                    authors.append((last + ', ' + first).strip(', ') if first else last)
+                elif not authors:
+                    break
+            author = '; '.join(authors) if authors else ''
     if author:
         parts.append(html.escape(author))
 
