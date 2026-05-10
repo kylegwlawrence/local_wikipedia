@@ -50,6 +50,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # Convert math and code templates before stripping all templates
         _convert_math_templates(wikicode)
         _convert_code_templates(wikicode)
+        _convert_lang_templates(wikicode)
         _convert_indicator_templates(wikicode)
         _convert_section_link_templates(wikicode)
         collected_refs = _collect_inline_refs(wikicode)
@@ -798,6 +799,28 @@ def _convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> Non
                         wikicode.replace(template, replacement)
                     except ValueError:
                         pass
+
+
+def _convert_lang_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Replace {{lang|XX|text}} and {{langx|XX|...|text}} with their text content."""
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name not in ('lang', 'langx'):
+            continue
+        positional = [
+            str(p.value).strip()
+            for p in template.params
+            if str(p.name).strip().isdigit()
+        ]
+        # positional[0] = language code, positional[1] = text
+        text = positional[-1] if len(positional) >= 2 else None
+        try:
+            if text:
+                wikicode.replace(template, text)
+            else:
+                wikicode.remove(template)
+        except ValueError:
+            pass
 
 
 def _convert_indicator_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
