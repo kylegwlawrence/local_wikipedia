@@ -17,6 +17,7 @@
     <div class="refresh-status-row">
       <span class="refresh-badge refresh-badge--{{ job.status }}">{{ job.status }}</span>
       {% if elapsed %}<span class="refresh-elapsed">{{ elapsed }}</span>{% endif %}
+      {% if started_at_display %}<span class="refresh-elapsed">{{ started_at_display }}</span>{% endif %}
     </div>
 
     {% if job.status in ('parsing', 'rebuilding', 'complete') %}

@@ -271,14 +271,33 @@ def _format_elapsed(started_at: str) -> str:
         return ""
 
 
+def _format_started_at(started_at: str) -> str:
+    try:
+        dt = datetime.fromisoformat(started_at)
+        return dt.strftime("%-d %b %Y %-I:%M %p UTC")
+    except Exception:
+        return started_at
+
+
 def _render_status_panel(
     request: Request, wiki: str, job: sqlite3.Row | None
 ) -> HTMLResponse:
-    elapsed = _format_elapsed(job["started_at"]) if job else ""
+    if not job:
+        return templates.TemplateResponse(
+            request, "refresh_panel.html", {"wiki": wiki, "job": None, "elapsed": "", "started_at_display": ""}
+        )
+    active = job["status"] in ("pending", "downloading", "parsing", "rebuilding")
+    elapsed = _format_elapsed(job["started_at"]) if active else ""
+    started_at_display = "" if active else _format_started_at(job["started_at"])
     return templates.TemplateResponse(
         request,
         "refresh_panel.html",
-        {"wiki": wiki, "job": dict(job) if job else None, "elapsed": elapsed},
+        {
+            "wiki": wiki,
+            "job": dict(job),
+            "elapsed": elapsed,
+            "started_at_display": started_at_display,
+        },
     )
 
 
