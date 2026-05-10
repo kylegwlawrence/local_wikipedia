@@ -12,6 +12,7 @@
                    hx-get="/article/{{ title|urlencode }}"
                    hx-target="#article"
                    hx-swap="innerHTML"
+                   hx-indicator="#search-spinner"
                    hx-on::after-request="document.getElementById('results').innerHTML=''">{{ title }}</a>
             </li>
         {% endfor %}
