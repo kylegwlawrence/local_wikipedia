@@ -420,3 +420,116 @@ main {
         margin: 0 0 1rem 0;
     }
 }
+
+/* --- Refresh section ------------------------------------------------ */
+
+.refresh-section {
+    margin-top: 2.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+.refresh-heading {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin: 0 0 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.refresh-wiki-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.refresh-btn {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-soft);
+    color: var(--fg);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.refresh-btn:hover {
+    border-color: var(--link);
+    color: var(--link);
+    background: #eaeefa;
+}
+
+.refresh-status-area {
+    flex: 1;
+    min-width: 0;
+}
+
+.refresh-panel {
+    display: inline-block;
+}
+
+.refresh-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.refresh-badge {
+    display: inline-block;
+    padding: 0.15em 0.55em;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.refresh-badge--pending     { background: #f0f0f0; color: #666; }
+.refresh-badge--downloading { background: #fff3cd; color: #856404; }
+.refresh-badge--parsing     { background: #cce5ff; color: #004085; }
+.refresh-badge--rebuilding  { background: #d4edda; color: #155724; }
+.refresh-badge--complete    { background: #d4edda; color: #155724; }
+.refresh-badge--failed      { background: #f8d7da; color: #721c24; }
+
+.refresh-elapsed {
+    color: var(--muted);
+    font-size: 0.85em;
+}
+
+.refresh-counts {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.05rem 1rem;
+    font-size: 0.85em;
+    margin: 0.35rem 0 0;
+}
+
+.refresh-counts dt {
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.refresh-counts dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.refresh-error {
+    margin: 0.4rem 0 0;
+    padding: 0.4rem 0.7rem;
+    background: #f8d7da;
+    color: #721c24;
+    border-radius: 4px;
+    font-size: 0.88em;
+}
+
+.refresh-idle {
+    color: var(--muted);
+    font-size: 0.88em;
+    margin: 0;
+    font-style: italic;
+}

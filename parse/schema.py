@@ -49,6 +49,32 @@ def create_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS articles_archive (
+            archive_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            archived_at          TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            page_id              INTEGER NOT NULL,
+            title                TEXT    NOT NULL,
+            namespace            INTEGER NOT NULL DEFAULT 0,
+            revision_id          INTEGER NOT NULL,
+            parent_revision_id   INTEGER,
+            timestamp            TEXT    NOT NULL,
+            contributor_username TEXT,
+            contributor_id       INTEGER,
+            comment              TEXT,
+            text_bytes           INTEGER,
+            text_content         TEXT    NOT NULL,
+            created_at           TEXT    NOT NULL
+        )
+    """)
+
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_archive_page_id ON articles_archive(page_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_archive_archived_at ON articles_archive(archived_at)"
+    )
+
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA page_size=4096")
     cursor.execute("PRAGMA synchronous=NORMAL")

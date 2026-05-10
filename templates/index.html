@@ -36,4 +36,41 @@
    navigating between matches. The two panels are independent HTMX targets. #}
 <section id="results" class="results"></section>
 <article id="article" class="article"></article>
+
+{# Refresh section — one row per wiki. Each button POSTs to trigger a
+   background download + incremental parse; the response fragment
+   self-polls every 3s until the job finishes. #}
+<section class="refresh-section">
+  <h2 class="refresh-heading">Refresh Wikipedia data</h2>
+
+  <div class="refresh-wiki-row">
+    <button class="refresh-btn"
+            hx-post="/refresh/simplewiki"
+            hx-target="#refresh-status-simplewiki"
+            hx-swap="innerHTML"
+            hx-indicator="#spinner-simplewiki">
+      Refresh SimpleWiki
+    </button>
+    <span id="spinner-simplewiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
+    <div id="refresh-status-simplewiki" class="refresh-status-area"
+         hx-get="/refresh/status/simplewiki"
+         hx-trigger="load"
+         hx-swap="innerHTML"></div>
+  </div>
+
+  <div class="refresh-wiki-row">
+    <button class="refresh-btn"
+            hx-post="/refresh/enwiki"
+            hx-target="#refresh-status-enwiki"
+            hx-swap="innerHTML"
+            hx-indicator="#spinner-enwiki">
+      Refresh EnWiki
+    </button>
+    <span id="spinner-enwiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
+    <div id="refresh-status-enwiki" class="refresh-status-area"
+         hx-get="/refresh/status/enwiki"
+         hx-trigger="load"
+         hx-swap="innerHTML"></div>
+  </div>
+</section>
 {% endblock %}

@@ -16,6 +16,9 @@ import os
 import pathlib
 import re
 import sqlite3
+import subprocess
+import sys
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -23,7 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import db as wiki_db
-from paths import BASE_DIR, DEFAULT_WIKI, db_path_for
+import jobs as refresh_jobs
+from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for
 from render import convert_wikitext_to_html
 
 DEFAULT_DB = db_path_for(DEFAULT_WIKI)
@@ -252,6 +256,79 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
             "timestamp": row["timestamp"],
         },
     )
+
+
+def _format_elapsed(started_at: str) -> str:
+    try:
+        start = datetime.fromisoformat(started_at)
+        elapsed = int((datetime.utcnow() - start).total_seconds())
+        if elapsed < 60:
+            return f"{elapsed}s"
+        if elapsed < 3600:
+            return f"{elapsed // 60}m {elapsed % 60}s"
+        return f"{elapsed // 3600}h {(elapsed % 3600) // 60}m"
+    except Exception:
+        return ""
+
+
+def _render_status_panel(
+    request: Request, wiki: str, job: sqlite3.Row | None
+) -> HTMLResponse:
+    elapsed = _format_elapsed(job["started_at"]) if job else ""
+    return templates.TemplateResponse(
+        request,
+        "refresh_panel.html",
+        {"wiki": wiki, "job": dict(job) if job else None, "elapsed": elapsed},
+    )
+
+
+@app.post("/refresh/{wiki}", response_class=HTMLResponse)
+def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
+    if wiki not in KNOWN_WIKIS:
+        raise HTTPException(status_code=400, detail=f"Unknown wiki: {wiki}")
+
+    conn = refresh_jobs.connect_jobs(JOBS_DB)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        active = refresh_jobs.get_active_job(conn, wiki)
+        if active:
+            conn.rollback()
+            return _render_status_panel(request, wiki, active)
+
+        log_path = str(BASE_DIR / "dumps" / f"{wiki}_refresh.log")
+        job_id = refresh_jobs.create_job(conn, wiki, log_path)
+        conn.commit()
+    finally:
+        conn.close()
+
+    subprocess.Popen(
+        [sys.executable, str(BASE_DIR / "worker.py"), "--wiki", wiki, "--job-id", str(job_id)],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    conn2 = refresh_jobs.connect_jobs(JOBS_DB)
+    try:
+        job = refresh_jobs.get_latest_job(conn2, wiki)
+    finally:
+        conn2.close()
+
+    return _render_status_panel(request, wiki, job)
+
+
+@app.get("/refresh/status/{wiki}", response_class=HTMLResponse)
+def refresh_status(request: Request, wiki: str) -> HTMLResponse:
+    if wiki not in KNOWN_WIKIS:
+        raise HTTPException(status_code=400, detail=f"Unknown wiki: {wiki}")
+
+    conn = refresh_jobs.connect_jobs(JOBS_DB)
+    try:
+        job = refresh_jobs.get_latest_job(conn, wiki)
+    finally:
+        conn.close()
+
+    return _render_status_panel(request, wiki, job)
 
 
 @app.get("/article/{title:path}", response_class=HTMLResponse)
