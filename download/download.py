@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 # Define wikimedia constants
 BASE_URL = "https://dumps.wikimedia.org"
-DEFAULT_WIKI = "simplewiki"
+DEFAULT_WIKI = "enwiki"
 DUMPS_DIR = pathlib.Path("dumps")
 TARGET_SUFFIXES = (
     "-pages-articles-multistream.xml.bz2",

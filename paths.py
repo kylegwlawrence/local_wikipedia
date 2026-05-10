@@ -3,7 +3,7 @@ import pathlib
 
 BASE_DIR = pathlib.Path(__file__).parent.resolve()
 DUMPS_DIR = BASE_DIR / "dumps"
-DEFAULT_WIKI = "simplewiki"
+DEFAULT_WIKI = "enwiki"
 
 
 def db_path_for(wiki: str) -> pathlib.Path:
