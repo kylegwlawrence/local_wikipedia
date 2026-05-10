@@ -22,15 +22,16 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 
 ### Wikitext Converter
 - Converts Wikipedia wikitext to clean, readable HTML
-- Automatic conversion when displaying articles
 - Handles bold, italic, headings, links, lists, tables, code blocks
+- Renders infoboxes, citations, and common templates (lang, math, indicators)
 - Renders mathematical formulas using KaTeX (vendored locally — no internet required)
-- Strips templates, references, and HTML markup
+- Modular pipeline: each stage lives in its own file under `render/`
 
 ### Web App
 - FastAPI + Jinja2 + HTMX single-page UI for browsing the parsed database
 - Search bar with debounced as-you-type title lookup (prefix match, with substring fallback)
-- Articles rendered server-side: wikitext → Markdown → HTML
+- Articles rendered server-side: wikitext → HTML
+- Follows `#REDIRECT` chains up to 5 hops
 - No JavaScript build step; all logic stays in Python
 
 ## Installation
@@ -184,7 +185,16 @@ pytest tests/test_download.py::TestDownloadWithVerify
 ├── app.py             # FastAPI web app (routes)
 ├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR)
 ├── db.py              # sqlite3 connect() helper
-├── render.py          # Wikitext → HTML converter
+├── render/            # Wikitext → HTML converter (package)
+│   ├── __init__.py    # Public API: convert_wikitext_to_html
+│   ├── pipeline.py    # Orchestrator — ordered stage list
+│   ├── data.py        # Static data tables (LANG_NAMES, INDICATORS, …)
+│   ├── templates.py   # Wikicode-level template handlers (infobox, cite, lang, math, …)
+│   ├── tables.py      # Wikitext table → HTML
+│   ├── blocks.py      # Lists, headings, paragraph wrapping
+│   ├── inline.py      # Bold/italic, wikilinks
+│   ├── protect.py     # Syntaxhighlight + math block extraction/restore
+│   └── strip.py       # Remove templates, refs, comments, categories
 ├── download/
 │   └── download.py    # Dump downloader + SHA-1 verifier
 ├── parse/
@@ -195,7 +205,7 @@ pytest tests/test_download.py::TestDownloadWithVerify
 │   └── cli.py         # `python -m parse.cli` entry point
 ├── tests/             # Pytest suite
 ├── templates/         # Jinja2 templates
-├── static/            # CSS
+├── static/            # CSS + vendored KaTeX
 ├── dumps/             # Downloaded files + parsed databases
 ├── requirements.txt
 └── README.md

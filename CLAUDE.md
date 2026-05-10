@@ -9,7 +9,7 @@ Wikipedia dump downloader, parser, and browser-based reader that:
 2. Parses compressed XML dumps and extracts articles into SQLite
 3. Serves a FastAPI + HTMX web UI for searching and reading articles
 
-The web app (`app.py`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `render.py`.
+The web app (`app.py`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `render/`.
 
 ## Layout
 
@@ -18,7 +18,16 @@ local_wikipedia/
   app.py            FastAPI app (routes + redirect/search helpers)
   paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI — absolute paths
   db.py             connect(path) -> sqlite3.Connection (Row factory)
-  render.py         wikitext → HTML converter
+  render/           wikitext → HTML converter (package)
+    __init__.py     public API: convert_wikitext_to_html
+    pipeline.py     orchestrator — ordered stage list
+    data.py         static data tables (LANG_NAMES, INDICATORS, …)
+    templates.py    wikicode-level template handlers (infobox, cite, lang, math, …)
+    tables.py       wikitext {| ... |} table → HTML
+    blocks.py       lists, headings, paragraph wrapping
+    inline.py       bold/italic, wikilinks
+    protect.py      syntaxhighlight + math block extraction/restore
+    strip.py        strip templates, refs, comments, categories
   download/
     download.py     dump downloader + SHA-1 verifier
   parse/
@@ -77,34 +86,38 @@ Wikimedia → download.py → dumps/*.xml.bz2
 
 The web app is a single-page UI: `GET /` serves the shell, HTMX drives `GET /search?q=` and `GET /article/{title:path}` as fragment swaps into `#results` and `#article` — no JS build step.
 
-### Wikitext converter (`render.py`)
+### Wikitext converter (`render/`)
 
-The converter outputs HTML directly. Entry point: `convert_wikitext_to_html`.
+Entry point: `render.convert_wikitext_to_html`. The pipeline is implemented in `render/pipeline.py`; each stage lives in its own module.
 
 Pipeline order matters — stages are applied in sequence:
 
 1. `mwparserfromhell.parse()` — structured parse of wikicode
-2. `_convert_code_templates()` — converts `{{code}}`, `{{codes}}`, `{{tt}}` etc. to `<code>` tags **before** `_strip_templates()` removes all other templates
-3. `_strip_templates / _strip_refs / _strip_comments / _strip_categories` — remove noise
-4. `_extract_syntaxhighlight()` — replaces `<syntaxhighlight>` blocks with `<div>` placeholders so subsequent converters don't process the code content (e.g. `#` comments becoming lists)
-5. `_convert_tables / _convert_lists / _convert_headings / _convert_bold_italic / _convert_links`
-6. `_wrap_paragraphs()` — wraps bare text in `<p>` tags; recognises block-level tags including all table elements so they're never double-wrapped
-7. `_restore_code_blocks()` — swaps placeholders back to `<pre><code>` blocks
-8. `_clean_extra_markup()`
+2. **Wikicode-level template handlers** (`templates.py`) — infobox, math, code, lang, indicator, section-link, citation, ref collection, reflist. Must run before stripping so output is preserved.
+3. **Stripping** (`strip.py`) — `strip_templates / strip_refs / strip_comments / strip_categories` remove any remaining noise.
+4. Flatten to string.
+5. **Protect** (`protect.py`) — replace `<syntaxhighlight>` and `<math>` blocks with `<div>` placeholders so subsequent converters don't mangle code/LaTeX content (e.g. `#` becoming a list item).
+6. **Block-level converters** (`tables.py`, `blocks.py`) — tables, lists, headings.
+7. **Inline converters** (`inline.py`) — bold/italic, wikilinks.
+8. **Paragraph wrapping** (`blocks.py`) — wraps bare text in `<p>`; recognises all block-level tags so they're never double-wrapped.
+9. **Restore** (`protect.py`) — swap placeholders back to `<pre><code>` and KaTeX delimiters.
+10. **Cleanup** (`pipeline.py`) — collapse blank lines, trim trailing whitespace.
 
 **Non-obvious decisions**:
 - Wikilinks point at the local `/article/{title}` endpoint and carry HTMX attributes (`hx-get`, `hx-target="#article"`, `hx-swap="innerHTML"`) so clicks load fragments in-place rather than full-page navigating
 - Link target titles are first-letter-capitalised (MediaWiki convention: `[[python]]` resolves to `Python`); `#anchor` is split off the lookup target and re-attached as a URL fragment
 - Link labels (`[[Page|Label]]`) are **not** HTML-escaped so that inline `<code>` and other tags in the label survive
 - List item content is **not** HTML-escaped for the same reason
-- The syntaxhighlight placeholder is a `<div data-codeblock="n">` so `_wrap_paragraphs` treats it as block-level and doesn't wrap it in `<p>`
+- The syntaxhighlight placeholder is a `<div data-codeblock="n">` so `wrap_paragraphs` treats it as block-level and doesn't wrap it in `<p>`
 - All tables default to `class="wikitable"` when no class is specified in the wikitext
+- `_render_lang(code, text)` in `templates.py` is the single source for `{{lang}}`/`{{langx}}` rendering — used by both the infobox value renderer and the body-text template handler
+- `_render_ref_body(contents)` in `templates.py` is the single source for ref-content rendering — used by both `collect_inline_refs` and `convert_reflist_template`
 
 ### Parse module (`parse/`)
 
 - `pipeline.parse_dump` streams bz2-compressed XML with `iterparse()` and clears elements after use to stay memory-efficient on multi-GB dumps
 - Batch inserts (1000 articles/batch) with WAL-mode SQLite (configured in `schema.create_schema`)
-- Atomic database writes: parsed to `.db.tmp` then renamed
+- Atomic database writes: parsed to `.db.tmp` then renamed; `try/finally` ensures the tmp file is removed on any failure including `KeyboardInterrupt`
 - Namespace 0 only by default (main articles)
 - `cli.main` is the CLI entry; `cli._find_latest_dump` reads `cli.DUMPS_DIR` at call time so tests can monkeypatch it
 
@@ -112,8 +125,10 @@ Pipeline order matters — stages are applied in sequence:
 
 - Per-request SQLite connections (avoids cross-thread issues with FastAPI's threadpool)
 - `WIKI_DB` env var overrides the DB path — tests use `monkeypatch.setenv` to point at a fixture DB without restarting the app
+- `DEFAULT_DB` is derived from `paths.db_path_for(DEFAULT_WIKI)` so the default database path is never built inline twice
 - `{title:path}` route converter so titles with slashes round-trip cleanly
 - `|safe` in `article.html` is intentional: the HTML comes from our own converter, not user input
+- `_search_titles` escapes SQL LIKE wildcards (`%` and `_`) in user input via `_escape_like` + `ESCAPE '\\'` so a query like `foo_bar` doesn't silently match `foo bar`
 - `_fetch_article()` follows `#REDIRECT [[Target]]` chains up to `REDIRECT_MAX_HOPS` (5) and returns the original title as `redirected_from` so the template can show a "Redirected from X" note. A cycle guard surfaces a 404 rather than hanging.
 
 ### Test organisation
