@@ -438,12 +438,22 @@ main {
     letter-spacing: 0.04em;
 }
 
-.refresh-wiki-row {
+.refresh-grid {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.refresh-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 14rem;
+}
+
+.refresh-btn-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .refresh-btn {
@@ -455,6 +465,7 @@ main {
     color: var(--fg);
     cursor: pointer;
     white-space: nowrap;
+    width: 11rem;
 }
 
 .refresh-btn:hover {
@@ -464,7 +475,6 @@ main {
 }
 
 .refresh-status-area {
-    flex: 1;
     min-width: 0;
 }
 

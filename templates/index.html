@@ -43,34 +43,40 @@
 <section class="refresh-section">
   <h2 class="refresh-heading">Refresh Wikipedia data</h2>
 
-  <div class="refresh-wiki-row">
-    <button class="refresh-btn"
-            hx-post="/refresh/simplewiki"
-            hx-target="#refresh-status-simplewiki"
-            hx-swap="innerHTML"
-            hx-indicator="#spinner-simplewiki">
-      Refresh SimpleWiki
-    </button>
-    <span id="spinner-simplewiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
-    <div id="refresh-status-simplewiki" class="refresh-status-area"
-         hx-get="/refresh/status/simplewiki"
-         hx-trigger="load"
-         hx-swap="innerHTML"></div>
-  </div>
+  <div class="refresh-grid">
+    <div class="refresh-col">
+      <div class="refresh-btn-row">
+        <button class="refresh-btn"
+                hx-post="/refresh/simplewiki"
+                hx-target="#refresh-status-simplewiki"
+                hx-swap="innerHTML"
+                hx-indicator="#spinner-simplewiki">
+          Refresh SimpleWiki
+        </button>
+        <span id="spinner-simplewiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
+      </div>
+      <div id="refresh-status-simplewiki" class="refresh-status-area"
+           hx-get="/refresh/status/simplewiki"
+           hx-trigger="load"
+           hx-swap="innerHTML"></div>
+    </div>
 
-  <div class="refresh-wiki-row">
-    <button class="refresh-btn"
-            hx-post="/refresh/enwiki"
-            hx-target="#refresh-status-enwiki"
-            hx-swap="innerHTML"
-            hx-indicator="#spinner-enwiki">
-      Refresh EnWiki
-    </button>
-    <span id="spinner-enwiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
-    <div id="refresh-status-enwiki" class="refresh-status-area"
-         hx-get="/refresh/status/enwiki"
-         hx-trigger="load"
-         hx-swap="innerHTML"></div>
+    <div class="refresh-col">
+      <div class="refresh-btn-row">
+        <button class="refresh-btn"
+                hx-post="/refresh/enwiki"
+                hx-target="#refresh-status-enwiki"
+                hx-swap="innerHTML"
+                hx-indicator="#spinner-enwiki">
+          Refresh EnWiki
+        </button>
+        <span id="spinner-enwiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
+      </div>
+      <div id="refresh-status-enwiki" class="refresh-status-area"
+           hx-get="/refresh/status/enwiki"
+           hx-trigger="load"
+           hx-swap="innerHTML"></div>
+    </div>
   </div>
 </section>
 {% endblock %}
