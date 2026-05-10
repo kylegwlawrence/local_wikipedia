@@ -2,6 +2,22 @@
 import re
 import mwparserfromhell
 
+_IMAGE_FIELD_PREFIXES = frozenset({
+    'image', 'img', 'logo', 'flag', 'coat', 'map', 'photo', 'picture',
+    'banner', 'seal', 'shield', 'emblem', 'signature', 'sound', 'audio',
+    'video',
+})
+
+_IMAGE_VALUE_RE = re.compile(
+    r'^\s*\S+\.(jpe?g|png|svg|gif|webp|tiff?|ogg|ogv|oga|wav|mp[34]|flac|webm)\s*$',
+    re.IGNORECASE,
+)
+
+_MONTH_NAMES = (
+    '', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+)
+
 
 def convert_wikitext_to_html(wikitext: str) -> str:
     """Convert wikitext to clean HTML.
@@ -29,6 +45,8 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # Parse wikitext into structured object
         wikicode = mwparserfromhell.parse(wikitext)
 
+        # Convert infobox templates first so they aren't stripped
+        _convert_infobox_templates(wikicode)
         # Convert math and code templates before stripping all templates
         _convert_math_templates(wikicode)
         _convert_code_templates(wikicode)
@@ -71,6 +89,207 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # Fallback to plain text if parsing fails
         import html
         return f"<p>{html.escape(wikitext)}</p>"
+
+
+def _is_image_field(field_name: str) -> bool:
+    name = field_name.lower().strip().replace('-', '_')
+    for prefix in _IMAGE_FIELD_PREFIXES:
+        if name == prefix or name.startswith(prefix + '_') or name.endswith('_' + prefix):
+            return True
+    return 'caption' in name or name.startswith('alt_') or name.endswith('_alt')
+
+
+def _render_infobox_value_template(template) -> str | None:
+    """Render a single template commonly found inside infobox values.
+
+    Returns a rendered string, or None to strip the template entirely.
+    """
+    name = str(template.name).strip().lower()
+    params = list(template.params)
+
+    # Date templates: positional params are year, month, day
+    if name in (
+        'birth date', 'birth date and age', 'birth-date and age',
+        'death date', 'death date and age', 'death-date and age',
+        'start date', 'start date and age', 'end date', 'end date and age',
+    ):
+        indexed: dict[int, str] = {}
+        for p in params:
+            pname = str(p.name).strip()
+            if pname.isdigit():
+                indexed[int(pname)] = str(p.value).strip()
+        year = indexed.get(1, '')
+        month_raw = indexed.get(2, '')
+        day = indexed.get(3, '')
+        try:
+            month_name = _MONTH_NAMES[int(month_raw)] if month_raw else ''
+        except (ValueError, IndexError):
+            month_name = month_raw
+        if year and month_name and day:
+            return f'{month_name} {day}, {year}'
+        if year and month_name:
+            return f'{month_name} {year}'
+        return year or None
+
+    # flatlist / plainlist: first positional param contains wiki-list lines
+    if name in ('flatlist', 'plainlist'):
+        for p in params:
+            pname = str(p.name).strip()
+            if pname in ('class', 'style', 'indent'):
+                continue
+            items = []
+            for line in str(p.value).split('\n'):
+                item = line.strip().lstrip('*#').strip()
+                # Strip any remaining templates from the item before keeping it
+                item = re.sub(r'\{\{[^}]*\}\}', '', item).strip()
+                if item:
+                    items.append(item)
+            if items:
+                lis = ''.join(f'<li>{item}</li>' for item in items)
+                return f'<ul class="infobox-list">{lis}</ul>'
+            break
+
+    # unbulleted list / ubl / bulleted list: positional params are items
+    if name in ('unbulleted list', 'ubl', 'bulleted list'):
+        items = []
+        for p in params:
+            pname = str(p.name).strip()
+            if pname.isdigit():
+                item = re.sub(r'\{\{[^}]*\}\}', '', str(p.value)).strip()
+                if item:
+                    items.append(item)
+        if items:
+            lis = ''.join(f'<li>{item}</li>' for item in items)
+            return f'<ul class="infobox-list">{lis}</ul>'
+
+    # hlist: positional params rendered as "a · b · c"
+    if name == 'hlist':
+        items = []
+        for p in params:
+            pname = str(p.name).strip()
+            if pname in ('class', 'style', 'ul_style', 'li_style', 'indent', 'item_style'):
+                continue
+            item = str(p.value).strip()
+            if item:
+                items.append(item)
+        return ' · '.join(items) if items else None
+
+    # Simple pass-through wrappers
+    if name in ('nowrap', 'lang', 'abbr', 'msd', 'nowr'):
+        for p in params:
+            pname = str(p.name).strip()
+            if not pname.isdigit():
+                continue
+            val = str(p.value).strip()
+            if val:
+                return val
+        # fallback: last positional value
+        if params:
+            return str(params[-1].value).strip() or None
+
+    # URL template: {{URL|url|label}}
+    if name == 'url':
+        if params:
+            import html as _html
+            url = str(params[0].value).strip()
+            label = str(params[1].value).strip() if len(params) > 1 else url
+            return f'<a href="{_html.escape(url, quote=True)}" rel="noopener noreferrer" target="_blank">{_html.escape(label)}</a>'
+
+    return None  # strip unknown templates
+
+
+def _render_infobox_value(raw_value: str) -> str:
+    """Process an infobox field value into HTML."""
+    wikicode = mwparserfromhell.parse(raw_value)
+
+    # Handle or strip nested templates
+    for template in wikicode.filter_templates():
+        rendered = _render_infobox_value_template(template)
+        try:
+            if rendered is not None:
+                wikicode.replace(template, rendered)
+            else:
+                wikicode.remove(template)
+        except ValueError:
+            pass
+
+    # Strip ref / footnote tags; keep contents of inline formatting tags
+    for tag in wikicode.filter_tags():
+        tag_name = str(tag.tag).strip().lower()
+        try:
+            if tag_name in ('ref', 'references'):
+                wikicode.remove(tag)
+            elif tag_name in ('small', 'sup', 'sub', 'span', 'div'):
+                wikicode.replace(tag, str(tag.contents))
+        except ValueError:
+            pass
+
+    text = str(wikicode).strip()
+
+    # Remove bare [[File:...]] / [[Image:...]] wikilinks that weren't caught by
+    # the field-name filter (e.g. in a caption or description field)
+    text = re.sub(r'\[\[(File|Image):[^\]]*\]\]', '', text, flags=re.IGNORECASE)
+
+    text = _convert_bold_italic(text)
+    text = _convert_links(text)
+    return text.strip()
+
+
+def _convert_infobox_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert {{Infobox ...}} templates to HTML tables (in-place)."""
+    import html
+
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip()
+        if not name.lower().startswith('infobox'):
+            continue
+
+        display_type = name[len('infobox'):].strip()
+        if display_type:
+            display_type = display_type[0].upper() + display_type[1:]
+
+        rows: list[tuple[str, str]] = []
+        for param in template.params:
+            field_name = str(param.name).strip()
+            raw_value = str(param.value).strip()
+
+            if not raw_value or raw_value.startswith('<!--'):
+                continue
+            if _is_image_field(field_name):
+                continue
+            if _IMAGE_VALUE_RE.match(raw_value):
+                continue
+
+            label = field_name.replace('_', ' ').strip()
+            if label:
+                label = label[0].upper() + label[1:]
+
+            rendered = _render_infobox_value(raw_value)
+            if not rendered or not rendered.strip():
+                continue
+
+            rows.append((html.escape(label), rendered))
+
+        if not rows and not display_type:
+            try:
+                wikicode.remove(template)
+            except ValueError:
+                pass
+            continue
+
+        parts = ['<table class="infobox">']
+        if display_type:
+            parts.append(f'<caption>{html.escape(display_type)}</caption>')
+        parts.append('<tbody>')
+        for label, value in rows:
+            parts.append(f'<tr><th>{label}</th><td>{value}</td></tr>')
+        parts.append('</tbody>')
+        parts.append('</table>')
+
+        try:
+            wikicode.replace(template, '\n'.join(parts))
+        except ValueError:
+            pass
 
 
 _TABLE_OPEN_RE = re.compile(r'^[:\s]*\{\|')

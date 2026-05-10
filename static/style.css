@@ -347,3 +347,58 @@ main {
     background: #ececec;
     color: #868686;
 }
+
+/* --- Infobox -------------------------------------------------------- */
+
+.article-body table.infobox {
+    float: right;
+    clear: right;
+    margin: 0 0 1rem 1.5rem;
+    border: 1px solid #a2a9b1;
+    background: #f8f9fa;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    width: 280px;
+}
+
+.article-body table.infobox caption {
+    background: #cee0f2;
+    font-weight: bold;
+    padding: 0.4rem 0.6rem;
+    text-align: center;
+}
+
+.article-body table.infobox th,
+.article-body table.infobox td {
+    border: 1px solid #a2a9b1;
+    padding: 0.3rem 0.5rem;
+    vertical-align: top;
+}
+
+.article-body table.infobox th {
+    background: #eaecf0;
+    font-weight: normal;
+    text-align: left;
+    width: 42%;
+}
+
+.article-body table.infobox td {
+    background: #fff;
+}
+
+.article-body table.infobox ul.infobox-list {
+    margin: 0;
+    padding-left: 1rem;
+}
+
+.article-body table.infobox ul.infobox-list li {
+    margin: 0;
+}
+
+@media (max-width: 500px) {
+    .article-body table.infobox {
+        float: none;
+        width: 100%;
+        margin: 0 0 1rem 0;
+    }
+}
