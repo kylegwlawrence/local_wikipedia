@@ -140,8 +140,8 @@ def _render_infobox_value_template(template) -> str | None:
             items = []
             for line in str(p.value).split('\n'):
                 item = line.strip().lstrip('*#').strip()
-                # Strip any remaining templates from the item before keeping it
-                item = re.sub(r'\{\{[^}]*\}\}', '', item).strip()
+                if item:
+                    item = _render_infobox_value(item)
                 if item:
                     items.append(item)
             if items:
@@ -155,7 +155,7 @@ def _render_infobox_value_template(template) -> str | None:
         for p in params:
             pname = str(p.name).strip()
             if pname.isdigit():
-                item = re.sub(r'\{\{[^}]*\}\}', '', str(p.value)).strip()
+                item = _render_infobox_value(str(p.value).strip())
                 if item:
                     items.append(item)
         if items:
@@ -174,8 +174,16 @@ def _render_infobox_value_template(template) -> str | None:
                 items.append(item)
         return ' · '.join(items) if items else None
 
-    # Simple pass-through wrappers
-    if name in ('nowrap', 'lang', 'abbr', 'msd', 'nowr'):
+    # Language annotation templates: param 1 is language code, param 2 is text
+    if name in ('lang', 'langx', 'lang-xx'):
+        positional = [str(p.value).strip() for p in params if str(p.name).strip().isdigit()]
+        # positional[0] = language code, positional[1] = text content
+        if len(positional) >= 2:
+            return positional[-1]
+        return None
+
+    # Simple pass-through wrappers: first positional param is the content
+    if name in ('nowrap', 'abbr', 'msd', 'nowr'):
         for p in params:
             pname = str(p.name).strip()
             if not pname.isdigit():
@@ -183,7 +191,6 @@ def _render_infobox_value_template(template) -> str | None:
             val = str(p.value).strip()
             if val:
                 return val
-        # fallback: last positional value
         if params:
             return str(params[-1].value).strip() or None
 
