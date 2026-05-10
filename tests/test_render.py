@@ -700,3 +700,142 @@ class TestSectionLinkTemplates:
         assert 'href="/article/Ferrofluid"' in result
         assert 'href="/article/Ferrofluid#Heat%20transfer"' in result
         assert 'href="/article/Audio%20system"' in result
+
+
+class TestReflistTemplate:
+    def test_reflist_with_cite_web(self) -> None:
+        wikitext = (
+            '{{Reflist|2|refs=\n'
+            '<ref name=Foo>{{cite web|title=Some Article|url=https://example.com|date=2020}}</ref>\n'
+            '}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ol class="references">' in result
+        assert 'Some Article' in result
+        assert 'href="https://example.com"' in result
+        assert '2020' in result
+
+    def test_reflist_multiple_refs(self) -> None:
+        wikitext = (
+            '{{Reflist|refs=\n'
+            '<ref name=A>{{cite web|title=First|url=https://first.com}}</ref>\n'
+            '<ref name=B>{{cite web|title=Second|url=https://second.com}}</ref>\n'
+            '}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert 'First' in result
+        assert 'Second' in result
+        assert 'href="https://first.com"' in result
+        assert 'href="https://second.com"' in result
+
+    def test_reflist_without_refs_param_removed(self) -> None:
+        """Plain {{Reflist}} with no refs= is silently removed."""
+        result = convert_wikitext_to_html('Some text.\n{{Reflist}}\nMore text.')
+        assert '{{Reflist}}' not in result
+        assert 'Some text.' in result
+
+    def test_reflist_ref_ids(self) -> None:
+        """Each <li> gets an id so anchor links can target it."""
+        wikitext = (
+            '{{Reflist|refs=\n'
+            '<ref name=MyRef>{{cite web|title=Target|url=https://x.com}}</ref>\n'
+            '}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert 'id="ref_MyRef"' in result
+
+
+class TestInlineRefCollection:
+    def test_unnamed_inline_ref_rendered(self) -> None:
+        wikitext = (
+            'Text.<ref>{{cite book |last=Smith |title=Foo |date=2020}}</ref>\n'
+            '{{Reflist}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ol class="references">' in result
+        assert 'Smith' in result
+        assert '<em>Foo</em>' in result
+        assert '2020' in result
+
+    def test_named_inline_ref_rendered(self) -> None:
+        wikitext = (
+            'Text.<ref name="Ballou2008">{{cite book |last=Ballou |title=Handbook |date=2008}}</ref>\n'
+            '{{Reflist}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ol class="references">' in result
+        assert 'id="ref_Ballou2008"' in result
+        assert 'Ballou' in result
+
+    def test_named_ref_deduplicated(self) -> None:
+        wikitext = (
+            'First.<ref name="A">{{cite book |title=Alpha |date=2021}}</ref> '
+            'Second.<ref name="A">{{cite book |title=Alpha |date=2021}}</ref>\n'
+            '{{Reflist}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert result.count('Alpha') == 1
+
+    def test_back_ref_not_collected(self) -> None:
+        wikitext = (
+            'First.<ref name="B">{{cite book |title=Beta |date=2022}}</ref> '
+            'Second.<ref name="B"/>\n'
+            '{{Reflist}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert result.count('Beta') == 1
+
+    def test_multiple_mixed_refs(self) -> None:
+        wikitext = (
+            'A.<ref>{{cite book |title=Unnamed1 |date=2001}}</ref> '
+            'B.<ref name="Named">{{cite book |title=Named1 |date=2002}}</ref> '
+            'C.<ref>{{cite book |title=Unnamed2 |date=2003}}</ref>\n'
+            '{{Reflist}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert 'Unnamed1' in result
+        assert 'Named1' in result
+        assert 'Unnamed2' in result
+        assert result.count('<li') >= 3
+
+    def test_plain_text_ref_fallback(self) -> None:
+        wikitext = (
+            'Text.<ref>A plain-text footnote without a template.</ref>\n'
+            '{{Reflist}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert 'plain-text footnote' in result
+        assert '<ol class="references">' in result
+
+    def test_bare_reflist_no_inline_refs_still_silent(self) -> None:
+        result = convert_wikitext_to_html('Some text.\n{{Reflist}}\nMore text.')
+        assert '<ol class="references">' not in result
+        assert '{{Reflist}}' not in result
+
+    def test_reflist_refs_param_unaffected(self) -> None:
+        wikitext = (
+            '{{Reflist|refs=\n'
+            '<ref name=Foo>{{cite web|title=ExplicitRef|url=https://ex.com|date=2020}}</ref>\n'
+            '}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ol class="references">' in result
+        assert 'ExplicitRef' in result
+        assert 'href="https://ex.com"' in result
+
+    def test_unnamed_ref_id_is_numeric(self) -> None:
+        wikitext = (
+            'A.<ref>{{cite book |title=First |date=2001}}</ref> '
+            'B.<ref>{{cite book |title=Second |date=2002}}</ref>\n'
+            '{{Reflist}}'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert 'id="ref_1"' in result
+        assert 'id="ref_2"' in result
+
+    def test_no_reflist_inline_refs_stripped(self) -> None:
+        wikitext = 'Text.<ref>{{cite book |title=Gone |date=2020}}</ref> More text.'
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ref>' not in result
+        assert 'Gone' not in result
+        assert 'More text.' in result

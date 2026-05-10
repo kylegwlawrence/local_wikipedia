@@ -34,6 +34,8 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         _convert_code_templates(wikicode)
         _convert_indicator_templates(wikicode)
         _convert_section_link_templates(wikicode)
+        collected_refs = _collect_inline_refs(wikicode)
+        _convert_reflist_template(wikicode, collected_refs)
         # Strip unwanted elements
         _strip_templates(wikicode)
         _strip_refs(wikicode)
@@ -642,6 +644,183 @@ def _convert_section_link_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                     wikicode.replace(template, replacement)
                 except ValueError:
                     pass
+
+
+_CITE_TEMPLATE_PREFIXES = ('cite ', 'citation')
+
+_CITE_FIELD_ORDER = ('author', 'last', 'title', 'url', 'work', 'website',
+                     'journal', 'newspaper', 'magazine', 'publisher', 'date',
+                     'access-date', 'accessdate')
+
+
+def _format_cite_template(template) -> str:
+    """Format a cite template as a readable HTML string."""
+    import html
+
+    fields: dict[str, str] = {}
+    for param in template.params:
+        key = str(param.name).strip().lower()
+        val = str(param.value).strip()
+        if val:
+            fields[key] = val
+
+    parts = []
+
+    author = fields.get('author') or (
+        (fields.get('last', '') + ', ' + fields.get('first', '')).strip(', ')
+        if 'last' in fields else ''
+    )
+    if author:
+        parts.append(html.escape(author))
+
+    title = fields.get('title', '')
+    url = fields.get('url', '')
+    if title and url:
+        parts.append(f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer" target="_blank">{html.escape(title)}</a>')
+    elif title:
+        parts.append(f'<em>{html.escape(title)}</em>')
+    elif url:
+        parts.append(f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer" target="_blank">{html.escape(url)}</a>')
+
+    for field in ('work', 'website', 'journal', 'newspaper', 'magazine', 'publisher'):
+        if field in fields:
+            parts.append(html.escape(fields[field]))
+            break
+
+    if 'date' in fields:
+        parts.append(html.escape(fields['date']))
+
+    return '. '.join(parts)
+
+
+def _collect_inline_refs(
+    wikicode: mwparserfromhell.wikicode.Wikicode,
+) -> list[tuple[str | None, str]]:
+    """Collect inline <ref>content</ref> tags from the article body in citation order.
+
+    Uses recursive=False so refs nested inside {{Reflist|refs=...}} template
+    parameters are not double-counted. Self-closing back-refs are skipped.
+    Named refs are deduplicated (first occurrence wins).
+
+    Returns a list of (name_or_None, rendered_html) tuples.
+    """
+    import html
+    import re as _re
+
+    collected: list[tuple[str | None, str]] = []
+    seen_names: set[str] = set()
+
+    for tag in wikicode.filter_tags(recursive=False):
+        if str(tag.tag).strip().lower() != 'ref':
+            continue
+        if tag.self_closing:
+            continue
+        contents = str(tag.contents).strip()
+        if not contents:
+            continue
+
+        name = None
+        if tag.has('name'):
+            name = str(tag.get('name').value).strip()
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+
+        sub = mwparserfromhell.parse(contents)
+        cite_parts = []
+        for tmpl in sub.filter_templates():
+            tmpl_name = str(tmpl.name).strip().lower()
+            if any(tmpl_name.startswith(p) for p in _CITE_TEMPLATE_PREFIXES):
+                formatted = _format_cite_template(tmpl)
+                if formatted:
+                    cite_parts.append(formatted)
+
+        rendered = (' '.join(cite_parts) if cite_parts
+                    else html.escape(_re.sub(r'\{\{[^}]*\}\}', '', contents).strip()))
+
+        if rendered:
+            collected.append((name, rendered))
+
+    return collected
+
+
+def _convert_reflist_template(
+    wikicode: mwparserfromhell.wikicode.Wikicode,
+    collected_refs: list[tuple[str | None, str]] | None = None,
+) -> None:
+    """Convert {{Reflist}} to an ordered list of references.
+
+    Two modes:
+    - refs= parameter present: extract named refs from the parameter value (existing).
+    - bare {{Reflist}}: render the pre-collected inline refs passed via collected_refs.
+
+    Templates that are not Reflist are left for _strip_templates to remove.
+    """
+    import html
+    import re as _re
+
+    # name= may be quoted ("Foo", 'Foo') or bare (name=Foo)
+    ref_pattern = _re.compile(
+        r'<ref\s+name\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^>\s]+))\s*>(.*?)</ref>',
+        _re.DOTALL | _re.IGNORECASE,
+    )
+
+    for template in wikicode.filter_templates():
+        if str(template.name).strip().lower() != 'reflist':
+            continue
+
+        refs_param = next(
+            (p for p in template.params if str(p.name).strip() == 'refs'),
+            None,
+        )
+        if not refs_param:
+            if collected_refs:
+                items = []
+                for idx, (name, rendered) in enumerate(collected_refs, start=1):
+                    ref_id = html.escape(name, quote=True) if name else str(idx)
+                    items.append(f'<li id="ref_{ref_id}">{rendered}</li>')
+                replacement = '<ol class="references">\n' + '\n'.join(items) + '\n</ol>'
+            else:
+                replacement = ''
+            try:
+                wikicode.replace(template, replacement)
+            except ValueError:
+                pass
+            continue
+
+        items = []
+        for m in ref_pattern.finditer(str(refs_param.value)):
+            ref_name = m.group(1) or m.group(2) or m.group(3)
+            ref_content = m.group(4).strip()
+
+            # Try to format any cite templates found inside the ref
+            try:
+                ref_wikicode = mwparserfromhell.parse(ref_content)
+                cite_parts = []
+                for tmpl in ref_wikicode.filter_templates():
+                    tmpl_name = str(tmpl.name).strip().lower()
+                    if any(tmpl_name.startswith(p) for p in _CITE_TEMPLATE_PREFIXES):
+                        formatted = _format_cite_template(tmpl)
+                        if formatted:
+                            cite_parts.append(formatted)
+                rendered = ' '.join(cite_parts) if cite_parts else html.escape(
+                    _re.sub(r'\{\{[^}]*\}\}', '', ref_content).strip()
+                )
+            except Exception:
+                rendered = html.escape(ref_content)
+
+            if rendered:
+                ref_id = html.escape(ref_name, quote=True)
+                items.append(f'<li id="ref_{ref_id}">{rendered}</li>')
+
+        replacement = (
+            '<ol class="references">\n' + '\n'.join(items) + '\n</ol>'
+            if items else ''
+        )
+        try:
+            wikicode.replace(template, replacement)
+        except ValueError:
+            pass
 
 
 def _extract_syntaxhighlight(text: str) -> tuple[str, dict[str, str]]:

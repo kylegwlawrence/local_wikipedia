@@ -198,6 +198,22 @@ main {
     padding-left: 1.5rem;
 }
 
+/* --- References list ------------------------------------------------- */
+
+.article-body ol.references {
+    font-size: 0.88rem;
+    color: var(--muted);
+    padding-left: 1.8rem;
+}
+
+.article-body ol.references li {
+    margin-bottom: 0.25rem;
+}
+
+.article-body ol.references a {
+    color: var(--link);
+}
+
 /* --- Raw wikitext view ---------------------------------------------- */
 
 .wikitext-raw {

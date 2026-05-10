@@ -48,16 +48,19 @@
         // Re-render math and scroll to anchor after every HTMX fragment swap.
         document.addEventListener("htmx:afterSwap", function(e) {
             renderMath(e.target);
-            if (pendingAnchor) {
-                var anchor = pendingAnchor;
-                pendingAnchor = null;
-                requestAnimationFrame(function() {
+            if (e.target.id !== 'article') return;
+            var anchor = pendingAnchor;
+            pendingAnchor = null;
+            requestAnimationFrame(function() {
+                if (anchor) {
                     var targetEl = document.getElementById(anchor);
                     if (targetEl) {
                         targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
-                });
-            }
+                } else {
+                    e.target.scrollIntoView({ behavior: 'instant', block: 'start' });
+                }
+            });
         });
     </script>
 </head>
