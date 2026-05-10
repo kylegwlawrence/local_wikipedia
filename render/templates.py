@@ -326,6 +326,20 @@ def convert_lang_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None
             pass
 
 
+def convert_wikidata_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Strip {{wikidata|...}} templates.
+
+    These fetch live property values from Wikidata via API; no network access is
+    available here, so we remove them rather than render stale or empty output.
+    """
+    for template in wikicode.filter_templates():
+        if str(template.name).strip().lower() == 'wikidata':
+            try:
+                wikicode.remove(template)
+            except ValueError:
+                pass
+
+
 def convert_indicator_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
     """Replace status templates ({{yes}}, {{no}}, {{partial}}, ...) with
     a <span> carrying a CSS class for table styling.
@@ -476,6 +490,11 @@ def _render_infobox_value_template(template) -> str | None:
                 f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer" '
                 f'target="_blank">{html.escape(label)}</a>'
             )
+
+    # {{wikidata|...}} fetches live property values from Wikidata; we have no
+    # API access, so skip the row rather than show a stale or empty value.
+    if name == 'wikidata':
+        return None
 
     return None  # Strip unknown templates entirely.
 

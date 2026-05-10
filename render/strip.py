@@ -4,6 +4,8 @@ These run after the wikicode-level template handlers in `templates.py` so any
 template that produces output has already been replaced; remaining templates
 are noise (navboxes, hatnotes, maintenance tags) we drop wholesale.
 """
+import re
+
 import mwparserfromhell
 
 
@@ -39,3 +41,13 @@ def strip_categories(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
                 wikicode.remove(link)
             except ValueError:
                 pass
+
+
+def strip_external_links_section(text: str) -> str:
+    """Remove the '== External links ==' section and all its content."""
+    return re.sub(
+        r"\n*==\s*External links\s*==.*?(?=\n==|\Z)",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )

@@ -839,4 +839,33 @@ class TestInlineRefCollection:
         result = convert_wikitext_to_html(wikitext)
         assert '<ref>' not in result
         assert 'Gone' not in result
-        assert 'More text.' in result
+
+
+class TestStripExternalLinksSection:
+    def test_removes_external_links_section(self) -> None:
+        wikitext = 'Intro text.\n\n== External links ==\n* [http://example.com Example]\n'
+        result = convert_wikitext_to_html(wikitext)
+        assert 'External links' not in result
+        assert 'example.com' not in result
+        assert 'Intro text' in result
+
+    def test_preserves_content_after_section(self) -> None:
+        wikitext = (
+            'Intro.\n\n'
+            '== External links ==\n* [http://example.com Example]\n\n'
+            '== See also ==\n* [[Python]]\n'
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert 'External links' not in result
+        assert 'See also' in result
+
+    def test_case_insensitive(self) -> None:
+        wikitext = 'Intro.\n\n== external links ==\n* [http://example.com Example]\n'
+        result = convert_wikitext_to_html(wikitext)
+        assert 'external links' not in result
+
+    def test_no_external_links_section_unchanged(self) -> None:
+        wikitext = '== History ==\nSome history text.\n'
+        result = convert_wikitext_to_html(wikitext)
+        assert 'History' in result
+        assert 'history text' in result

@@ -19,6 +19,7 @@ import re
 import mwparserfromhell
 
 from render import strip
+from render.strip import strip_external_links_section
 from render.blocks import convert_headings, convert_lists, wrap_paragraphs
 from render.inline import convert_bold_italic, convert_links
 from render.protect import (
@@ -38,6 +39,7 @@ from render.templates import (
     convert_math_templates,
     convert_reflist_template,
     convert_section_link_templates,
+    convert_wikidata_templates,
 )
 
 
@@ -61,6 +63,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         wikicode = mwparserfromhell.parse(wikitext)
 
         # 1. Wikicode-level templates that produce output (must run before strip).
+        convert_wikidata_templates(wikicode)
         convert_infobox_templates(wikicode)
         convert_math_templates(wikicode)
         convert_code_templates(wikicode)
@@ -79,6 +82,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
 
         # 3. Flatten to string.
         text = str(wikicode)
+        text = strip_external_links_section(text)
 
         # 4. Protect code/math from later string-level passes.
         text, code_blocks = extract_syntaxhighlight(text)

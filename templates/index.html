@@ -18,6 +18,7 @@
    - name="q"        : sent as the query param, matching FastAPI's `q` arg.
    - autocomplete    : the browser's own dropdown would fight with ours. #}
 <form class="search-form" onsubmit="return false;">
+    <span id="search-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
     <input
         type="search"
         name="q"
@@ -27,7 +28,8 @@
         hx-get="/search"
         hx-trigger="keyup changed delay:300ms, search"
         hx-target="#results"
-        hx-swap="innerHTML">
+        hx-swap="innerHTML"
+        hx-indicator="#search-spinner">
 </form>
 
 {# Results stay visible after an article is loaded so the user can keep
