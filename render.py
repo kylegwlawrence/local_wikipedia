@@ -699,33 +699,40 @@ def _collect_inline_refs(
     """Collect inline <ref>content</ref> tags from the article body in citation order.
 
     Uses recursive=False so refs nested inside {{Reflist|refs=...}} template
-    parameters are not double-counted. Self-closing back-refs are skipped.
-    Named refs are deduplicated (first occurrence wins).
+    parameters are not double-counted.
 
-    Returns a list of (name_or_None, rendered_html) tuples.
+    Self-closing back-refs (<ref name="X"/>) are resolved if their content is
+    defined in a Reflist refs= parameter; back-refs whose content is defined
+    only inline are skipped (the inline definition is already collected).
+
+    Returns a list of (name_or_None, rendered_html) tuples. No deduplication —
+    every ref occurrence is rendered, including duplicates.
     """
     import html
     import re as _re
 
-    collected: list[tuple[str | None, str]] = []
-    seen_names: set[str] = set()
+    _ref_name_pat = _re.compile(
+        r'<ref\s+name\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^>\s]+))\s*>(.*?)</ref>',
+        _re.DOTALL | _re.IGNORECASE,
+    )
 
-    for tag in wikicode.filter_tags(recursive=False):
-        if str(tag.tag).strip().lower() != 'ref':
+    # Build a lookup of name -> content for refs defined only in refs= parameters.
+    # These are the ones we need to resolve back-refs for; body-defined named refs
+    # are collected directly when their full tag is encountered.
+    refs_param_content: dict[str, str] = {}
+    for tmpl in wikicode.filter_templates():
+        if str(tmpl.name).strip().lower() != 'reflist':
             continue
-        if tag.self_closing:
+        rp = next((p for p in tmpl.params if str(p.name).strip() == 'refs'), None)
+        if not rp:
             continue
-        contents = str(tag.contents).strip()
-        if not contents:
-            continue
+        for m in _ref_name_pat.finditer(str(rp.value)):
+            name = m.group(1) or m.group(2) or m.group(3)
+            content = m.group(4).strip()
+            if name not in refs_param_content:
+                refs_param_content[name] = content
 
-        name = None
-        if tag.has('name'):
-            name = str(tag.get('name').value).strip()
-            if name in seen_names:
-                continue
-            seen_names.add(name)
-
+    def _render_contents(contents: str) -> str:
         sub = mwparserfromhell.parse(contents)
         cite_parts = []
         for tmpl in sub.filter_templates():
@@ -734,10 +741,30 @@ def _collect_inline_refs(
                 formatted = _format_cite_template(tmpl)
                 if formatted:
                     cite_parts.append(formatted)
+        return (' '.join(cite_parts) if cite_parts
+                else html.escape(_re.sub(r'\{\{[^}]*\}\}', '', contents).strip()))
 
-        rendered = (' '.join(cite_parts) if cite_parts
-                    else html.escape(_re.sub(r'\{\{[^}]*\}\}', '', contents).strip()))
+    collected: list[tuple[str | None, str]] = []
 
+    for tag in wikicode.filter_tags(recursive=False):
+        if str(tag.tag).strip().lower() != 'ref':
+            continue
+
+        name = str(tag.get('name').value).strip() if tag.has('name') else None
+
+        if tag.self_closing:
+            # Resolve only if content is in refs= (inline-defined named refs are
+            # already collected at their definition site)
+            if name and name in refs_param_content:
+                contents = refs_param_content[name]
+            else:
+                continue
+        else:
+            contents = str(tag.contents).strip()
+            if not contents:
+                continue
+
+        rendered = _render_contents(contents)
         if rendered:
             collected.append((name, rendered))
 
@@ -789,11 +816,17 @@ def _convert_reflist_template(
             continue
 
         items = []
+
+        # Inline refs first (in citation order from the document body)
+        if collected_refs:
+            for idx, (name, rendered) in enumerate(collected_refs, start=1):
+                ref_id = html.escape(name, quote=True) if name else str(idx)
+                items.append(f'<li id="ref_{ref_id}">{rendered}</li>')
+
+        # Append all refs defined in refs=
         for m in ref_pattern.finditer(str(refs_param.value)):
             ref_name = m.group(1) or m.group(2) or m.group(3)
             ref_content = m.group(4).strip()
-
-            # Try to format any cite templates found inside the ref
             try:
                 ref_wikicode = mwparserfromhell.parse(ref_content)
                 cite_parts = []

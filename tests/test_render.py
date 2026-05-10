@@ -767,14 +767,15 @@ class TestInlineRefCollection:
         assert 'id="ref_Ballou2008"' in result
         assert 'Ballou' in result
 
-    def test_named_ref_deduplicated(self) -> None:
+    def test_named_ref_appears_multiple_times(self) -> None:
+        """Named ref with content appearing twice in the body renders twice."""
         wikitext = (
             'First.<ref name="A">{{cite book |title=Alpha |date=2021}}</ref> '
             'Second.<ref name="A">{{cite book |title=Alpha |date=2021}}</ref>\n'
             '{{Reflist}}'
         )
         result = convert_wikitext_to_html(wikitext)
-        assert result.count('Alpha') == 1
+        assert result.count('Alpha') == 2
 
     def test_back_ref_not_collected(self) -> None:
         wikitext = (
