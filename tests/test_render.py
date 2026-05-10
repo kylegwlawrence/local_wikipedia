@@ -634,3 +634,39 @@ class TestMathRendering:
         # Empty math tags should not crash
         result = convert_wikitext_to_html("<math></math>")
         assert result is not None
+
+    def test_yes_indicator_template(self) -> None:
+        result = convert_wikitext_to_html("{{yes}}")
+        assert '<span class="indicator-yes">Yes</span>' in result
+
+    def test_no_indicator_template(self) -> None:
+        result = convert_wikitext_to_html("{{no}}")
+        assert '<span class="indicator-no">No</span>' in result
+
+    def test_partial_indicator_template(self) -> None:
+        result = convert_wikitext_to_html("{{partial}}")
+        assert '<span class="indicator-partial">Partial</span>' in result
+
+    def test_indicator_in_table(self) -> None:
+        wikitext = """{| class="wikitable"
+! Feature !! Supported
+|-
+| Feature A || {{yes}}
+|-
+| Feature B || {{no}}
+|-
+| Feature C || {{partial}}
+|}"""
+        result = convert_wikitext_to_html(wikitext)
+        assert '<span class="indicator-yes">Yes</span>' in result
+        assert '<span class="indicator-no">No</span>' in result
+        assert '<span class="indicator-partial">Partial</span>' in result
+        assert "<table" in result
+
+    def test_indicator_variants(self) -> None:
+        # Test various template name variants
+        assert 'indicator-yes' in convert_wikitext_to_html("{{tick}}")
+        assert 'indicator-yes' in convert_wikitext_to_html("{{checked}}")
+        assert 'indicator-no' in convert_wikitext_to_html("{{cross}}")
+        assert 'indicator-unknown' in convert_wikitext_to_html("{{dunno}}")
+        assert 'indicator-na' in convert_wikitext_to_html("{{n/a}}")

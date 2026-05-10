@@ -32,6 +32,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # Convert math and code templates before stripping all templates
         _convert_math_templates(wikicode)
         _convert_code_templates(wikicode)
+        _convert_indicator_templates(wikicode)
         # Strip unwanted elements
         _strip_templates(wikicode)
         _strip_refs(wikicode)
@@ -547,6 +548,47 @@ def _convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> Non
                         wikicode.replace(template, replacement)
                     except ValueError:
                         pass
+
+
+def _convert_indicator_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert indicator templates like {{yes}}, {{no}} to styled HTML.
+
+    These templates are commonly used in tables to show status with colored backgrounds.
+
+    Args:
+        wikicode: Parsed wikicode object (modified in-place).
+    """
+    # Map template names to their display text and CSS class
+    indicators = {
+        'yes': ('Yes', 'indicator-yes'),
+        'y': ('Yes', 'indicator-yes'),
+        'tick': ('Yes', 'indicator-yes'),
+        'checked': ('Yes', 'indicator-yes'),
+        'no': ('No', 'indicator-no'),
+        'n': ('No', 'indicator-no'),
+        'x': ('No', 'indicator-no'),
+        'cross': ('No', 'indicator-no'),
+        'partial': ('Partial', 'indicator-partial'),
+        'some': ('Partial', 'indicator-partial'),
+        'dunno': ('Unknown', 'indicator-unknown'),
+        'unknown': ('Unknown', 'indicator-unknown'),
+        '?': ('Unknown', 'indicator-unknown'),
+        'n/a': ('N/A', 'indicator-na'),
+        'na': ('N/A', 'indicator-na'),
+        'included': ('Included', 'indicator-yes'),
+        'dropped': ('Dropped', 'indicator-no'),
+        'pending': ('Pending', 'indicator-partial'),
+    }
+
+    for template in wikicode.filter_templates():
+        template_name = str(template.name).strip().lower()
+        if template_name in indicators:
+            text, css_class = indicators[template_name]
+            replacement = f'<span class="{css_class}">{text}</span>'
+            try:
+                wikicode.replace(template, replacement)
+            except ValueError:
+                pass
 
 
 def _extract_syntaxhighlight(text: str) -> tuple[str, dict[str, str]]:

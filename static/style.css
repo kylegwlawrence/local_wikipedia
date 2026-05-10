@@ -289,3 +289,45 @@ main {
     background-color: var(--bg-soft);
     font-weight: 600;
 }
+
+/* --- Status indicator templates ------------------------------------- */
+
+/* Status indicators used in tables ({{yes}}, {{no}}, etc.) */
+.indicator-yes,
+.indicator-no,
+.indicator-partial,
+.indicator-unknown,
+.indicator-na {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 3px;
+    font-weight: 500;
+    font-size: 0.9em;
+    text-align: center;
+    min-width: 3em;
+}
+
+.indicator-yes {
+    background: #9f9;
+    color: #000;
+}
+
+.indicator-no {
+    background: #f99;
+    color: #000;
+}
+
+.indicator-partial {
+    background: #fc9;
+    color: #000;
+}
+
+.indicator-unknown {
+    background: #eee;
+    color: #666;
+}
+
+.indicator-na {
+    background: #eee;
+    color: #888;
+}
