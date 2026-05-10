@@ -308,26 +308,26 @@ main {
 }
 
 .indicator-yes {
-    background: #9f9;
-    color: #000;
+    background: rgb(154, 255, 154);
+    color: #000000;
 }
 
 .indicator-no {
-    background: #f99;
-    color: #000;
+    background: rgb(255, 153, 153);
+    color: #000000;
 }
 
 .indicator-partial {
-    background: #fc9;
-    color: #000;
+    background: rgb(255, 204, 153);
+    color: #000000;
 }
 
 .indicator-unknown {
-    background: #eee;
-    color: #666;
+    background: #ececec;
+    color: #676767;
 }
 
 .indicator-na {
-    background: #eee;
-    color: #888;
+    background: #ececec;
+    color: #868686;
 }
