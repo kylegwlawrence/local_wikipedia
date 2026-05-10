@@ -66,15 +66,6 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         return f"<p>{html.escape(wikitext)}</p>"
 
 
-# Backward compatibility alias
-def convert_wikitext_to_markdown(wikitext: str) -> str:
-    """Deprecated: Use convert_wikitext_to_html instead.
-
-    This function now returns HTML, not Markdown.
-    """
-    return convert_wikitext_to_html(wikitext)
-
-
 _TABLE_OPEN_RE = re.compile(r'^[:\s]*\{\|')
 _TABLE_INNER_OPEN_RE = re.compile(r'^\s*\{\|')
 _TABLE_INNER_CLOSE_RE = re.compile(r'^\s*\|\}')

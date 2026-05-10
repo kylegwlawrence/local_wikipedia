@@ -4,8 +4,8 @@ import pathlib
 import httpx
 import pytest
 import respx
-import download
-from download import (
+import download.download as download
+from download.download import (
     BASE_URL,
     CHUNK_BYTES,
     FALLBACK_SUFFIXES,

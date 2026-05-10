@@ -1,7 +1,7 @@
 """Tests for the FastAPI web app.
 
 The tests build a tiny SQLite database that mirrors the schema produced by
-``parse/parse.py`` and point the app at it via the ``WIKI_DB`` environment
+``parse.pipeline`` and point the app at it via the ``WIKI_DB`` environment
 variable. This keeps the suite hermetic — it does not require a real
 Wikipedia dump to be parsed first.
 """

@@ -9,7 +9,28 @@ Wikipedia dump downloader, parser, and browser-based reader that:
 2. Parses compressed XML dumps and extracts articles into SQLite
 3. Serves a FastAPI + HTMX web UI for searching and reading articles
 
-The web app (`app.py`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `parse/wikitext_to_markdown.py`.
+The web app (`app.py`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `render.py`.
+
+## Layout
+
+```
+local_wikipedia/
+  app.py            FastAPI app (routes + redirect/search helpers)
+  paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI — absolute paths
+  db.py             connect(path) -> sqlite3.Connection (Row factory)
+  render.py         wikitext → HTML converter
+  download/
+    download.py     dump downloader + SHA-1 verifier
+  parse/
+    schema.py       articles + parse_metadata DDL, PRAGMAs
+    xml_reader.py   parse_page_element, MediaWiki namespace constants
+    pipeline.py     parse_dump, _batch_insert_articles, _record_metadata
+    verify.py       verify_database
+    cli.py          argparse main(), _find_latest_dump
+  tests/            pytest suite (mirrors source layout)
+  templates/, static/
+  dumps/            (gitignored) downloaded .xml.bz2 + parsed .db
+```
 
 ## Setup and Dependencies
 
@@ -25,14 +46,14 @@ Dependencies: `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`,
 
 ```bash
 # Download dumps (defaults to simplewiki)
-python download/download.py
-python download/download.py --wiki enwiki
+python -m download.download
+python -m download.download --wiki enwiki
 
 # Parse dump into SQLite
-python parse/parse.py --wiki simplewiki
+python -m parse.cli --wiki simplewiki
 
 # Verify database integrity
-python parse/parse.py --verify-only --database dumps/simplewiki.db
+python -m parse.cli --verify-only --database dumps/simplewiki.db
 
 # Run web app (open http://127.0.0.1:8000)
 uvicorn app:app --reload
@@ -40,8 +61,8 @@ WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
 
 # Tests
 pytest
-pytest parse/test_wikitext_to_markdown.py -v
-pytest download/test_download.py::TestHashFile::test_known_content -v
+pytest tests/test_render.py -v
+pytest tests/test_download.py::TestHashFile::test_known_content -v
 ```
 
 ## Architecture
@@ -56,9 +77,9 @@ Wikimedia → download.py → dumps/*.xml.bz2
 
 The web app is a single-page UI: `GET /` serves the shell, HTMX drives `GET /search?q=` and `GET /article/{title:path}` as fragment swaps into `#results` and `#article` — no JS build step.
 
-### Wikitext converter (`parse/wikitext_to_markdown.py`)
+### Wikitext converter (`render.py`)
 
-The converter outputs HTML directly (not Markdown). `convert_wikitext_to_markdown` is a backward-compat alias for `convert_wikitext_to_html`.
+The converter outputs HTML directly. Entry point: `convert_wikitext_to_html`.
 
 Pipeline order matters — stages are applied in sequence:
 
@@ -79,12 +100,13 @@ Pipeline order matters — stages are applied in sequence:
 - The syntaxhighlight placeholder is a `<div data-codeblock="n">` so `_wrap_paragraphs` treats it as block-level and doesn't wrap it in `<p>`
 - All tables default to `class="wikitable"` when no class is specified in the wikitext
 
-### Parse module (`parse/parse.py`)
+### Parse module (`parse/`)
 
-- Streams bz2-compressed XML with `iterparse()` and clears elements after use to stay memory-efficient on multi-GB dumps
-- Batch inserts (1000 articles/batch) with WAL-mode SQLite
+- `pipeline.parse_dump` streams bz2-compressed XML with `iterparse()` and clears elements after use to stay memory-efficient on multi-GB dumps
+- Batch inserts (1000 articles/batch) with WAL-mode SQLite (configured in `schema.create_schema`)
 - Atomic database writes: parsed to `.db.tmp` then renamed
 - Namespace 0 only by default (main articles)
+- `cli.main` is the CLI entry; `cli._find_latest_dump` reads `cli.DUMPS_DIR` at call time so tests can monkeypatch it
 
 ### Web app (`app.py`)
 
@@ -98,7 +120,7 @@ Pipeline order matters — stages are applied in sequence:
 
 | File | Scope |
 |---|---|
-| `download/test_download.py` | `respx`-mocked HTTP; filesystem isolated to `tmp_path` |
-| `parse/test_parse.py` | XML dump generation helpers; namespace filtering, atomic writes |
-| `parse/test_wikitext_to_markdown.py` | All converter stages; 60+ tests |
-| `test_app.py` | `TestClient` against a hermetic fixture DB; 17 tests |
+| `tests/test_download.py` | `respx`-mocked HTTP; filesystem isolated to `tmp_path` |
+| `tests/test_pipeline.py` | XML dump generation helpers; namespace filtering, atomic writes |
+| `tests/test_render.py` | All wikitext → HTML converter stages |
+| `tests/test_app.py` | `TestClient` against a hermetic fixture DB |

@@ -7,10 +7,10 @@ Serves three things:
 - ``GET /article/{title}`` — an HTML fragment with the article rendered
   from wikitext to HTML.
 
-The app reads from the SQLite database produced by ``parse/parse.py`` and
-uses ``parse.wikitext_to_markdown.convert_wikitext_to_html`` for conversion.
-The database path can be overridden with the ``WIKI_DB`` environment variable,
-which is what the tests use to point at a temporary fixture database.
+The app reads from the SQLite database produced by ``parse.cli`` and uses
+``render.convert_wikitext_to_html`` for conversion. The database path can be
+overridden with the ``WIKI_DB`` environment variable, which is what the tests
+use to point at a temporary fixture database.
 """
 import os
 import pathlib
@@ -22,10 +22,10 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from parse.wikitext_to_markdown import convert_wikitext_to_html
+import db as wiki_db
+from paths import BASE_DIR
+from render import convert_wikitext_to_html
 
-# Resolve paths relative to this file so the app works regardless of CWD.
-BASE_DIR = pathlib.Path(__file__).parent
 DEFAULT_DB = BASE_DIR / "dumps" / "enwiki.db"
 
 # Cap search results so the dropdown stays manageable and the LIKE scan
@@ -73,9 +73,7 @@ def _connect() -> sqlite3.Connection:
     path = _db_path()
     if not path.exists():
         raise HTTPException(status_code=503, detail=f"Database not found: {path}")
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return wiki_db.connect(path)
 
 
 def _search_titles(q: str) -> list[str]:

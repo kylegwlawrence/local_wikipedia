@@ -51,12 +51,12 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 
 Download dumps for Simple English Wikipedia (default):
 ```bash
-python download/download.py
+python -m download.download
 ```
 
 Download dumps for a specific wiki:
 ```bash
-python download/download.py --wiki enwiki
+python -m download.download --wiki enwiki
 ```
 
 Downloaded files are saved to the `dumps/` directory.
@@ -65,48 +65,22 @@ Downloaded files are saved to the `dumps/` directory.
 
 Parse the downloaded dump into a SQLite database:
 ```bash
-python parse/parse.py
+python -m parse.cli
 ```
 
 Parse a specific wiki:
 ```bash
-python parse/parse.py --wiki simplewiki
+python -m parse.cli --wiki simplewiki
 ```
 
 Verify an existing database:
 ```bash
-python parse/parse.py --verify-only --database dumps/simplewiki.db
+python -m parse.cli --verify-only --database dumps/simplewiki.db
 ```
 
 ### Step 3: Query the Database
 
-**Option A: Python Function**
-
-Use the `query_database()` function in your Python scripts:
-
-```python
-from parse.parse import query_database
-
-# Table format (default) - formatted for terminal display
-result = query_database(
-    "SELECT title, text_bytes FROM articles WHERE title LIKE 'Python%' LIMIT 5"
-)
-print(result)
-
-# JSON format - for programmatic use
-result = query_database(
-    "SELECT title, page_id FROM articles LIMIT 3",
-    format="json"
-)
-# Returns: [{"title": "April", "page_id": 1}, ...]
-```
-
-Run the example script:
-```bash
-python example_query.py
-```
-
-**Option B: Web App**
+**Option A: Web App**
 
 Launch the FastAPI app for a browser-based search UI:
 
@@ -122,7 +96,7 @@ To point the app at a different database file, set `WIKI_DB`:
 WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
 ```
 
-**Option C: SQLite CLI**
+**Option B: SQLite CLI**
 
 Query directly using sqlite3:
 ```bash
@@ -174,17 +148,17 @@ pytest
 
 Run download tests only:
 ```bash
-pytest download/test_download.py -v
+pytest tests/test_download.py -v
 ```
 
 Run parse tests only:
 ```bash
-pytest parse/test_parse.py -v
+pytest tests/test_pipeline.py -v
 ```
 
 Run a specific test class:
 ```bash
-pytest download/test_download.py::TestDownloadWithVerify
+pytest tests/test_download.py::TestDownloadWithVerify
 ```
 
 ## Dependencies
@@ -193,38 +167,33 @@ pytest download/test_download.py::TestDownloadWithVerify
 - **tqdm** (4.67.3) - Terminal progress bars
 - **pytest** (9.0.3) - Testing framework
 - **respx** (0.23.1) - HTTP mocking for tests
-- **mwparserfromhell** (0.6+) - MediaWiki wikitext parser for Markdown conversion
+- **mwparserfromhell** (0.6+) - MediaWiki wikitext parser
 - **fastapi** (0.115+) - Web framework for the browser UI
 - **uvicorn** (0.32+) - ASGI server for FastAPI
 - **jinja2** (3.1+) - HTML templating
-- **markdown** (3.7+) - Markdown to HTML rendering
 
 ## Project Structure
 
 ```
 .
+├── app.py             # FastAPI web app (routes)
+├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR)
+├── db.py              # sqlite3 connect() helper
+├── render.py          # Wikitext → HTML converter
 ├── download/
-│   ├── download.py       # Main downloader module
-│   └── test_download.py  # Download test suite
+│   └── download.py    # Dump downloader + SHA-1 verifier
 ├── parse/
-│   ├── parse.py                    # Article parser and SQLite storage
-│   ├── wikitext_to_markdown.py    # Wikitext to Markdown converter
-│   ├── test_parse.py               # Parse test suite
-│   └── test_wikitext_to_markdown.py # Converter test suite
-├── dumps/                          # Downloaded files and databases
-├── app.py                          # FastAPI web app (search + article view)
-├── templates/                      # Jinja2 templates for the web app
-│   ├── base.html
-│   ├── index.html
-│   ├── search_results.html
-│   └── article.html
-├── static/
-│   └── style.css                   # Web app styling
-├── test_app.py                     # Web app test suite
-├── example_query.py                # Example database queries
-├── requirements.txt                # Python dependencies
-├── PLAN.md                         # Implementation plan
-└── README.md                       # This file
+│   ├── schema.py      # SQLite schema + PRAGMAs
+│   ├── xml_reader.py  # MediaWiki <page> element extractor
+│   ├── pipeline.py    # parse_dump() — bz2 stream → SQLite
+│   ├── verify.py      # Database integrity check
+│   └── cli.py         # `python -m parse.cli` entry point
+├── tests/             # Pytest suite
+├── templates/         # Jinja2 templates
+├── static/            # CSS
+├── dumps/             # Downloaded files + parsed databases
+├── requirements.txt
+└── README.md
 ```
 
 ## Performance

@@ -1,8 +1,7 @@
-"""Tests for wikitext_to_markdown.py (now outputs HTML)."""
+"""Tests for render.py (wikitext → HTML converter)."""
 import pytest
-from parse.wikitext_to_markdown import (
+from render import (
     convert_wikitext_to_html,
-    convert_wikitext_to_markdown,  # backward compat alias
     _convert_bold_italic,
     _convert_headings,
     _convert_links,
