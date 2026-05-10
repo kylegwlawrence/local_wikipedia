@@ -23,10 +23,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import db as wiki_db
-from paths import BASE_DIR
+from paths import BASE_DIR, DEFAULT_WIKI, db_path_for
 from render import convert_wikitext_to_html
 
-DEFAULT_DB = BASE_DIR / "dumps" / "enwiki.db"
+DEFAULT_DB = db_path_for(DEFAULT_WIKI)
 
 # Cap search results so the dropdown stays manageable and the LIKE scan
 # can stop early.
@@ -76,34 +76,43 @@ def _connect() -> sqlite3.Connection:
     return wiki_db.connect(path)
 
 
+def _escape_like(s: str) -> str:
+    """Escape SQL LIKE wildcards (% _) and the escape char itself.
+
+    Without this, a query like ``foo_bar`` would silently match ``foo bar``,
+    ``foo-bar``, etc. since ``_`` is a single-char wildcard in SQL LIKE.
+    Paired with ``ESCAPE '\\'`` in the query.
+    """
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _search_titles(q: str) -> list[str]:
     """Find article titles matching ``q``, preferring prefix matches.
 
     Strategy: run a fast prefix query (``title LIKE 'q%'``) first — this hits
     ``idx_articles_title`` directly. If that returns fewer than ``SEARCH_LIMIT``
     rows, fall back to a substring query (``title LIKE '%q%'``) for the
-    remainder, excluding titles already returned by the prefix pass. This
-    gives users prefix-style autocomplete behavior while still surfacing
-    mid-title matches when a prefix search comes up short.
+    remainder, excluding titles already returned by the prefix pass.
 
     Args:
-        q: Raw search query from the user; whitespace is trimmed.
+        q: Raw search query from the user; whitespace is trimmed and SQL
+            LIKE wildcards (``%`` and ``_``) are escaped.
 
     Returns:
-        A list of up to ``SEARCH_LIMIT`` matching titles, in alphabetical
-        order within each pass. An empty list is returned for an empty
-        query so the UI can render a clean "type to search" state.
+        Up to ``SEARCH_LIMIT`` titles in alphabetical order within each pass.
     """
     q = q.strip()
     if not q:
         return []
+    needle = _escape_like(q)
 
     conn = _connect()
     try:
         # Prefix pass: indexed, sub-millisecond on ~395k rows.
         cur = conn.execute(
-            "SELECT title FROM articles WHERE title LIKE ? ORDER BY title LIMIT ?",
-            (q + "%", SEARCH_LIMIT),
+            "SELECT title FROM articles WHERE title LIKE ? ESCAPE '\\' "
+            "ORDER BY title LIMIT ?",
+            (needle + "%", SEARCH_LIMIT),
         )
         rows = [r["title"] for r in cur.fetchall()]
 
@@ -112,9 +121,9 @@ def _search_titles(q: str) -> list[str]:
         if len(rows) < SEARCH_LIMIT:
             seen = set(rows)
             cur = conn.execute(
-                "SELECT title FROM articles WHERE title LIKE ? AND title NOT LIKE ? "
-                "ORDER BY title LIMIT ?",
-                (f"%{q}%", q + "%", SEARCH_LIMIT - len(rows)),
+                "SELECT title FROM articles WHERE title LIKE ? ESCAPE '\\' "
+                "AND title NOT LIKE ? ESCAPE '\\' ORDER BY title LIMIT ?",
+                (f"%{needle}%", needle + "%", SEARCH_LIMIT - len(rows)),
             )
             for r in cur.fetchall():
                 if r["title"] not in seen:

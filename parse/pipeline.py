@@ -84,6 +84,8 @@ def parse_dump(
         raise RuntimeError(f"Dump file not found: {dump_path}")
 
     tmp_db = db_path.with_suffix(".db.tmp")
+    conn: sqlite3.Connection | None = None
+    completed = False
 
     try:
         start_time = time.time()
@@ -140,12 +142,25 @@ def parse_dump(
             end_time,
         )
         conn.close()
+        conn = None
         os.replace(tmp_db, db_path)
+        completed = True
         return total_pages, articles_inserted
 
     except sqlite3.Error as e:
-        try:
-            tmp_db.unlink()
-        except FileNotFoundError:
-            pass
         raise RuntimeError(f"Database error: {e}")
+    finally:
+        # Always release the connection and clean the tmp file on any failure
+        # path (including KeyboardInterrupt and unexpected exceptions). The
+        # tmp file is only kept on the happy path, where os.replace has already
+        # consumed it.
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        if not completed:
+            try:
+                tmp_db.unlink()
+            except FileNotFoundError:
+                pass
