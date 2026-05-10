@@ -21,7 +21,7 @@ import sys
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -31,6 +31,7 @@ from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for
 from render import convert_wikitext_to_html
 
 DEFAULT_DB = db_path_for(DEFAULT_WIKI)
+_WIKI_LABELS = {"enwiki": "EnWiki", "simplewiki": "SimpleWiki"}
 
 # Cap search results so the dropdown stays manageable and the LIKE scan
 # can stop early.
@@ -52,17 +53,23 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
-def _db_path() -> pathlib.Path:
-    """Return the SQLite database path, honoring the ``WIKI_DB`` env var.
+def _active_wiki(request: Request) -> str:
+    """Return the wiki the user has selected, defaulting to ``DEFAULT_WIKI``."""
+    return request.cookies.get("wiki_pref", DEFAULT_WIKI)
 
-    Reading the env var on each call (rather than at import time) lets tests
-    point the app at a temporary fixture database via ``monkeypatch.setenv``
-    after the app object has already been constructed.
+
+def _db_path(request: Request) -> pathlib.Path:
+    """Return the SQLite database path.
+
+    ``WIKI_DB`` env var wins (used by tests); otherwise the ``wiki_pref``
+    cookie determines which wiki database to open.
     """
-    return pathlib.Path(os.environ.get("WIKI_DB", DEFAULT_DB))
+    if "WIKI_DB" in os.environ:
+        return pathlib.Path(os.environ["WIKI_DB"])
+    return db_path_for(_active_wiki(request))
 
 
-def _connect() -> sqlite3.Connection:
+def _connect(request: Request) -> sqlite3.Connection:
     """Open a per-request SQLite connection with row-dict access.
 
     Returns:
@@ -74,7 +81,7 @@ def _connect() -> sqlite3.Connection:
             This surfaces a clear error in the UI when a user starts the
             web app before running the parser.
     """
-    path = _db_path()
+    path = _db_path(request)
     if not path.exists():
         raise HTTPException(status_code=503, detail=f"Database not found: {path}")
     return wiki_db.connect(path)
@@ -85,7 +92,7 @@ def _escape_fts5(q: str) -> str:
     return '"' + q.replace('"', '""') + '"'
 
 
-def _search_titles(q: str) -> list[str]:
+def _search_titles(q: str, request: Request) -> list[str]:
     """Find article titles matching ``q`` using the FTS5 trigram index.
 
     The ``articles_fts`` virtual table uses the ``trigram`` tokenizer, which
@@ -103,7 +110,7 @@ def _search_titles(q: str) -> list[str]:
     if not q:
         return []
 
-    conn = _connect()
+    conn = _connect(request)
     try:
         if len(q) < 3:
             needle = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -124,7 +131,7 @@ def _search_titles(q: str) -> list[str]:
         conn.close()
 
 
-def _fetch_article(title: str) -> tuple[sqlite3.Row | None, str | None]:
+def _fetch_article(title: str, request: Request) -> tuple[sqlite3.Row | None, str | None]:
     """Look up an article by title, following ``#REDIRECT`` chains.
 
     A third of the rows in a typical enwiki dump are redirect stubs whose
@@ -141,7 +148,7 @@ def _fetch_article(title: str) -> tuple[sqlite3.Row | None, str | None]:
         and ``redirected_from`` is the *original* title the caller asked
         for if at least one redirect was followed, otherwise ``None``.
     """
-    conn = _connect()
+    conn = _connect(request)
     try:
         original_title = title
         seen: set[str] = set()
@@ -198,7 +205,14 @@ def index(request: Request) -> HTMLResponse:
         The full ``index.html`` page. HTMX takes over from here and swaps
         fragments into ``#results`` and ``#article`` without reloading.
     """
-    return templates.TemplateResponse(request, "index.html", {})
+    wiki = _active_wiki(request)
+    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
+    return templates.TemplateResponse(request, "index.html", {
+        "wiki": wiki,
+        "wiki_label": _WIKI_LABELS[wiki],
+        "other_wiki": other_wiki,
+        "other_wiki_label": _WIKI_LABELS[other_wiki],
+    })
 
 
 @app.get("/search", response_class=HTMLResponse)
@@ -218,7 +232,7 @@ def search(request: Request, q: str = "") -> HTMLResponse:
         Rendered ``search_results.html`` partial. An empty ``q`` produces
         an empty list rather than an error.
     """
-    titles = _search_titles(q)
+    titles = _search_titles(q, request)
     return templates.TemplateResponse(
         request, "search_results.html", {"titles": titles, "q": q}
     )
@@ -242,7 +256,7 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     Raises:
         HTTPException: 404 when no article with that exact title exists.
     """
-    row, _redirected_from = _fetch_article(title)
+    row, _redirected_from = _fetch_article(title, request)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
@@ -256,6 +270,15 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
             "timestamp": row["timestamp"],
         },
     )
+
+
+@app.get("/switch-wiki")
+def switch_wiki(to: str) -> RedirectResponse:
+    if to not in KNOWN_WIKIS:
+        raise HTTPException(status_code=400, detail=f"Unknown wiki: {to}")
+    response = RedirectResponse("/", status_code=302)
+    response.set_cookie("wiki_pref", to, max_age=365 * 24 * 3600)
+    return response
 
 
 def _format_elapsed(started_at: str) -> str:
@@ -372,7 +395,7 @@ def article(request: Request, title: str) -> HTMLResponse:
     Raises:
         HTTPException: 404 when no article with that exact title exists.
     """
-    row, redirected_from = _fetch_article(title)
+    row, redirected_from = _fetch_article(title, request)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 

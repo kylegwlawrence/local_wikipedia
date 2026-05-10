@@ -71,6 +71,24 @@ main {
     flex-shrink: 0;
 }
 
+.wiki-switch-btn {
+    flex-shrink: 0;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-soft);
+    color: var(--muted);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.wiki-switch-btn:hover {
+    border-color: var(--link);
+    color: var(--link);
+    background: #eaeefa;
+}
+
 .search-form input[type="search"]:focus {
     border-color: var(--link);
     box-shadow: 0 0 0 2px rgba(6, 69, 173, 0.15);

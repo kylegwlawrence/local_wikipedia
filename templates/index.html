@@ -6,7 +6,7 @@
 
 {% block content %}
 <header class="site-header">
-    <h1>Local Wikipedia</h1>
+    <h1>Local Wikipedia · {{ wiki_label }}</h1>
 </header>
 
 {# Search box.
@@ -30,6 +30,7 @@
         hx-target="#results"
         hx-swap="innerHTML"
         hx-indicator="#search-spinner">
+    <a href="/switch-wiki?to={{ other_wiki }}" class="wiki-switch-btn">Switch to {{ other_wiki_label }}</a>
 </form>
 
 {# Results stay visible after an article is loaded so the user can keep
