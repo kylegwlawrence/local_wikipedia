@@ -126,18 +126,26 @@ document.addEventListener('click', function (e) {
 
     var articleSpinner = document.getElementById('article-load-spinner');
     var articleDiv = document.getElementById('article');
+    var articleLinkPending = false;
     function isInlineArticleLink(target) {
         var hxGet = target && target.getAttribute && target.getAttribute('hx-get');
         return hxGet && hxGet.startsWith('/article/') && target !== articleDiv && articleDiv.contains(target);
     }
     window.addEventListener('pageshow', function () {
+        articleLinkPending = false;
         articleSpinner.classList.remove('active');
     });
     document.body.addEventListener('htmx:beforeRequest', function (e) {
-        if (isInlineArticleLink(e.target)) articleSpinner.classList.add('active');
+        if (isInlineArticleLink(e.target)) {
+            articleLinkPending = true;
+            articleSpinner.classList.add('active');
+        }
     });
-    document.body.addEventListener('htmx:afterRequest', function (e) {
-        if (isInlineArticleLink(e.target)) articleSpinner.classList.remove('active');
+    document.body.addEventListener('htmx:afterRequest', function () {
+        if (articleLinkPending) {
+            articleLinkPending = false;
+            articleSpinner.classList.remove('active');
+        }
     });
 
     document.body.addEventListener('articleNotFound', function (e) {
