@@ -1,6 +1,6 @@
-# Wikipedia Dump Downloader & Parser
+# Local Wikipedia
 
-A Python tool for downloading, verifying, and parsing Wikipedia dump files from Wikimedia. Downloads dumps with SHA-1 verification, then extracts articles into a local SQLite database for easy querying.
+A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps. Downloads and SHA-1-verifies Wikimedia dumps, parses them into SQLite, serves a browser-based reader, and builds a local RAG index for semantic search using a local Ollama model.
 
 ## Features
 
@@ -36,6 +36,14 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 - Wiki switcher: cookie-based toggle between enwiki and simplewiki without restarting the app
 - One-click incremental refresh: downloads a new dump and updates only changed articles in-place (no full re-parse)
 - No JavaScript build step; all logic stays in Python
+
+### RAG Pipeline
+- Chunks articles into sections using `== Heading ==` regex boundaries and strips wikitext to plain text via mwparserfromhell
+- Embeds chunks with a local Ollama model (`nomic-embed-text`, 768 dims) and stores vectors in `sqlite-vec`
+- Hybrid retrieval: dense ANN search + FTS5 BM25 merged with Reciprocal Rank Fusion
+- Incremental embedding: skips articles whose `revision_id` hasn't changed; safe to re-run after a wiki refresh
+- RAG index stored in `dumps/{wiki}_rag.db` — separate from the wiki DB so refreshes don't clobber embeddings
+- Ollama chat generation via `rag/generator.py`; web UI integration is not yet built
 
 ## Installation
 
@@ -92,7 +100,33 @@ Add FTS5 to an already-parsed database (no re-parse needed):
 python -m parse.cli --rebuild-fts --database dumps/enwiki.db
 ```
 
-### Step 3: Query the Database
+### Step 3 (Optional): Build the RAG Index
+
+Requires [Ollama](https://ollama.com) running locally with the embedding model pulled:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+Embed a wiki (simplewiki takes ~2–3 hours; enwiki takes much longer):
+
+```bash
+# Smoke test — first 100 articles only
+python -m rag.embed --wiki simplewiki --limit 100
+
+# Full embedding run
+python -m rag.embed --wiki simplewiki
+
+# Re-run after a wiki refresh (automatically skips unchanged articles)
+python -m rag.embed --wiki simplewiki
+
+# Re-embed everything from scratch
+python -m rag.embed --wiki simplewiki --reset
+```
+
+The index is saved to `dumps/{wiki}_rag.db`. Web UI integration for querying the RAG index is not yet built.
+
+### Step 4: Query the Database
 
 **Option A: Web App**
 
@@ -185,6 +219,7 @@ pytest tests/test_download.py::TestDownloadWithVerify
 - **fastapi** (0.115+) - Web framework for the browser UI
 - **uvicorn** (0.32+) - ASGI server for FastAPI
 - **jinja2** (3.1+) - HTML templating
+- **sqlite-vec** (0.1.6+) - Vector similarity search extension for SQLite (RAG pipeline)
 
 ## Project Structure
 
@@ -214,10 +249,18 @@ pytest tests/test_download.py::TestDownloadWithVerify
 │   ├── refresh.py     # refresh_dump() — incremental update of existing database
 │   ├── verify.py      # Database integrity check
 │   └── cli.py         # `python -m parse.cli` entry point
+├── rag/
+│   ├── schema.py      # RAG DB schema + connect_rag() (loads sqlite-vec extension)
+│   ├── chunker.py     # chunk_article(), extract_categories(), is_redirect()
+│   ├── embedder.py    # embed_text() via Ollama; pack/unpack_embedding()
+│   ├── embed.py       # `python -m rag.embed` CLI entry point
+│   ├── retriever.py   # retrieve() — dense + sparse + RRF hybrid
+│   └── generator.py   # build_prompt(), stream_response() for Ollama chat
 ├── tests/             # Pytest suite
 ├── templates/         # Jinja2 templates
 ├── static/            # CSS + vendored KaTeX
 ├── dumps/             # Downloaded files + parsed databases + jobs.db
+│                      # also: {wiki}_rag.db (RAG chunks + vectors, gitignored)
 ├── requirements.txt
 └── README.md
 ```

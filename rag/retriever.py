@@ -1,0 +1,137 @@
+"""Hybrid dense + sparse retrieval for the RAG pipeline.
+
+Dense search uses sqlite-vec ANN on chunk embeddings.
+Sparse search uses FTS5 BM25 on chunk text.
+Results are merged with Reciprocal Rank Fusion (RRF).
+"""
+import sqlite3
+from dataclasses import dataclass
+
+import httpx
+
+from rag import embedder
+
+
+@dataclass
+class Chunk:
+    chunk_id: int
+    page_id: int
+    title: str
+    section: str | None
+    text: str
+    score: float
+
+
+def retrieve(
+    query: str,
+    rag_conn: sqlite3.Connection,
+    top_k: int = 5,
+    candidate_k: int = 20,
+    rrf_k: int = 60,
+    ollama_url: str = embedder.OLLAMA_BASE_URL,
+) -> list[Chunk]:
+    """Hybrid retrieval: dense ANN + sparse FTS5, merged with RRF.
+
+    Falls back to sparse-only if Ollama is unreachable.
+    Returns up to top_k Chunk objects sorted by descending RRF score.
+    """
+    if not query.strip():
+        return []
+
+    sparse = _sparse_search(query, rag_conn, candidate_k)
+
+    dense: list[tuple[int, float]] = []
+    try:
+        vec = embedder.embed_text(query, base_url=ollama_url)
+        dense = _dense_search(vec, rag_conn, candidate_k)
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
+        pass  # sparse-only fallback
+
+    merged = _rrf_merge(dense, sparse, k=rrf_k)[:top_k]
+    if not merged:
+        return []
+
+    chunk_ids = [cid for cid, _ in merged]
+    score_map = {cid: score for cid, score in merged}
+    hydrated = _fetch_chunks(chunk_ids, rag_conn)
+
+    result = []
+    for cid in chunk_ids:
+        if cid in hydrated:
+            c = hydrated[cid]
+            c.score = score_map[cid]
+            result.append(c)
+    return result
+
+
+def _dense_search(
+    query_embedding: list[float],
+    rag_conn: sqlite3.Connection,
+    k: int,
+) -> list[tuple[int, float]]:
+    packed = embedder.pack_embedding(query_embedding)
+    rows = rag_conn.execute(
+        "SELECT chunk_id, distance FROM chunks_vec WHERE embedding MATCH ? AND k = ?",
+        (packed, k),
+    ).fetchall()
+    return [(r["chunk_id"], r["distance"]) for r in rows]
+
+
+def _sparse_search(
+    query: str,
+    rag_conn: sqlite3.Connection,
+    k: int,
+) -> list[tuple[int, float]]:
+    # Quote each word individually so FTS5 applies AND-of-terms (not phrase match).
+    # Phrase quoting ("full question") would only match verbatim sequences.
+    words = query.split()
+    if not words:
+        return []
+    escaped = " ".join('"' + w.replace('"', "") + '"' for w in words)
+    try:
+        rows = rag_conn.execute(
+            "SELECT rowid, rank FROM chunks_fts WHERE chunks_fts MATCH ? LIMIT ?",
+            (escaped, k),
+        ).fetchall()
+        return [(r["rowid"], r["rank"]) for r in rows]
+    except sqlite3.OperationalError:
+        return []
+
+
+def _rrf_merge(
+    dense: list[tuple[int, float]],
+    sparse: list[tuple[int, float]],
+    k: int = 60,
+) -> list[tuple[int, float]]:
+    scores: dict[int, float] = {}
+    for rank, (chunk_id, _) in enumerate(dense, 1):
+        scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
+    for rank, (chunk_id, _) in enumerate(sparse, 1):
+        scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+
+def _fetch_chunks(
+    chunk_ids: list[int],
+    rag_conn: sqlite3.Connection,
+) -> dict[int, Chunk]:
+    if not chunk_ids:
+        return {}
+    placeholders = ",".join("?" * len(chunk_ids))
+    rows = rag_conn.execute(
+        f"SELECT c.chunk_id, c.page_id, c.section, c.text, am.title "
+        f"FROM chunks c JOIN articles_meta am USING(page_id) "
+        f"WHERE c.chunk_id IN ({placeholders})",
+        chunk_ids,
+    ).fetchall()
+    return {
+        r["chunk_id"]: Chunk(
+            chunk_id=r["chunk_id"],
+            page_id=r["page_id"],
+            title=r["title"],
+            section=r["section"],
+            text=r["text"],
+            score=0.0,
+        )
+        for r in rows
+    }

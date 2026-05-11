@@ -11,3 +11,8 @@ KNOWN_WIKIS: frozenset[str] = frozenset({"enwiki", "simplewiki"})
 def db_path_for(wiki: str) -> pathlib.Path:
     """Default SQLite path for a wiki name (``dumps/{wiki}.db``)."""
     return DUMPS_DIR / f"{wiki}.db"
+
+
+def rag_db_path_for(wiki: str) -> pathlib.Path:
+    """RAG database path for a wiki (``dumps/{wiki}_rag.db``)."""
+    return DUMPS_DIR / f"{wiki}_rag.db"

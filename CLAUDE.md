@@ -4,19 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Wikipedia dump downloader, parser, and browser-based reader that:
+Wikipedia dump downloader, parser, browser-based reader, and RAG pipeline that:
 1. Downloads and SHA-1-verifies multistream dump files from Wikimedia
 2. Parses compressed XML dumps and extracts articles into SQLite
 3. Serves a FastAPI + HTMX web UI for searching and reading articles
+4. Chunks and embeds articles for semantic search via a local Ollama model
 
-The web app (`app.py`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `render/`.
+The web app (`app.py`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `render/`. The `rag/` package handles offline embedding and retrieval; web UI integration for AI queries is not yet built.
 
 ## Layout
 
 ```
 local_wikipedia/
   app.py            FastAPI app (routes + redirect/search/refresh helpers)
-  paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS
+  paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, rag_db_path_for
   db.py             connect(path) -> sqlite3.Connection (Row factory)
   jobs.py           CRUD helpers for refresh_jobs table in dumps/jobs.db
   worker.py         background subprocess: download → refresh → FTS rebuild
@@ -30,6 +31,14 @@ local_wikipedia/
     inline.py       bold/italic, wikilinks
     protect.py      syntaxhighlight + math block extraction/restore
     strip.py        strip templates, refs, comments, categories
+  rag/              RAG pipeline (offline embedding + retrieval)
+    __init__.py
+    schema.py       connect_rag(), create_rag_schema() — chunks + vec + FTS tables
+    chunker.py      chunk_article(), extract_categories(), is_redirect()
+    embedder.py     embed_text() sync/async via Ollama; pack/unpack_embedding()
+    embed.py        CLI entry point: python -m rag.embed --wiki X
+    retriever.py    retrieve() — dense (sqlite-vec) + sparse (FTS5) + RRF merge
+    generator.py    build_prompt(), stream_response() — Ollama chat streaming
   download/
     download.py     dump downloader + SHA-1 verifier
   parse/
@@ -42,6 +51,7 @@ local_wikipedia/
   tests/            pytest suite (mirrors source layout)
   templates/, static/
   dumps/            (gitignored) downloaded .xml.bz2 + parsed .db + jobs.db
+                    also stores {wiki}_rag.db (RAG chunks + vectors)
 ```
 
 ## Setup and Dependencies
@@ -52,7 +62,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Dependencies: `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`, `uvicorn[standard]`, `jinja2`.
+Dependencies: `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`, `uvicorn[standard]`, `jinja2`, `sqlite-vec`.
 
 ## Common Commands
 
@@ -74,6 +84,11 @@ python -m parse.cli --rebuild-fts --database dumps/enwiki.db
 uvicorn app:app --reload
 WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
 
+# Build RAG index (requires Ollama running with nomic-embed-text pulled)
+python -m rag.embed --wiki simplewiki            # full run
+python -m rag.embed --wiki simplewiki --limit 100 # smoke test (first 100 articles)
+python -m rag.embed --wiki simplewiki --reset     # re-embed from scratch
+
 # Tests
 pytest
 pytest tests/test_render.py -v
@@ -88,6 +103,7 @@ pytest tests/test_download.py::TestHashFile::test_known_content -v
 Wikimedia → download.py → dumps/*.xml.bz2
                        → parse.py → dumps/*.db (SQLite)
                                   → app.py → browser
+                                  → rag/embed.py → dumps/*_rag.db (chunks + vectors)
 ```
 
 The web app is a single-page UI: `GET /` serves the shell, HTMX drives `GET /search?q=` and `GET /article/{title:path}` as fragment swaps into `#results` and `#article` — no JS build step.
@@ -160,6 +176,44 @@ Pipeline order matters — stages are applied in sequence:
 - Batch size matches `parse/pipeline.py`'s `BATCH_SIZE` (1000). After each batch, `jobs.update_job` writes running totals to `jobs.db` so the status panel can show live progress.
 - FTS rebuild happens in `worker.py` after `refresh_dump` returns — same `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` used by the initial parse.
 
+### RAG pipeline (`rag/`)
+
+Offline embedding pipeline that chunks articles into sections and embeds them using a local Ollama model. Results are stored in `dumps/{wiki}_rag.db` — **separate from the wiki DB** so refresh jobs don't clobber embeddings.
+
+**Chunking** (`rag/chunker.py`):
+- Splits raw wikitext on `== Section ==` regex boundaries (20–50× faster than `mwparserfromhell.get_sections()`)
+- Strips wikitext markup with `mwparserfromhell.strip_code()` per section to produce plain text
+- Max 1,600 chars/chunk (~400 tokens); long sections split at paragraph boundaries first
+- Skips redirect articles entirely
+- Extracts `[[Category:...]]` names via regex before stripping
+
+**RAG DB schema** (in `dumps/{wiki}_rag.db`):
+- `articles_meta` — mirrors `page_id`, `title`, `revision_id`, `categories` from the wiki DB; enables incremental re-embedding keyed on `revision_id`
+- `chunks` — one row per text chunk: `page_id`, `section`, `chunk_index`, `text`, `text_length`
+- `chunks_fts` — FTS5 virtual table with `tokenize='porter ascii'` (porter stemming suits natural-language queries better than the trigram used for title search)
+- `chunks_vec` — sqlite-vec `vec0` virtual table storing 768-dim float32 embeddings
+
+**Retrieval** (`rag/retriever.py`):
+- Dense: sqlite-vec ANN search (`SELECT chunk_id, distance FROM chunks_vec WHERE embedding MATCH ? AND k = ?`)
+- Sparse: FTS5 BM25 with per-word quoting (not phrase quoting — avoids verbatim-match failures on questions)
+- Merge: Reciprocal Rank Fusion (`score = Σ 1/(k + rank)` across both lists, k=60)
+- Falls back to sparse-only if Ollama is unreachable
+
+**Generation** (`rag/generator.py`):
+- `build_prompt()` formats top-K chunks as numbered context blocks (capped at ~6,000 chars)
+- `stream_response()` is an async generator that streams tokens from Ollama `/api/chat`
+
+**Embedding CLI** (`rag/embed.py`):
+- Incremental by default: loads `(page_id, revision_id)` from `articles_meta`, skips unchanged articles, deletes + re-embeds if `revision_id` changed
+- Commits every `--batch` articles (default 100); FTS5 bulk-rebuild runs at the end
+- `--reset` flag wipes all existing data before starting
+
+**Key non-obvious decisions**:
+- `rag_db_path_for(wiki)` in `paths.py` returns `dumps/{wiki}_rag.db`; wiki DBs are atomically replaced on refresh (`os.replace`), so RAG data must be separate
+- `connect_rag(path)` loads the sqlite-vec extension on every connection — never use plain `sqlite3.connect()` for the RAG DB
+- FTS5 uses `tokenize='porter ascii'` (not trigram): trigram is ideal for partial-title substring search, porter stemming improves recall on free-text questions ("running" matches "run")
+- Sparse search quotes each word individually (`"word1" "word2"`) so FTS5 applies AND-of-terms, not phrase-match — phrase quoting would require verbatim adjacent sequences
+
 ### Test organisation
 
 | File | Scope |
@@ -168,3 +222,6 @@ Pipeline order matters — stages are applied in sequence:
 | `tests/test_pipeline.py` | XML dump generation helpers; namespace filtering, atomic writes |
 | `tests/test_render.py` | All wikitext → HTML converter stages |
 | `tests/test_app.py` | `TestClient` against a hermetic fixture DB |
+| `tests/test_rag_schema.py` | RAG schema creation and idempotence |
+| `tests/test_rag_chunker.py` | Chunker unit tests — no external deps required |
+| `tests/test_rag_retriever.py` | Retrieval tests against fixture RAG DB; Ollama not required |
