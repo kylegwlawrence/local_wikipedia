@@ -14,6 +14,17 @@ from rag import embedder
 
 @dataclass
 class Chunk:
+    """A single retrieved text chunk with its provenance and relevance score.
+
+    Attributes:
+        chunk_id: Primary key in the chunks table.
+        page_id: ID of the source article.
+        title: Title of the source article.
+        section: Section heading within the article, or None for the lead.
+        text: Plain text content of the chunk.
+        score: RRF relevance score (higher is more relevant).
+    """
+
     chunk_id: int
     page_id: int
     title: str
@@ -30,10 +41,23 @@ def retrieve(
     rrf_k: int = 60,
     ollama_url: str = embedder.OLLAMA_BASE_URL,
 ) -> list[Chunk]:
-    """Hybrid retrieval: dense ANN + sparse FTS5, merged with RRF.
+    """Retrieve the most relevant chunks for a query using hybrid search.
 
-    Falls back to sparse-only if Ollama is unreachable.
-    Returns up to top_k Chunk objects sorted by descending RRF score.
+    Combines dense ANN search (sqlite-vec) and sparse FTS5 search, merged
+    with Reciprocal Rank Fusion. Falls back to sparse-only if Ollama is
+    unreachable.
+
+    Args:
+        query: Natural language query string.
+        rag_conn: Open RAG database connection with sqlite-vec loaded.
+        top_k: Number of chunks to return.
+        candidate_k: Number of candidates to collect from each search method
+            before merging.
+        rrf_k: RRF smoothing constant (score = 1 / (rrf_k + rank)).
+        ollama_url: Ollama server base URL for dense embedding.
+
+    Returns:
+        List of up to top_k Chunk objects sorted by descending RRF score.
     """
     if not query.strip():
         return []
@@ -62,6 +86,16 @@ def _dense_search(
     rag_conn: sqlite3.Connection,
     k: int,
 ) -> list[tuple[int, float]]:
+    """Run ANN search against chunks_vec and return (chunk_id, distance) pairs.
+
+    Args:
+        query_embedding: Query vector as a list of floats.
+        rag_conn: Open RAG database connection with sqlite-vec loaded.
+        k: Number of nearest neighbors to retrieve.
+
+    Returns:
+        List of (chunk_id, distance) tuples; lower distance means more similar.
+    """
     packed = embedder.pack_embedding(query_embedding)
     rows = rag_conn.execute(
         "SELECT chunk_id, distance FROM chunks_vec WHERE embedding MATCH ? AND k = ?",
@@ -75,8 +109,21 @@ def _sparse_search(
     rag_conn: sqlite3.Connection,
     k: int,
 ) -> list[tuple[int, float]]:
-    # Quote each word individually so FTS5 applies AND-of-terms (not phrase match).
-    # Phrase quoting ("full question") would only match verbatim sequences.
+    """Run FTS5 BM25 search against chunks_fts and return (chunk_id, rank) pairs.
+
+    Each query word is quoted individually so FTS5 applies AND-of-terms logic
+    rather than phrase matching, which improves recall on natural-language queries.
+    Phrase quoting would only match verbatim adjacent sequences.
+
+    Args:
+        query: Natural language query string.
+        rag_conn: Open RAG database connection.
+        k: Maximum number of results to return.
+
+    Returns:
+        List of (chunk_id, rank) tuples. Rank is the negative BM25 score
+        (FTS5 convention), so lower values indicate stronger matches.
+    """
     words = query.split()
     if not words:
         return []
@@ -96,6 +143,19 @@ def _rrf_merge(
     sparse: list[tuple[int, float]],
     k: int = 60,
 ) -> list[tuple[int, float]]:
+    """Merge dense and sparse result lists with Reciprocal Rank Fusion.
+
+    Each chunk's RRF score is the sum of 1 / (k + rank) across every list it
+    appears in. A chunk present in both lists scores higher than one in only one.
+
+    Args:
+        dense: (chunk_id, distance) pairs from dense search, ordered ascending.
+        sparse: (chunk_id, rank) pairs from sparse search, ordered by BM25.
+        k: Smoothing constant; higher values reduce the influence of top ranks.
+
+    Returns:
+        List of (chunk_id, rrf_score) tuples sorted by descending score.
+    """
     scores: dict[int, float] = {}
     for rank, (chunk_id, _) in enumerate(dense, 1):
         scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
@@ -109,6 +169,17 @@ def _fetch_chunks(
     score_map: dict[int, float],
     rag_conn: sqlite3.Connection,
 ) -> dict[int, Chunk]:
+    """Hydrate a list of chunk IDs into Chunk objects joined with articles_meta.
+
+    Args:
+        chunk_ids: List of chunk_id values to fetch.
+        score_map: Mapping of chunk_id to RRF score.
+        rag_conn: Open RAG database connection.
+
+    Returns:
+        Dict mapping chunk_id to the corresponding Chunk object.
+        Chunk IDs not found in the database are omitted.
+    """
     if not chunk_ids:
         return {}
     placeholders = ",".join("?" * len(chunk_ids))

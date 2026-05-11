@@ -10,7 +10,16 @@ import sqlite_vec
 
 
 def connect_rag(path: pathlib.Path) -> sqlite3.Connection:
-    """Open the RAG SQLite database, load sqlite-vec, create schema if needed."""
+    """Open the RAG SQLite database and return a ready-to-use connection.
+
+    Loads the sqlite-vec extension and creates the schema if it doesn't exist.
+
+    Args:
+        path: Filesystem path to the RAG SQLite database file.
+
+    Returns:
+        A sqlite3.Connection with Row factory and sqlite-vec loaded.
+    """
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.enable_load_extension(True)
@@ -21,7 +30,14 @@ def connect_rag(path: pathlib.Path) -> sqlite3.Connection:
 
 
 def create_rag_schema(conn: sqlite3.Connection) -> None:
-    """Create all RAG tables if they don't exist. Idempotent."""
+    """Create all RAG tables if they don't exist. Idempotent.
+
+    Creates articles_meta, chunks, chunks_fts (FTS5 with porter stemming),
+    and chunks_vec (sqlite-vec 768-dim float32 embeddings).
+
+    Args:
+        conn: An open RAG database connection with sqlite-vec already loaded.
+    """
     conn.executescript("""
         PRAGMA journal_mode=WAL;
 

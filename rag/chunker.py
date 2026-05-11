@@ -16,17 +16,39 @@ MAX_CHUNK_CHARS = 1600  # ~400 tokens at 4 chars/token
 
 
 def extract_categories(wikitext: str) -> list[str]:
-    """Return category names found in wikitext, stripping sort keys."""
+    """Return category names found in wikitext, stripping sort keys.
+
+    Args:
+        wikitext: Raw wikitext string for an article.
+
+    Returns:
+        List of category name strings (e.g. ``['History', 'Science']``).
+    """
     return [m.group(1).strip() for m in _CAT_RE.finditer(wikitext)]
 
 
 def is_redirect(wikitext: str) -> bool:
-    """Return True if this article is a #REDIRECT stub."""
+    """Return True if this article is a #REDIRECT stub.
+
+    Args:
+        wikitext: Raw wikitext string for an article.
+
+    Returns:
+        True if the article begins with a ``#REDIRECT`` directive.
+    """
     return bool(_REDIRECT_RE.match(wikitext))
 
 
 def _strip_wikitext(raw: str) -> str:
-    """Convert a wikitext fragment to plain text via mwparserfromhell."""
+    """Convert a wikitext fragment to plain text via mwparserfromhell.
+
+    Args:
+        raw: Raw wikitext string for a single section fragment.
+
+    Returns:
+        Plain text with markup stripped and whitespace trimmed. Falls back
+        to ``raw.strip()`` on malformed input that raises a parser error.
+    """
     try:
         return mwparserfromhell.parse(raw).strip_code().strip()
     except (ValueError, AttributeError):
@@ -35,7 +57,18 @@ def _strip_wikitext(raw: str) -> str:
 
 
 def _split_long_text(text: str, max_chars: int) -> list[str]:
-    """Split text into parts of at most max_chars, breaking at paragraph boundaries."""
+    """Split text into parts of at most max_chars, breaking at paragraph boundaries.
+
+    Paragraph boundaries (double newlines) are preferred split points.
+    A single paragraph that exceeds max_chars is hard-split at max_chars.
+
+    Args:
+        text: Plain text to split.
+        max_chars: Maximum character length of each returned part.
+
+    Returns:
+        List of text parts, each at most max_chars characters.
+    """
     if len(text) <= max_chars:
         return [text]
 
@@ -68,12 +101,17 @@ def chunk_article(
 ) -> list[dict[str, str | int | None]]:
     """Split an article into plain-text chunks at section boundaries.
 
-    Returns a list of dicts with keys:
-        section (str | None) — heading text, None for the lead section
-        chunk_index (int)    — 0-based sub-index within that section
-        text (str)           — plain text ready to embed
+    Args:
+        title: Article title (reserved for future use; not written to output).
+        wikitext: Raw wikitext for the full article.
+        max_chars: Maximum character length per chunk.
 
-    Returns [] for redirect articles and articles that produce no text.
+    Returns:
+        List of dicts, each with keys:
+            ``section`` (str | None): Heading text; None for the lead section.
+            ``chunk_index`` (int): 0-based sub-index within that section.
+            ``text`` (str): Plain text ready to embed.
+        Returns ``[]`` for redirect articles and articles that produce no text.
     """
     if is_redirect(wikitext):
         return []

@@ -18,13 +18,25 @@ from rag.schema import connect_rag
 
 
 def _load_embedded(rag_conn) -> dict[int, int]:
-    """Return {page_id: revision_id} for all already-embedded articles."""
+    """Return {page_id: revision_id} for all already-embedded articles.
+
+    Args:
+        rag_conn: Open RAG database connection.
+
+    Returns:
+        Mapping of page_id to the revision_id stored at last embed time.
+    """
     rows = rag_conn.execute("SELECT page_id, revision_id FROM articles_meta").fetchall()
     return {r["page_id"]: r["revision_id"] for r in rows}
 
 
 def _delete_article(rag_conn, page_id: int) -> None:
-    """Remove all chunks + vectors + FTS entries + meta for one article."""
+    """Remove all chunks, vectors, FTS entries, and meta for one article.
+
+    Args:
+        rag_conn: Open RAG database connection.
+        page_id: The article's page_id to delete.
+    """
     rows = rag_conn.execute(
         "SELECT chunk_id, text FROM chunks WHERE page_id = ?", (page_id,)
     ).fetchall()
@@ -34,6 +46,8 @@ def _delete_article(rag_conn, page_id: int) -> None:
         rag_conn.execute(
             f"DELETE FROM chunks_vec WHERE chunk_id IN ({placeholders})", chunk_ids
         )
+        # chunks_fts is a content table so deletions must be issued explicitly;
+        # DELETE FROM chunks alone doesn't update the FTS index.
         for r in rows:
             rag_conn.execute(
                 "INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', ?, ?)",
@@ -53,7 +67,19 @@ def _insert_chunk(
     *,
     fts_incremental: bool,
 ) -> int:
-    """Insert one chunk row + vector + optional FTS entry. Returns the chunk_id."""
+    """Insert one chunk row, its vector, and optionally an FTS entry.
+
+    Args:
+        rag_conn: Open RAG database connection.
+        page_id: The article's page_id.
+        chunk: Chunk dict with keys ``section``, ``chunk_index``, and ``text``.
+        vec: Embedding vector for this chunk.
+        fts_incremental: If True, insert directly into chunks_fts now. If False,
+            skip — the caller will do a single bulk FTS rebuild at the end.
+
+    Returns:
+        The newly assigned chunk_id.
+    """
     cur = rag_conn.execute(
         "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) "
         "VALUES (?, ?, ?, ?, ?)",
@@ -75,7 +101,22 @@ def _insert_chunk(
 
 def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
                    wikitext: str, ollama_url: str) -> int:
-    """Chunk + embed one article. Returns number of chunks inserted."""
+    """Chunk and embed one article, writing results to the RAG database.
+
+    Uses ``fts_incremental=False`` because the CLI does a bulk FTS rebuild after
+    all articles are processed — far faster than per-chunk inserts at scale.
+
+    Args:
+        rag_conn: Open RAG database connection.
+        page_id: Article page_id.
+        title: Article title.
+        revision_id: Current revision ID for incremental tracking.
+        wikitext: Raw wikitext content of the article.
+        ollama_url: Ollama server base URL.
+
+    Returns:
+        Number of chunks successfully inserted.
+    """
     if chunker.is_redirect(wikitext):
         return 0
 
@@ -107,12 +148,23 @@ def embed_one(
     wikitext: str,
     ollama_url: str = embedder.OLLAMA_BASE_URL,
 ) -> int:
-    """Chunk, embed, and store one article. Returns number of chunks embedded.
+    """Chunk, embed, and store one article, syncing FTS incrementally.
 
-    Syncs FTS5 incrementally per chunk rather than doing a full rebuild, so
-    it's safe to call from a live web request without touching the whole index.
-    Any existing data for the article is removed first.
-    Returns 0 for redirect articles without modifying the RAG DB.
+    Intended for live web requests — syncs FTS5 per chunk rather than doing
+    a full rebuild at the end, and commits before returning. Removes any
+    existing data for the article before re-inserting.
+
+    Args:
+        rag_conn: Open RAG database connection.
+        page_id: Article page_id.
+        title: Article title.
+        revision_id: Current revision ID for incremental tracking.
+        wikitext: Raw wikitext content of the article.
+        ollama_url: Ollama server base URL.
+
+    Returns:
+        Number of chunks successfully embedded. Returns 0 for redirect
+        articles without modifying the RAG database.
     """
     if chunker.is_redirect(wikitext):
         return 0
@@ -142,6 +194,14 @@ def embed_one(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the offline embedding pipeline from the command line.
+
+    Args:
+        argv: Argument list; defaults to ``sys.argv[1:]`` if None.
+
+    Returns:
+        Exit code: 0 on success, 1 if the wiki database is not found.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wiki", default="enwiki")
     parser.add_argument("--limit", type=int, default=None,
