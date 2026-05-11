@@ -398,12 +398,15 @@ def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
     finally:
         conn.close()
 
-    subprocess.Popen(
-        [sys.executable, str(BASE_DIR / "worker.py"), "--wiki", wiki, "--job-id", str(job_id)],
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    _refresh_log = pathlib.Path(log_path)
+    _refresh_log.parent.mkdir(parents=True, exist_ok=True)
+    with open(_refresh_log, "a") as _log:
+        subprocess.Popen(
+            [sys.executable, str(BASE_DIR / "worker.py"), "--wiki", wiki, "--job-id", str(job_id)],
+            start_new_session=True,
+            stdout=_log,
+            stderr=_log,
+        )
 
     return _render_status_panel(request, wiki, job)
 
@@ -714,13 +717,16 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
         jobs_conn.close()
 
     if spawn_worker:
-        subprocess.Popen(
-            [sys.executable, str(BASE_DIR / "embed_worker.py"),
-             "--wiki", wiki, "--job-id", str(job_id)],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        _embed_log = BASE_DIR / "dumps" / f"{wiki}_embed.log"
+        _embed_log.parent.mkdir(parents=True, exist_ok=True)
+        with open(_embed_log, "a") as _log:
+            subprocess.Popen(
+                [sys.executable, str(BASE_DIR / "embed_worker.py"),
+                 "--wiki", wiki, "--job-id", str(job_id)],
+                start_new_session=True,
+                stdout=_log,
+                stderr=_log,
+            )
 
     # HTMX requests: send the browser to /active-embedding. Non-HTMX callers
     # (curl, tests) get a 303 to the same place so behaviour is consistent.
