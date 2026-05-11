@@ -197,11 +197,12 @@ def _redirect_target(text_content: str | None) -> str | None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request) -> HTMLResponse:
+def index(request: Request, article: str = "") -> HTMLResponse:
     """Render the single-page UI shell (search box + empty result containers).
 
     Args:
         request: FastAPI request, required by Jinja2's ``TemplateResponse``.
+        article: Optional article title to pre-load into ``#article`` on page load.
 
     Returns:
         The full ``index.html`` page. HTMX takes over from here and swaps
@@ -214,6 +215,7 @@ def index(request: Request) -> HTMLResponse:
         "wiki_label": _WIKI_LABELS[wiki],
         "other_wiki": other_wiki,
         "other_wiki_label": _WIKI_LABELS[other_wiki],
+        "preload_article": article,
     })
 
 

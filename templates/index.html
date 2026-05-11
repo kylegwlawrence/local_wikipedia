@@ -40,7 +40,12 @@
 {# Results stay visible after an article is loaded so the user can keep
    navigating between matches. The two panels are independent HTMX targets. #}
 <section id="results" class="results"></section>
-<article id="article" class="article"></article>
+<article id="article" class="article"
+    {% if preload_article %}
+    hx-get="/article/{{ preload_article|urlencode }}"
+    hx-trigger="load"
+    hx-swap="innerHTML"
+    {% endif %}></article>
 
 {# Refresh section — one row per wiki. Each button POSTs to trigger a
    background download + incremental parse; the response fragment

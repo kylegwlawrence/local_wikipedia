@@ -28,10 +28,7 @@
         {% for a in articles %}
         <tr>
             <td>
-                <a href="/article/{{ a.title|urlencode }}"
-                   hx-get="/article/{{ a.title|urlencode }}"
-                   hx-target="#article-preview"
-                   hx-swap="innerHTML">{{ a.title }}</a>
+                <a href="/?article={{ a.title|urlencode }}">{{ a.title }}</a>
             </td>
             <td class="embed-categories">
                 {% if a.categories %}{{ a.categories.replace("|", " · ") }}{% endif %}
@@ -53,6 +50,4 @@
 </nav>
 {% endif %}
 {% endif %}
-
-<article id="article-preview" class="article"></article>
 {% endblock %}
