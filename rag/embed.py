@@ -129,15 +129,18 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
         (page_id, title, revision_id, "|".join(categories)),
     )
 
-    count = 0
-    for chunk in chunks:
-        try:
-            vec = embedder.embed_text(chunk["text"], base_url=ollama_url)
-        except httpx.HTTPError:
-            continue
+    if not chunks:
+        return 0
+
+    texts = [chunk["text"] for chunk in chunks]
+    try:
+        vecs = embedder.embed_texts_batch(texts, base_url=ollama_url)
+    except httpx.HTTPError:
+        return 0
+
+    for chunk, vec in zip(chunks, vecs):
         _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=False)
-        count += 1
-    return count
+    return len(vecs)
 
 
 def embed_one(
@@ -180,17 +183,22 @@ def embed_one(
         (page_id, title, revision_id, "|".join(categories)),
     )
 
-    count = 0
-    for chunk in chunks_data:
-        try:
-            vec = embedder.embed_text(chunk["text"], base_url=ollama_url)
-        except httpx.HTTPError:
-            continue
+    if not chunks_data:
+        rag_conn.commit()
+        return 0
+
+    texts = [chunk["text"] for chunk in chunks_data]
+    try:
+        vecs = embedder.embed_texts_batch(texts, base_url=ollama_url)
+    except httpx.HTTPError:
+        rag_conn.commit()
+        return 0
+
+    for chunk, vec in zip(chunks_data, vecs):
         _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=True)
-        count += 1
 
     rag_conn.commit()
-    return count
+    return len(vecs)
 
 
 def main(argv: list[str] | None = None) -> int:

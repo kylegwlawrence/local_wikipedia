@@ -75,6 +75,38 @@ async def embed_text_async(text: str, base_url: str = OLLAMA_BASE_URL) -> list[f
                 raise
 
 
+def embed_texts_batch(texts: list[str], base_url: str = OLLAMA_BASE_URL) -> list[list[float]]:
+    """Call Ollama /api/embed with multiple texts and return all embedding vectors.
+
+    Uses the batch endpoint so N texts require only one HTTP round-trip instead of N.
+    Retries up to ``_MAX_ATTEMPTS`` times with exponential backoff on HTTP errors.
+
+    Args:
+        texts: List of texts to embed.
+        base_url: Ollama server base URL.
+
+    Returns:
+        List of embedding vectors (one per input text), each a list of floats.
+
+    Raises:
+        httpx.HTTPError: If all retry attempts fail.
+    """
+    for attempt in range(_MAX_ATTEMPTS):
+        if attempt:
+            time.sleep(_BACKOFF_BASE ** attempt)
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    f"{base_url}/api/embed",
+                    json={"model": EMBED_MODEL, "input": texts},
+                )
+                resp.raise_for_status()
+                return resp.json()["embeddings"]
+        except httpx.HTTPError:
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
+
+
 def pack_embedding(embedding: list[float]) -> bytes:
     """Serialize a float32 vector to raw bytes for sqlite-vec storage.
 
