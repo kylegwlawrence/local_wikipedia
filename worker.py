@@ -6,7 +6,6 @@ browser disconnects. All output goes to a per-wiki log file in dumps/.
 import argparse
 import pathlib
 import sys
-import traceback
 
 # Ensure the project root is on sys.path regardless of invocation directory.
 _ROOT = pathlib.Path(__file__).parent.resolve()
@@ -14,6 +13,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import jobs
+from _runner import run_worker
 from download import download as downloader
 from parse.cli import _find_latest_dump
 from parse.refresh import refresh_dump
@@ -32,15 +32,14 @@ def main(argv: list[str] | None = None) -> int:
     job_id: int = args.job_id
     db_path = db_path_for(wiki)
 
-    log_path = DUMPS_DIR / f"{wiki}_refresh.log"
-    log_file = open(log_path, "a", buffering=1)
-    old_stdout, old_stderr = sys.stdout, sys.stderr
-    sys.stdout = sys.stderr = log_file
-
     jobs_conn = jobs.connect_jobs(JOBS_DB)
-    jobs.update_job(jobs_conn, job_id, log_path=str(log_path))
 
-    try:
+    def mark_failed(error_message: str) -> None:
+        jobs.update_job(jobs_conn, job_id, status="failed", error_message=error_message)
+
+    def body() -> int:
+        jobs.update_job(jobs_conn, job_id, log_path=str(DUMPS_DIR / f"{wiki}_refresh.log"))
+
         # --- Download --------------------------------------------------------
         jobs.update_job(jobs_conn, job_id, status="downloading")
         print(f"[worker] Downloading {wiki} dump…", flush=True)
@@ -94,21 +93,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    except Exception:
-        msg = traceback.format_exc()
-        print(f"[worker] FAILED:\n{msg}", flush=True)
-        jobs.update_job(
-            jobs_conn,
-            job_id,
-            status="failed",
-            error_message=str(sys.exc_info()[1]),
-        )
-        return 1
-
+    try:
+        return run_worker(wiki, "refresh", mark_failed, body)
     finally:
         jobs_conn.close()
-        sys.stdout, sys.stderr = old_stdout, old_stderr
-        log_file.close()
 
 
 if __name__ == "__main__":
