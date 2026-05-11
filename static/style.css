@@ -676,16 +676,23 @@ main {
 }
 
 .not-found-banner {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    margin: 0.5rem 0;
-    padding: 0.5rem 0.8rem;
+    gap: 0.8rem;
+    padding: 1rem 1.2rem;
     background: #fff3cd;
     border: 1px solid #ffc107;
-    border-radius: 5px;
-    font-size: 0.875rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
     color: #664d03;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    max-width: 480px;
+    min-width: 240px;
 }
 
 .not-found-close {

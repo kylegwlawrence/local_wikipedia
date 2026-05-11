@@ -12,6 +12,7 @@ The app reads from the SQLite database produced by ``parse.cli`` and uses
 overridden with the ``WIKI_DB`` environment variable, which is what the tests
 use to point at a temporary fixture database.
 """
+import json
 import os
 import pathlib
 import sqlite3
@@ -810,6 +811,15 @@ def article(request: Request, title: str) -> HTMLResponse:
     """
     row, redirected_from = _fetch_article(title, request)
     if row is None:
+        if request.headers.get("HX-Request") == "true":
+            wiki = _active_wiki(request)
+            wiki_label = _WIKI_LABELS.get(wiki, wiki)
+            resp = Response(content="", status_code=200)
+            resp.headers["HX-Reswap"] = "none"
+            resp.headers["HX-Trigger"] = json.dumps(
+                {"articleNotFound": {"title": title, "wiki": wiki_label}}
+            )
+            return resp
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
     html = convert_wikitext_to_html(row["text_content"])

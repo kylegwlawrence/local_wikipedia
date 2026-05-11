@@ -122,6 +122,26 @@ document.addEventListener('click', function (e) {
 
     var banner = document.getElementById('not-found-banner');
     if (banner) setTimeout(function () { banner.remove(); }, 5000);
+
+    document.body.addEventListener('articleNotFound', function (e) {
+        var existing = document.getElementById('not-found-banner');
+        if (existing) existing.remove();
+        var newBanner = document.createElement('div');
+        newBanner.className = 'not-found-banner';
+        newBanner.id = 'not-found-banner';
+        var em = document.createElement('em');
+        em.textContent = e.detail.title;
+        var btn = document.createElement('button');
+        btn.className = 'not-found-close';
+        btn.setAttribute('aria-label', 'Dismiss');
+        btn.textContent = '×';
+        btn.onclick = function () { newBanner.remove(); };
+        newBanner.appendChild(em);
+        newBanner.appendChild(document.createTextNode(' does not exist in ' + e.detail.wiki));
+        newBanner.appendChild(btn);
+        document.body.appendChild(newBanner);
+        setTimeout(function () { if (newBanner.parentNode) newBanner.remove(); }, 5000);
+    });
 }());
 </script>
 {% endblock %}
