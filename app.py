@@ -351,7 +351,7 @@ def _format_elapsed(started_at: str) -> str:
 def _format_started_at(started_at: str) -> str:
     try:
         dt = datetime.fromisoformat(started_at)
-        return dt.strftime("%-d %b %Y %H:%M %p UTC")
+        return dt.strftime("%-d %b %Y %H:%M UTC")
     except Exception:
         return started_at
 
