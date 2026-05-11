@@ -1,0 +1,30 @@
+{# HTMX fragment: embed status for a single article.
+   Rendered by GET /embed-status/{title} (initial load) and
+   POST /embed-article/{title} (after embedding completes).
+   Both states share identical padding so swapping them causes no layout shift. #}
+{% if embedded %}
+<span id="embed-widget" class="embed-badge embed-badge--done">&#10003; embedded</span>
+{% elif error %}
+<span id="embed-widget" class="embed-controls">
+    <button class="embed-btn"
+            hx-post="/embed-article/{{ title|urlencode }}"
+            hx-target="#embed-widget"
+            hx-swap="outerHTML"
+            hx-indicator="#embed-spinner">
+        Retry
+    </button>
+    <span id="embed-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
+    <span class="embed-error-note">Ollama unreachable</span>
+</span>
+{% else %}
+<span id="embed-widget" class="embed-controls">
+    <button class="embed-btn"
+            hx-post="/embed-article/{{ title|urlencode }}"
+            hx-target="#embed-widget"
+            hx-swap="outerHTML"
+            hx-indicator="#embed-spinner">
+        Embed
+    </button>
+    <span id="embed-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
+</span>
+{% endif %}

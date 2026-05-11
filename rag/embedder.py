@@ -29,7 +29,8 @@ def embed_text(text: str, base_url: str = OLLAMA_BASE_URL) -> list[float]:
                 return resp.json()["embedding"]
         except Exception as exc:
             last_exc = exc
-    raise RuntimeError(f"Ollama embedding failed after {_MAX_ATTEMPTS} attempts") from last_exc
+    assert last_exc is not None
+    raise last_exc
 
 
 async def embed_text_async(text: str, base_url: str = OLLAMA_BASE_URL) -> list[float]:
@@ -48,7 +49,8 @@ async def embed_text_async(text: str, base_url: str = OLLAMA_BASE_URL) -> list[f
                 return resp.json()["embedding"]
         except Exception as exc:
             last_exc = exc
-    raise RuntimeError(f"Ollama embedding failed after {_MAX_ATTEMPTS} attempts") from last_exc
+    assert last_exc is not None
+    raise last_exc
 
 
 def pack_embedding(embedding: list[float]) -> bytes:

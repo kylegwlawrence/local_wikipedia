@@ -24,18 +24,21 @@ def _load_embedded(rag_conn) -> dict[int, int]:
 
 
 def _delete_article(rag_conn, page_id: int) -> None:
-    """Remove all chunks + vectors + meta for one article."""
-    chunk_ids = [
-        r["chunk_id"]
-        for r in rag_conn.execute(
-            "SELECT chunk_id FROM chunks WHERE page_id = ?", (page_id,)
-        ).fetchall()
-    ]
-    if chunk_ids:
+    """Remove all chunks + vectors + FTS entries + meta for one article."""
+    rows = rag_conn.execute(
+        "SELECT chunk_id, text FROM chunks WHERE page_id = ?", (page_id,)
+    ).fetchall()
+    if rows:
+        chunk_ids = [r["chunk_id"] for r in rows]
         placeholders = ",".join("?" * len(chunk_ids))
         rag_conn.execute(
             f"DELETE FROM chunks_vec WHERE chunk_id IN ({placeholders})", chunk_ids
         )
+        for r in rows:
+            rag_conn.execute(
+                "INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', ?, ?)",
+                (r["chunk_id"], r["text"]),
+            )
         rag_conn.execute(
             f"DELETE FROM chunks WHERE chunk_id IN ({placeholders})", chunk_ids
         )
@@ -72,6 +75,62 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
             (chunk_id, embedder.pack_embedding(vec)),
         )
         count += 1
+    return count
+
+
+def embed_one(
+    rag_conn,
+    page_id: int,
+    title: str,
+    revision_id: int,
+    wikitext: str,
+    ollama_url: str = embedder.OLLAMA_BASE_URL,
+) -> int:
+    """Chunk, embed, and store one article. Returns number of chunks embedded.
+
+    Syncs FTS5 incrementally per chunk rather than doing a full rebuild, so
+    it's safe to call from a live web request without touching the whole index.
+    Any existing data for the article is removed first.
+    Returns 0 for redirect articles without modifying the RAG DB.
+    """
+    if chunker.is_redirect(wikitext):
+        return 0
+
+    _delete_article(rag_conn, page_id)
+
+    categories = chunker.extract_categories(wikitext)
+    chunks_data = chunker.chunk_article(title, wikitext)
+
+    rag_conn.execute(
+        "INSERT OR REPLACE INTO articles_meta (page_id, title, revision_id, categories) "
+        "VALUES (?, ?, ?, ?)",
+        (page_id, title, revision_id, "|".join(categories)),
+    )
+
+    count = 0
+    for chunk in chunks_data:
+        try:
+            vec = embedder.embed_text(chunk["text"], base_url=ollama_url)
+        except Exception:
+            continue
+        cur = rag_conn.execute(
+            "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (page_id, chunk["section"], chunk["chunk_index"],
+             chunk["text"], len(chunk["text"])),
+        )
+        chunk_id = cur.lastrowid
+        rag_conn.execute(
+            "INSERT INTO chunks_vec (chunk_id, embedding) VALUES (?, ?)",
+            (chunk_id, embedder.pack_embedding(vec)),
+        )
+        rag_conn.execute(
+            "INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)",
+            (chunk_id, chunk["text"]),
+        )
+        count += 1
+
+    rag_conn.commit()
     return count
 
 

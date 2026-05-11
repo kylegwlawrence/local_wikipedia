@@ -15,6 +15,10 @@
                 hx-get="/wikitext/{{ title|urlencode }}"
                 hx-target="#article"
                 hx-swap="innerHTML">View wikitext</button>
+        <span id="embed-widget"
+              hx-get="/embed-status/{{ title|urlencode }}"
+              hx-trigger="load"
+              hx-swap="outerHTML"></span>
     </div>
 </header>
 

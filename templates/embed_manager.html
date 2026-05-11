@@ -1,0 +1,58 @@
+{# Full page: paginated list of articles embedded in the RAG DB for the
+   active wiki. Read-only — embed buttons live on individual article pages. #}
+{% extends "base.html" %}
+{% block title %}Embed Manager · Local Wikipedia{% endblock %}
+
+{% block content %}
+<header class="site-header">
+    <h1>Embed Manager · {{ wiki }}</h1>
+</header>
+
+<div class="nav-links">
+    <a href="/" class="nav-link">&larr; Back to search</a>
+</div>
+
+{% if total_count == 0 %}
+<p class="refresh-idle">No articles have been embedded yet. Open any article and click <strong>Embed</strong> to add it to the RAG index.</p>
+{% else %}
+<p class="embed-count">{{ "{:,}".format(total_count) }} article{{ "s" if total_count != 1 }} embedded</p>
+
+<table class="embed-table">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Categories</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in articles %}
+        <tr>
+            <td>
+                <a href="/article/{{ a.title|urlencode }}"
+                   hx-get="/article/{{ a.title|urlencode }}"
+                   hx-target="#article-preview"
+                   hx-swap="innerHTML">{{ a.title }}</a>
+            </td>
+            <td class="embed-categories">
+                {% if a.categories %}{{ a.categories.replace("|", " · ") }}{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if total_pages > 1 %}
+<nav class="embed-pagination">
+    {% if page > 1 %}
+    <a href="/embed-manager?page={{ page - 1 }}" class="embed-page-btn">&larr; Prev</a>
+    {% endif %}
+    <span class="embed-page-info">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+    <a href="/embed-manager?page={{ page + 1 }}" class="embed-page-btn">Next &rarr;</a>
+    {% endif %}
+</nav>
+{% endif %}
+{% endif %}
+
+<article id="article-preview" class="article"></article>
+{% endblock %}

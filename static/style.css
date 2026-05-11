@@ -561,3 +561,134 @@ main {
     margin: 0;
     font-style: italic;
 }
+
+/* --- Nav links -------------------------------------------------------- */
+
+.nav-links {
+    margin: -0.25rem 0 0.75rem;
+    font-size: 0.82rem;
+}
+
+.nav-link {
+    color: var(--muted);
+    text-decoration: none;
+}
+
+.nav-link:hover {
+    color: var(--link);
+    text-decoration: underline;
+}
+
+/* --- Embed status widget ---------------------------------------------- */
+
+.article-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.embed-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.embed-btn {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-soft);
+    color: var(--fg);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.embed-btn:hover {
+    border-color: var(--link);
+    color: var(--link);
+    background: #eaeefa;
+}
+
+.embed-badge {
+    display: inline-block;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+    border-radius: 5px;
+    white-space: nowrap;
+}
+
+.embed-badge--done {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.embed-error-note {
+    font-size: 0.8em;
+    color: #721c24;
+}
+
+/* --- Embed manager page ----------------------------------------------- */
+
+.embed-count {
+    color: var(--muted);
+    font-size: 0.9em;
+    margin: 0 0 1rem;
+}
+
+.embed-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.embed-table th {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.embed-table td {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+.embed-table tr:last-child td {
+    border-bottom: none;
+}
+
+.embed-categories {
+    color: var(--muted);
+    font-size: 0.8em;
+}
+
+.embed-pagination {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+}
+
+.embed-page-btn {
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-soft);
+    color: var(--fg);
+    text-decoration: none;
+}
+
+.embed-page-btn:hover {
+    border-color: var(--link);
+    color: var(--link);
+    background: #eaeefa;
+}

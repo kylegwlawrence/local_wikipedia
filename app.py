@@ -27,7 +27,9 @@ from fastapi.templating import Jinja2Templates
 
 import db as wiki_db
 import jobs as refresh_jobs
-from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for
+from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
+from rag.embed import embed_one as rag_embed_one
+from rag.schema import connect_rag
 from render import convert_wikitext_to_html
 
 DEFAULT_DB = db_path_for(DEFAULT_WIKI)
@@ -371,6 +373,118 @@ def refresh_status(request: Request, wiki: str) -> HTMLResponse:
         conn.close()
 
     return _render_status_panel(request, wiki, job)
+
+
+def _rag_connect(wiki: str):
+    """Open the RAG DB if it exists; return None if not yet created."""
+    path = rag_db_path_for(wiki)
+    if not path.exists():
+        return None
+    return connect_rag(path)
+
+
+EMBED_PAGE_SIZE = 50
+
+
+@app.get("/embed-manager", response_class=HTMLResponse)
+def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    rag_conn = _rag_connect(wiki)
+
+    if rag_conn is None:
+        return templates.TemplateResponse(request, "embed_manager.html", {
+            "wiki": wiki,
+            "articles": [],
+            "page": 1,
+            "total_pages": 0,
+            "total_count": 0,
+            "per_page": EMBED_PAGE_SIZE,
+        })
+
+    try:
+        total_count = rag_conn.execute(
+            "SELECT COUNT(*) FROM articles_meta"
+        ).fetchone()[0]
+        total_pages = max(1, (total_count + EMBED_PAGE_SIZE - 1) // EMBED_PAGE_SIZE)
+        page = max(1, min(page, total_pages))
+        offset = (page - 1) * EMBED_PAGE_SIZE
+        rows = rag_conn.execute(
+            "SELECT page_id, title, categories FROM articles_meta ORDER BY title LIMIT ? OFFSET ?",
+            (EMBED_PAGE_SIZE, offset),
+        ).fetchall()
+        articles = [dict(r) for r in rows]
+    finally:
+        rag_conn.close()
+
+    return templates.TemplateResponse(request, "embed_manager.html", {
+        "wiki": wiki,
+        "articles": articles,
+        "page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "per_page": EMBED_PAGE_SIZE,
+    })
+
+
+@app.get("/embed-status/{title:path}", response_class=HTMLResponse)
+def embed_status(request: Request, title: str) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    rag_conn = _rag_connect(wiki)
+
+    embedded = False
+    if rag_conn is not None:
+        try:
+            row = rag_conn.execute(
+                "SELECT 1 FROM articles_meta WHERE title = ?", (title,)
+            ).fetchone()
+            embedded = row is not None
+        finally:
+            rag_conn.close()
+
+    return templates.TemplateResponse(request, "embed_status_widget.html", {
+        "title": title,
+        "embedded": embedded,
+        "error": False,
+    })
+
+
+@app.post("/embed-article/{title:path}", response_class=HTMLResponse)
+def embed_article(request: Request, title: str) -> HTMLResponse:
+    wiki = _active_wiki(request)
+
+    wiki_conn = _connect(request)
+    try:
+        row = wiki_conn.execute(
+            "SELECT page_id, title, revision_id, text_content FROM articles WHERE title = ?",
+            (title,),
+        ).fetchone()
+    finally:
+        wiki_conn.close()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Article not found: {title}")
+
+    rag_path = rag_db_path_for(wiki)
+    rag_conn = connect_rag(rag_path)
+    error = False
+    try:
+        rag_embed_one(
+            rag_conn,
+            row["page_id"],
+            row["title"],
+            row["revision_id"],
+            row["text_content"],
+        )
+    except Exception:
+        error = True
+    finally:
+        rag_conn.close()
+
+    return templates.TemplateResponse(request, "embed_status_widget.html", {
+        "title": title,
+        "embedded": not error,
+        "error": error,
+    })
 
 
 @app.get("/article/{title:path}", response_class=HTMLResponse)
