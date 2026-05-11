@@ -394,6 +394,7 @@ def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
         log_path = str(BASE_DIR / "dumps" / f"{wiki}_refresh.log")
         job_id = refresh_jobs.create_job(conn, wiki, log_path)
         conn.commit()
+        job = refresh_jobs.get_latest_job(conn, wiki)
     finally:
         conn.close()
 
@@ -403,12 +404,6 @@ def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-
-    conn2 = refresh_jobs.connect_jobs(JOBS_DB)
-    try:
-        job = refresh_jobs.get_latest_job(conn2, wiki)
-    finally:
-        conn2.close()
 
     return _render_status_panel(request, wiki, job)
 
