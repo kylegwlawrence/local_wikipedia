@@ -31,8 +31,10 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 ### Web App
 - FastAPI + Jinja2 + HTMX single-page UI for browsing the parsed database
 - Search bar with debounced as-you-type title lookup via FTS5 (instant even on enwiki's 6M+ articles)
-- Articles rendered server-side: wikitext → HTML
+- Articles rendered server-side: wikitext → HTML, with a toggle to view raw wikitext
 - Follows `#REDIRECT` chains up to 5 hops
+- Wiki switcher: cookie-based toggle between enwiki and simplewiki without restarting the app
+- One-click incremental refresh: downloads a new dump and updates only changed articles in-place (no full re-parse)
 - No JavaScript build step; all logic stays in Python
 
 ## Installation
@@ -56,14 +58,14 @@ A Python tool for downloading, verifying, and parsing Wikipedia dump files from 
 
 ### Step 1: Download Wikipedia Dumps
 
-Download dumps for Simple English Wikipedia (default):
+Download dumps for English Wikipedia (default):
 ```bash
 python -m download.download
 ```
 
-Download dumps for a specific wiki:
+Download dumps for Simple English Wikipedia:
 ```bash
-python -m download.download --wiki enwiki
+python -m download.download --wiki simplewiki
 ```
 
 Downloaded files are saved to the `dumps/` directory.
@@ -77,12 +79,12 @@ python -m parse.cli
 
 Parse a specific wiki:
 ```bash
-python -m parse.cli --wiki simplewiki
+python -m parse.cli --wiki enwiki
 ```
 
 Verify an existing database:
 ```bash
-python -m parse.cli --verify-only --database dumps/simplewiki.db
+python -m parse.cli --verify-only --database dumps/enwiki.db
 ```
 
 Add FTS5 to an already-parsed database (no re-parse needed):
@@ -100,9 +102,9 @@ Launch the FastAPI app for a browser-based search UI:
 uvicorn app:app --reload
 ```
 
-Then open `http://127.0.0.1:8000`. Type into the search box; matching titles appear below as you type, and clicking one renders the article as Markdown-formatted HTML.
+Then open `http://127.0.0.1:8000`. Type into the search box; matching titles appear below as you type, and clicking one renders the article as HTML. Use the wiki switcher button in the header to toggle between enwiki and simplewiki, or click **Refresh** to incrementally update the database from the latest dump without a full re-parse.
 
-To point the app at a different database file, set `WIKI_DB`:
+To point the app at a specific database file, set `WIKI_DB`:
 
 ```bash
 WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
@@ -188,9 +190,11 @@ pytest tests/test_download.py::TestDownloadWithVerify
 
 ```
 .
-├── app.py             # FastAPI web app (routes)
-├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR)
+├── app.py             # FastAPI web app (routes + wiki switcher + refresh)
+├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR, JOBS_DB, KNOWN_WIKIS)
 ├── db.py              # sqlite3 connect() helper
+├── jobs.py            # CRUD helpers for refresh_jobs table in dumps/jobs.db
+├── worker.py          # Background subprocess: download → refresh → FTS rebuild
 ├── render/            # Wikitext → HTML converter (package)
 │   ├── __init__.py    # Public API: convert_wikitext_to_html
 │   ├── pipeline.py    # Orchestrator — ordered stage list
@@ -204,15 +208,16 @@ pytest tests/test_download.py::TestDownloadWithVerify
 ├── download/
 │   └── download.py    # Dump downloader + SHA-1 verifier
 ├── parse/
-│   ├── schema.py      # SQLite schema + PRAGMAs
+│   ├── schema.py      # SQLite schema + PRAGMAs (articles, articles_archive)
 │   ├── xml_reader.py  # MediaWiki <page> element extractor
-│   ├── pipeline.py    # parse_dump() — bz2 stream → SQLite
+│   ├── pipeline.py    # parse_dump() — bz2 stream → SQLite (full initial parse)
+│   ├── refresh.py     # refresh_dump() — incremental update of existing database
 │   ├── verify.py      # Database integrity check
 │   └── cli.py         # `python -m parse.cli` entry point
 ├── tests/             # Pytest suite
 ├── templates/         # Jinja2 templates
 ├── static/            # CSS + vendored KaTeX
-├── dumps/             # Downloaded files + parsed databases
+├── dumps/             # Downloaded files + parsed databases + jobs.db
 ├── requirements.txt
 └── README.md
 ```

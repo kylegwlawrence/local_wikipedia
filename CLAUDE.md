@@ -15,9 +15,11 @@ The web app (`app.py`) reads from the SQLite database and renders articles via t
 
 ```
 local_wikipedia/
-  app.py            FastAPI app (routes + redirect/search helpers)
-  paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI — absolute paths
+  app.py            FastAPI app (routes + redirect/search/refresh helpers)
+  paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS
   db.py             connect(path) -> sqlite3.Connection (Row factory)
+  jobs.py           CRUD helpers for refresh_jobs table in dumps/jobs.db
+  worker.py         background subprocess: download → refresh → FTS rebuild
   render/           wikitext → HTML converter (package)
     __init__.py     public API: convert_wikitext_to_html
     pipeline.py     orchestrator — ordered stage list
@@ -31,14 +33,15 @@ local_wikipedia/
   download/
     download.py     dump downloader + SHA-1 verifier
   parse/
-    schema.py       articles + parse_metadata DDL, PRAGMAs
+    schema.py       articles + articles_archive + parse_metadata DDL, PRAGMAs
     xml_reader.py   parse_page_element, MediaWiki namespace constants
     pipeline.py     parse_dump, _batch_insert_articles, _record_metadata
+    refresh.py      refresh_dump — incremental update of an existing database
     verify.py       verify_database
     cli.py          argparse main(), _find_latest_dump
   tests/            pytest suite (mirrors source layout)
   templates/, static/
-  dumps/            (gitignored) downloaded .xml.bz2 + parsed .db
+  dumps/            (gitignored) downloaded .xml.bz2 + parsed .db + jobs.db
 ```
 
 ## Setup and Dependencies
@@ -54,15 +57,15 @@ Dependencies: `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`,
 ## Common Commands
 
 ```bash
-# Download dumps (defaults to simplewiki)
+# Download dumps (defaults to enwiki)
 python -m download.download
-python -m download.download --wiki enwiki
+python -m download.download --wiki simplewiki
 
-# Parse dump into SQLite
-python -m parse.cli --wiki simplewiki
+# Parse dump into SQLite (full initial parse)
+python -m parse.cli --wiki enwiki
 
 # Verify database integrity
-python -m parse.cli --verify-only --database dumps/simplewiki.db
+python -m parse.cli --verify-only --database dumps/enwiki.db
 
 # Add FTS5 to an existing database without re-parsing
 python -m parse.cli --rebuild-fts --database dumps/enwiki.db
@@ -143,6 +146,19 @@ Pipeline order matters — stages are applied in sequence:
 - `|safe` in `article.html` is intentional: the HTML comes from our own converter, not user input
 - `_search_titles` uses FTS5 MATCH via `_escape_fts5` (wraps input in phrase quotes); short queries (<3 chars) fall back to prefix LIKE
 - `_fetch_article()` follows `#REDIRECT [[Target]]` chains up to `REDIRECT_MAX_HOPS` (5) and returns the original title as `redirected_from` so the template can show a "Redirected from X" note. A cycle guard surfaces a 404 rather than hanging.
+- `GET /wikitext/{title}` returns raw wikitext in a `<pre>` block — toggled from the article view
+- `GET /switch-wiki?to=` sets a `wiki_pref` cookie (1-year max-age) and redirects to `/`; `_active_wiki()` reads it on every request
+- `POST /refresh/{wiki}` creates a job row (inside `BEGIN IMMEDIATE` to avoid duplicate active jobs), then spawns `worker.py` as a detached subprocess (`start_new_session=True`) so it outlives the HTTP connection
+- `GET /refresh/status/{wiki}` returns the latest job row as the `refresh_panel.html` partial — polled by HTMX while a job is active
+
+### Refresh job system (`jobs.py`, `worker.py`, `parse/refresh.py`)
+
+- `jobs.db` in `dumps/` stores `refresh_jobs` rows; separate from wiki databases so it's never overwritten by a re-parse
+- Job lifecycle statuses: `pending` → `downloading` → `parsing` → `rebuilding` → `complete` / `failed`
+- `worker.py` runs as a standalone script (`python worker.py --wiki X --job-id N`); redirects stdout/stderr to `dumps/{wiki}_refresh.log` (line-buffered)
+- `refresh_dump` (in `parse/refresh.py`) operates in-place on the existing database — it does **not** atomically replace it. For each article in the dump it skips (same `revision_id`), archives-then-updates (changed revision), or inserts (new `page_id`). The archive step writes the old row to `articles_archive` before overwriting so a crash leaves old data intact.
+- Batch size matches `parse/pipeline.py`'s `BATCH_SIZE` (1000). After each batch, `jobs.update_job` writes running totals to `jobs.db` so the status panel can show live progress.
+- FTS rebuild happens in `worker.py` after `refresh_dump` returns — same `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` used by the initial parse.
 
 ### Test organisation
 
