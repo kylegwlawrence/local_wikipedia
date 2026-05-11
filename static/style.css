@@ -71,6 +71,15 @@ main {
     flex-shrink: 0;
 }
 
+/* Override HTMX's opacity-based hiding so the spinner takes no space when idle */
+#embed-spinner {
+    display: none;
+    opacity: 1;
+}
+#embed-spinner.htmx-request {
+    display: inline-block;
+}
+
 .wiki-switch-btn {
     flex-shrink: 0;
     padding: 0.5rem 0.8rem;
@@ -147,14 +156,16 @@ main {
 }
 
 .view-toggle {
-    font-size: 0.8rem;
-    padding: 0.25rem 0.6rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    padding: 0.4rem 0.9rem;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 5px;
     background: var(--bg-soft);
     color: var(--muted);
     cursor: pointer;
-    line-height: 1.4;
+    white-space: nowrap;
+    margin-left: auto;
 }
 
 .view-toggle:hover {
@@ -689,20 +700,20 @@ main {
 }
 
 .embed-controls {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
+    display: contents;
 }
 
 .embed-btn {
     padding: 0.4rem 0.9rem;
     font-size: 0.85rem;
+    line-height: 1.4;
     border: 1px solid var(--border);
     border-radius: 5px;
     background: var(--bg-soft);
     color: var(--fg);
     cursor: pointer;
     white-space: nowrap;
+    text-decoration: none;
 }
 
 .embed-btn:hover {
@@ -715,6 +726,7 @@ main {
     display: inline-block;
     padding: 0.4rem 0.9rem;
     font-size: 0.85rem;
+    line-height: 1.4;
     border-radius: 5px;
     white-space: nowrap;
 }

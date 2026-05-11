@@ -11,10 +11,7 @@
         {{ "{:,}".format(text_bytes) }} bytes &middot; last edited {{ timestamp }}
     </p>
     <div class="article-controls">
-        <button class="view-toggle"
-                hx-get="/wikitext/{{ title|urlencode }}"
-                hx-target="#article"
-                hx-swap="innerHTML">View wikitext</button>
+        <span id="embed-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
         <span id="embed-widget"
               hx-get="/embed-status/{{ title|urlencode }}"
               hx-trigger="load"
@@ -22,6 +19,10 @@
         <button class="embed-btn"
                 hx-post="/embed-links/{{ title|urlencode }}"
                 hx-swap="none">Embed + links</button>
+        <button class="view-toggle"
+                hx-get="/wikitext/{{ title|urlencode }}"
+                hx-target="#article"
+                hx-swap="innerHTML">View wikitext</button>
     </div>
 </header>
 
