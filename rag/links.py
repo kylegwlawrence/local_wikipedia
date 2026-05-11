@@ -11,6 +11,8 @@ without special handling here.
 """
 import mwparserfromhell
 
+from db import normalize_title
+
 
 # MediaWiki namespaces that aren't real articles. Anything starting with one of
 # these prefixes is skipped. The list covers the common-and-confusing cases
@@ -29,7 +31,7 @@ def _normalize_target(raw: str) -> str:
     target = raw.partition("#")[0].strip()
     if not target:
         return ""
-    return target[:1].upper() + target[1:]
+    return normalize_title(target)
 
 
 def _is_excluded(target: str) -> bool:

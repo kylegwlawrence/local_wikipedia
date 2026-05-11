@@ -21,6 +21,11 @@ _REDIRECT_RE = re.compile(
 )
 
 
+def normalize_title(title: str) -> str:
+    """Capitalise the first letter of a title (MediaWiki convention)."""
+    return title[:1].upper() + title[1:]
+
+
 def redirect_target(text_content: str | None) -> str | None:
     """Return the redirect target if ``text_content`` is a redirect stub.
 
@@ -34,7 +39,7 @@ def redirect_target(text_content: str | None) -> str | None:
         return None
     target = m.group(1).strip()
     if target:
-        target = target[:1].upper() + target[1:]
+        target = normalize_title(target)
     return target or None
 
 

@@ -3,6 +3,8 @@ import html
 import re
 from urllib.parse import quote
 
+from db import normalize_title
+
 
 def convert_bold_italic(text: str) -> str:
     """Convert '''bold''' and ''italic'' to HTML."""
@@ -17,9 +19,7 @@ def _render_link(target: str, label: str, escape_label: bool) -> str:
     title, _, anchor = target.partition("#")
     title = title.strip()
     if title:
-        # MediaWiki convention: first letter of every page title is uppercase.
-        # str.capitalize would lowercase the rest, so do it manually.
-        title = title[:1].upper() + title[1:]
+        title = normalize_title(title)
     href = f"/article/{quote(title)}"
     hx_url = href
     if anchor:
