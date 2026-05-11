@@ -1,0 +1,16 @@
+{# Full page: shows the active embedding job's queue + recent history. #}
+{% extends "base.html" %}
+{% block title %}Active Embedding · Local Wikipedia{% endblock %}
+
+{% block content %}
+<header class="site-header">
+    <h1>Active Embedding · {{ wiki }}</h1>
+</header>
+
+<div class="nav-links">
+    <a href="/" class="nav-link">&larr; Back to search</a>
+    <a href="/embed-manager" class="nav-link">Embed manager</a>
+</div>
+
+{% include "active_embedding_panel.html" %}
+{% endblock %}

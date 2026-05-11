@@ -19,6 +19,9 @@
               hx-get="/embed-status/{{ title|urlencode }}"
               hx-trigger="load"
               hx-swap="outerHTML"></span>
+        <button class="embed-btn"
+                hx-post="/embed-links/{{ title|urlencode }}"
+                hx-swap="none">Embed + links</button>
     </div>
 </header>
 

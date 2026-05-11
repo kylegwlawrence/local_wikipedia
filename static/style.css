@@ -522,6 +522,56 @@ main {
 .refresh-badge--rebuilding  { background: #d4edda; color: #155724; }
 .refresh-badge--complete    { background: #d4edda; color: #155724; }
 .refresh-badge--failed      { background: #f8d7da; color: #721c24; }
+.refresh-badge--running             { background: #cce5ff; color: #004085; }
+.refresh-badge--cancelled           { background: #f0f0f0; color: #666; }
+.refresh-badge--queued              { background: #f0f0f0; color: #666; }
+.refresh-badge--in_progress         { background: #cce5ff; color: #004085; }
+.refresh-badge--skipped_unchanged   { background: #e2e3e5; color: #383d41; }
+.refresh-badge--skipped_redirect    { background: #e2e3e5; color: #383d41; }
+.refresh-badge--not_found           { background: #fff3cd; color: #856404; }
+
+.embed-source-group {
+    margin: 1rem 0 0;
+}
+
+.embed-source-heading {
+    font-size: 0.95rem;
+    margin: 0 0 0.35rem;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.embed-source-heading a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.embed-source-heading a:hover {
+    color: var(--link);
+    text-decoration: underline;
+}
+
+.embed-source-count {
+    font-size: 0.85em;
+    color: var(--muted);
+}
+
+.embed-recent-jobs {
+    margin: 1.5rem 0 0;
+    font-size: 0.85em;
+    color: var(--muted);
+}
+
+.embed-recent-jobs h3 {
+    font-size: 0.9rem;
+    margin: 0 0 0.35rem;
+}
+
+.embed-recent-jobs ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
 
 .refresh-elapsed {
     color: var(--muted);

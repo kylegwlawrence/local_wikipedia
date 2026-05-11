@@ -14,21 +14,22 @@ use to point at a temporary fixture database.
 """
 import os
 import pathlib
-import re
 import sqlite3
 import subprocess
 import sys
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import db as wiki_db
+import embed_jobs
 import jobs as refresh_jobs
 from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
 from rag.embed import embed_one as rag_embed_one
+from rag.links import extract_article_links
 from rag.schema import connect_rag
 from render import convert_wikitext_to_html
 
@@ -42,13 +43,6 @@ SEARCH_LIMIT = 20
 # Cap redirect-chain following so a cycle can't hang the request. MediaWiki's
 # own limit is 5 hops; matching that is conservative.
 REDIRECT_MAX_HOPS = 5
-
-# Match a wikitext redirect line, e.g. ``#REDIRECT [[Target]]``. MediaWiki
-# accepts case-insensitive ``REDIRECT`` and ignores leading whitespace.
-_REDIRECT_RE = re.compile(
-    r"^\s*#\s*REDIRECT\s*\[\[\s*([^\]\|#]+?)\s*(?:#[^\]\|]*)?(?:\|[^\]]*)?\s*\]\]",
-    re.IGNORECASE,
-)
 
 app = FastAPI(title="Local Wikipedia")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -166,7 +160,7 @@ def _fetch_article(title: str, request: Request) -> tuple[sqlite3.Row | None, st
             row = cur.fetchone()
             if row is None:
                 return None, None
-            target = _redirect_target(row["text_content"])
+            target = wiki_db.redirect_target(row["text_content"])
             if target is None:
                 redirected_from = original_title if title != original_title else None
                 return row, redirected_from
@@ -175,25 +169,6 @@ def _fetch_article(title: str, request: Request) -> tuple[sqlite3.Row | None, st
         return None, None
     finally:
         conn.close()
-
-
-def _redirect_target(text_content: str | None) -> str | None:
-    """Return the redirect target if ``text_content`` is a redirect stub.
-
-    MediaWiki redirects look like ``#REDIRECT [[Target]]`` (case-insensitive)
-    optionally followed by a section anchor or display label which we drop
-    since neither affects the resolved article.
-    """
-    if not text_content:
-        return None
-    m = _REDIRECT_RE.match(text_content)
-    if not m:
-        return None
-    target = m.group(1).strip()
-    # MediaWiki capitalises the first letter of every page title.
-    if target:
-        target = target[:1].upper() + target[1:]
-    return target or None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -523,6 +498,188 @@ def chunks(request: Request, title: str) -> HTMLResponse:
         "chunks": chunk_list,
         "wiki": wiki,
     })
+
+
+# --- Active embedding (batch: source + linked articles) ---------------------
+
+def _render_active_embedding_panel(
+    request: Request,
+    wiki: str,
+    *,
+    fragment_only: bool,
+) -> HTMLResponse:
+    """Render the active embedding panel (HTMX-polled inner content).
+
+    If ``fragment_only`` is True returns just the panel fragment for HTMX
+    polling; otherwise returns the full ``active_embedding.html`` page.
+    """
+    conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        active = embed_jobs.get_active_job(conn, wiki)
+        if active is None:
+            latest = embed_jobs.get_latest_jobs(conn, wiki, limit=1)
+            active = latest[0] if latest else None
+
+        recent = embed_jobs.get_latest_jobs(conn, wiki, limit=6)
+        items_by_job: dict[int, list[dict]] = {}
+        counts_by_job: dict[int, dict[str, int]] = {}
+        if active is not None:
+            items_by_job[active["id"]] = [
+                dict(r) for r in embed_jobs.get_items(conn, active["id"])
+            ]
+            counts_by_job[active["id"]] = embed_jobs.count_items_by_status(
+                conn, active["id"]
+            )
+        recent_dicts = []
+        for job in recent:
+            if active is not None and job["id"] == active["id"]:
+                continue
+            counts = embed_jobs.count_items_by_status(conn, job["id"])
+            recent_dicts.append({"job": dict(job), "counts": counts})
+    finally:
+        conn.close()
+
+    active_dict: dict | None = None
+    grouped_items: list[tuple[str, list[dict]]] = []
+    counts: dict[str, int] = {}
+    elapsed = ""
+    started_at_display = ""
+    if active is not None:
+        active_dict = dict(active)
+        items = items_by_job.get(active["id"], [])
+        counts = counts_by_job.get(active["id"], {})
+        groups: dict[str, list[dict]] = {}
+        for item in items:
+            groups.setdefault(item["source_title"], []).append(item)
+        grouped_items = list(groups.items())
+        is_running = (
+            active_dict["status"] == "running"
+            and not active_dict["cancel_requested"]
+        )
+        elapsed = _format_elapsed(active_dict["started_at"]) if is_running else ""
+        started_at_display = (
+            "" if is_running else _format_started_at(active_dict["started_at"])
+        )
+
+    template = "active_embedding_panel.html" if fragment_only else "active_embedding.html"
+    return templates.TemplateResponse(request, template, {
+        "wiki": wiki,
+        "job": active_dict,
+        "grouped_items": grouped_items,
+        "counts": counts,
+        "elapsed": elapsed,
+        "started_at_display": started_at_display,
+        "recent_jobs": recent_dicts,
+    })
+
+
+@app.post("/embed-links/{title:path}", response_class=HTMLResponse)
+def embed_links(request: Request, title: str) -> HTMLResponse:
+    """Extract wikilinks from ``title`` and enqueue them for batch embedding.
+
+    The source article itself is included in the queue. If a job is already
+    running for the active wiki, new items are appended to it; otherwise a new
+    job is created and a worker subprocess is spawned.
+    """
+    wiki = _active_wiki(request)
+
+    wiki_conn = _connect(request)
+    try:
+        row = wiki_conn.execute(
+            "SELECT title, text_content FROM articles WHERE title = ?",
+            (title,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Article not found: {title}")
+
+        source_title = row["title"]
+        raw_targets = extract_article_links(row["text_content"], source_title=source_title)
+
+        # Resolve each link's redirect chain so the queue stores canonical
+        # titles. Dedup happens here too (a redirect and its target collapse
+        # to one entry). The source article goes in first so it's processed
+        # before its neighbours.
+        resolved: list[str] = []
+        seen: set[str] = set()
+        if source_title not in seen:
+            resolved.append(source_title)
+            seen.add(source_title)
+        for target in raw_targets:
+            canonical = wiki_db.resolve_redirect(wiki_conn, target, REDIRECT_MAX_HOPS)
+            # Keep unresolved targets so the queue can surface them as not_found.
+            picked = canonical or target
+            if picked in seen:
+                continue
+            seen.add(picked)
+            resolved.append(picked)
+    finally:
+        wiki_conn.close()
+
+    items = [(t, source_title) for t in resolved]
+
+    jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    spawn_worker = False
+    try:
+        jobs_conn.execute("BEGIN IMMEDIATE")
+        active = embed_jobs.get_active_job(jobs_conn, wiki)
+        if active is None:
+            log_path = str(BASE_DIR / "dumps" / f"{wiki}_embed.log")
+            cur = jobs_conn.execute(
+                "INSERT INTO embed_jobs (wiki, log_path) VALUES (?, ?)",
+                (wiki, log_path),
+            )
+            job_id = cur.lastrowid
+            spawn_worker = True
+        else:
+            job_id = active["id"]
+
+        if items:
+            jobs_conn.executemany(
+                "INSERT OR IGNORE INTO embed_job_items (job_id, title, source_title) "
+                "VALUES (?, ?, ?)",
+                [(job_id, t, s) for t, s in items],
+            )
+        jobs_conn.commit()
+    finally:
+        jobs_conn.close()
+
+    if spawn_worker:
+        subprocess.Popen(
+            [sys.executable, str(BASE_DIR / "embed_worker.py"),
+             "--wiki", wiki, "--job-id", str(job_id)],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    # HTMX requests: send the browser to /active-embedding. Non-HTMX callers
+    # (curl, tests) get a 303 to the same place so behaviour is consistent.
+    if request.headers.get("hx-request"):
+        return Response(status_code=204, headers={"HX-Redirect": "/active-embedding"})
+    return RedirectResponse("/active-embedding", status_code=303)
+
+
+@app.get("/active-embedding", response_class=HTMLResponse)
+def active_embedding(request: Request) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    return _render_active_embedding_panel(request, wiki, fragment_only=False)
+
+
+@app.get("/active-embedding/panel", response_class=HTMLResponse)
+def active_embedding_panel(request: Request) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    return _render_active_embedding_panel(request, wiki, fragment_only=True)
+
+
+@app.post("/active-embedding/cancel/{job_id}", response_class=HTMLResponse)
+def active_embedding_cancel(request: Request, job_id: int) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        embed_jobs.request_cancel(conn, job_id)
+    finally:
+        conn.close()
+    return _render_active_embedding_panel(request, wiki, fragment_only=True)
 
 
 @app.get("/article/{title:path}", response_class=HTMLResponse)

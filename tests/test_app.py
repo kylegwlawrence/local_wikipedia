@@ -296,3 +296,183 @@ class TestDatabaseMissing:
         with TestClient(web_app.app) as c:
             resp = c.get("/search", params={"q": "April"})
             assert resp.status_code == 503
+
+
+@pytest.fixture
+def embed_client(tmp_path, monkeypatch):
+    """Yield a TestClient with the embed-links route plumbing isolated.
+
+    The fixture DB is the same as the regular client; in addition we point
+    ``app.JOBS_DB`` at a tmp file (so refresh- and embed-job rows don't
+    leak between tests), and we stub ``subprocess.Popen`` to a no-op so the
+    embed_worker.py subprocess is never actually spawned.
+    """
+    import subprocess
+    import embed_jobs
+
+    db_path = tmp_path / "test.db"
+    _build_fixture_db(db_path)
+    monkeypatch.setenv("WIKI_DB", str(db_path))
+
+    jobs_db = tmp_path / "jobs.db"
+    monkeypatch.setattr(web_app, "JOBS_DB", jobs_db)
+    # The embed-links route uses BASE_DIR to spawn embed_worker.py; the spawn
+    # itself is stubbed, but the log_path string is still derived from BASE_DIR.
+    monkeypatch.setattr(web_app, "BASE_DIR", tmp_path)
+
+    spawned: list[list[str]] = []
+
+    def fake_popen(args, **kwargs):
+        spawned.append(args)
+
+        class _P:
+            pass
+
+        return _P()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    with TestClient(web_app.app) as c:
+        c.spawned = spawned
+        c.jobs_db = jobs_db
+        c.embed_jobs = embed_jobs
+        yield c
+
+
+class TestEmbedLinks:
+    """`POST /embed-links/{title}` enqueues source + linked articles."""
+
+    def test_404_for_unknown_source(self, embed_client):
+        resp = embed_client.post(
+            "/embed-links/NoSuchArticle", follow_redirects=False,
+        )
+        assert resp.status_code == 404
+
+    def test_enqueues_source_and_links(self, embed_client):
+        # 'April' wikitext links to [[month]]. The route should enqueue
+        # 'April' (the source) and 'Month' (the link, capitalised). Since
+        # 'month' is not in the fixture DB, redirect resolution returns None
+        # and the canonicalised target ('Month') is enqueued as not_found.
+        resp = embed_client.post("/embed-links/April", follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/active-embedding"
+
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            job = embed_client.embed_jobs.get_active_job(conn, "enwiki")
+            assert job is not None
+            items = embed_client.embed_jobs.get_items(conn, job["id"])
+            titles = [r["title"] for r in items]
+            assert titles == ["April", "Month"]
+            # All items should share the source title.
+            assert {r["source_title"] for r in items} == {"April"}
+        finally:
+            conn.close()
+
+        # A worker should have been spawned exactly once.
+        assert len(embed_client.spawned) == 1
+        assert embed_client.spawned[0][1].endswith("embed_worker.py")
+
+    def test_redirect_targets_collapse_to_canonical(self, embed_client):
+        # Inject an article whose body links to a redirect stub ('Apples'
+        # which redirects to 'Apple'). The canonical title should appear in
+        # the queue, not the redirect stub title.
+        import os
+        import sqlite3
+        c = sqlite3.connect(os.environ["WIKI_DB"])
+        c.execute(
+            "INSERT INTO articles (page_id, title, namespace, revision_id, "
+            "timestamp, text_bytes, text_content) "
+            "VALUES (?, ?, 0, 1, '2026-01-01T00:00:00Z', ?, ?)",
+            (100, "LinkerArticle", 40, "Body links to [[Apples]]."),
+        )
+        c.commit()
+        c.close()
+
+        resp = embed_client.post(
+            "/embed-links/LinkerArticle", follow_redirects=False,
+        )
+        assert resp.status_code == 303
+
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            job = embed_client.embed_jobs.get_active_job(conn, "enwiki")
+            titles = [r["title"] for r in embed_client.embed_jobs.get_items(
+                conn, job["id"],
+            )]
+            # 'Apples' is a redirect to 'Apple'; canonical 'Apple' should appear.
+            assert "Apple" in titles
+            assert "Apples" not in titles
+        finally:
+            conn.close()
+
+    def test_second_click_appends_to_running_job(self, embed_client):
+        # First click — creates job, spawns worker.
+        r1 = embed_client.post("/embed-links/April", follow_redirects=False)
+        assert r1.status_code == 303
+        # Second click on a different source — should append to the same job,
+        # NOT spawn a second worker.
+        r2 = embed_client.post("/embed-links/Apple", follow_redirects=False)
+        assert r2.status_code == 303
+
+        assert len(embed_client.spawned) == 1
+
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            jobs = embed_client.embed_jobs.get_latest_jobs(conn, "enwiki")
+            assert len(jobs) == 1
+            job_id = jobs[0]["id"]
+            items = embed_client.embed_jobs.get_items(conn, job_id)
+            titles = {r["title"] for r in items}
+            # Both sources and their (resolved) link targets are present.
+            assert {"April", "Apple"}.issubset(titles)
+        finally:
+            conn.close()
+
+    def test_hx_request_returns_hx_redirect_header(self, embed_client):
+        resp = embed_client.post(
+            "/embed-links/April",
+            headers={"HX-Request": "true"},
+            follow_redirects=False,
+        )
+        # HTMX wants HX-Redirect, not a 3xx.
+        assert resp.status_code == 204
+        assert resp.headers["hx-redirect"] == "/active-embedding"
+
+
+class TestActiveEmbedding:
+    """`/active-embedding` and its panel + cancel endpoints."""
+
+    def test_empty_state(self, embed_client):
+        resp = embed_client.get("/active-embedding")
+        assert resp.status_code == 200
+        assert "No batch embed has been run yet" in resp.text
+
+    def test_shows_running_job(self, embed_client):
+        embed_client.post("/embed-links/April", follow_redirects=False)
+        resp = embed_client.get("/active-embedding")
+        assert resp.status_code == 200
+        # Status badge + the source-group heading.
+        assert "running" in resp.text
+        assert "From <a href" in resp.text
+        assert "April" in resp.text
+
+    def test_panel_polls_while_running(self, embed_client):
+        embed_client.post("/embed-links/April", follow_redirects=False)
+        resp = embed_client.get("/active-embedding/panel")
+        assert resp.status_code == 200
+        assert 'hx-trigger="every 3s"' in resp.text
+
+    def test_cancel_sets_flag_and_stops_polling(self, embed_client):
+        embed_client.post("/embed-links/April", follow_redirects=False)
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            job_id = embed_client.embed_jobs.get_active_job(conn, "enwiki")["id"]
+        finally:
+            conn.close()
+
+        resp = embed_client.post(f"/active-embedding/cancel/{job_id}")
+        assert resp.status_code == 200
+        # Polling attribute should be gone once cancel is requested.
+        assert 'hx-trigger="every 3s"' not in resp.text
+        assert "cancelling" in resp.text or "cancel" in resp.text.lower()
