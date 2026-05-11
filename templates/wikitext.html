@@ -10,7 +10,8 @@
         <button class="view-toggle"
                 hx-get="/article/{{ title|urlencode }}"
                 hx-target="#article"
-                hx-swap="innerHTML">View rendered</button>
+                hx-swap="innerHTML"
+                hx-indicator="#article-load-spinner">View rendered</button>
     </div>
 </header>
 

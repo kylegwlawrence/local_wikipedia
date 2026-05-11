@@ -95,7 +95,7 @@ main {
     border-radius: 50%;
     animation: search-spin 0.7s linear infinite;
 }
-#article-load-spinner.active {
+#article-load-spinner.htmx-request {
     display: block;
 }
 

@@ -123,28 +123,8 @@ document.addEventListener('click', function (e) {
     var banner = document.getElementById('not-found-banner');
     if (banner) setTimeout(function () { banner.remove(); }, 1000);
 
-    var articleSpinner = document.getElementById('article-load-spinner');
-    var articleDiv = document.getElementById('article');
-    var articleLinkPending = false;
-    function isInlineArticleLink(target) {
-        var hxGet = target && target.getAttribute && target.getAttribute('hx-get');
-        return hxGet && hxGet.startsWith('/article/') && target !== articleDiv && articleDiv.contains(target);
-    }
     window.addEventListener('pageshow', function () {
-        articleLinkPending = false;
-        articleSpinner.classList.remove('active');
-    });
-    document.body.addEventListener('htmx:beforeRequest', function (e) {
-        if (isInlineArticleLink(e.target)) {
-            articleLinkPending = true;
-            articleSpinner.classList.add('active');
-        }
-    });
-    document.body.addEventListener('htmx:afterRequest', function () {
-        if (articleLinkPending) {
-            articleLinkPending = false;
-            articleSpinner.classList.remove('active');
-        }
+        document.getElementById('article-load-spinner').classList.remove('htmx-request');
     });
 
     document.body.addEventListener('articleNotFound', function (e) {

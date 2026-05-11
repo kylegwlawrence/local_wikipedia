@@ -31,7 +31,8 @@ def _render_link(target: str, label: str, escape_label: bool) -> str:
         f'<a href="{href_attr}" '
         f'hx-get="{hx_attr}" '
         f'hx-target="#article" '
-        f'hx-swap="innerHTML">{rendered_label}</a>'
+        f'hx-swap="innerHTML" '
+        f'hx-indicator="#article-load-spinner">{rendered_label}</a>'
     )
 
 
