@@ -35,8 +35,17 @@
         hx-target="#results"
         hx-swap="innerHTML"
         hx-indicator="#search-spinner">
-    <a href="/switch-wiki?to={{ other_wiki }}" class="wiki-switch-btn">Switch to {{ other_wiki_label }}</a>
+    <a href="/switch-wiki?to={{ other_wiki }}"
+       data-target-wiki="{{ other_wiki }}"
+       class="wiki-switch-btn">Switch to {{ other_wiki_label }}</a>
 </form>
+
+{% if not_found %}
+<div class="not-found-banner" id="not-found-banner">
+    <em>{{ not_found }}</em> does not exist in {{ wiki_label }}
+    <button class="not-found-close" onclick="document.getElementById('not-found-banner').remove()" aria-label="Dismiss">×</button>
+</div>
+{% endif %}
 
 {# Results stay visible after an article is loaded so the user can keep
    navigating between matches. The two panels are independent HTMX targets. #}
@@ -96,5 +105,23 @@ document.addEventListener('click', function (e) {
         document.getElementById('results').innerHTML = '';
     }
 });
+
+(function () {
+    var btn = document.querySelector('.wiki-switch-btn');
+    if (btn) {
+        btn.addEventListener('click', function (e) {
+            var article = new URLSearchParams(window.location.search).get('article');
+            if (article) {
+                e.preventDefault();
+                window.location.href =
+                    '/switch-wiki?to=' + encodeURIComponent(btn.dataset.targetWiki) +
+                    '&article=' + encodeURIComponent(article);
+            }
+        });
+    }
+
+    var banner = document.getElementById('not-found-banner');
+    if (banner) setTimeout(function () { banner.remove(); }, 5000);
+}());
 </script>
 {% endblock %}

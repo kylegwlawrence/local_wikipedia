@@ -159,6 +159,19 @@ def _connect(request: Request) -> sqlite3.Connection:
     return wiki_db.connect(path)
 
 
+def _article_exists(title: str, wiki: str) -> bool:
+    path = db_path_for(wiki)
+    if not path.exists():
+        return False
+    conn = wiki_db.connect(path)
+    try:
+        return conn.execute(
+            "SELECT 1 FROM articles WHERE title = ?", (title,)
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def _escape_fts5(q: str) -> str:
     """Wrap a raw query in FTS5 phrase quotes, escaping internal double-quotes."""
     return '"' + q.replace('"', '""') + '"'
@@ -248,7 +261,7 @@ def _fetch_article(title: str, request: Request) -> tuple[sqlite3.Row | None, st
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, article: str = "", wiki: str = "") -> HTMLResponse:
+def index(request: Request, article: str = "", wiki: str = "", not_found: str = "") -> HTMLResponse:
     """Render the single-page UI shell (search box + empty result containers).
 
     Args:
@@ -271,6 +284,7 @@ def index(request: Request, article: str = "", wiki: str = "") -> HTMLResponse:
         "other_wiki": other_wiki,
         "other_wiki_label": _WIKI_LABELS[other_wiki],
         "preload_article": article,
+        "not_found": not_found,
     })
     if wiki in KNOWN_WIKIS:
         response.set_cookie("wiki_pref", wiki, max_age=365 * 24 * 3600)
@@ -335,10 +349,16 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
 
 
 @app.get("/switch-wiki")
-def switch_wiki(to: str) -> RedirectResponse:
+def switch_wiki(to: str, article: str = "") -> RedirectResponse:
     if to not in KNOWN_WIKIS:
         raise HTTPException(status_code=400, detail=f"Unknown wiki: {to}")
-    response = RedirectResponse("/", status_code=302)
+    if article and _article_exists(article, to):
+        redirect_url = f"/?wiki={to}&article={quote(article)}"
+    elif article:
+        redirect_url = f"/?wiki={to}&not_found={quote(article)}"
+    else:
+        redirect_url = f"/?wiki={to}"
+    response = RedirectResponse(redirect_url, status_code=302)
     response.set_cookie("wiki_pref", to, max_age=365 * 24 * 3600)
     return response
 
