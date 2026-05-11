@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -247,26 +248,33 @@ def _fetch_article(title: str, request: Request) -> tuple[sqlite3.Row | None, st
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, article: str = "") -> HTMLResponse:
+def index(request: Request, article: str = "", wiki: str = "") -> HTMLResponse:
     """Render the single-page UI shell (search box + empty result containers).
 
     Args:
         request: FastAPI request, required by Jinja2's ``TemplateResponse``.
         article: Optional article title to pre-load into ``#article`` on page load.
+        wiki: Optional wiki override (e.g. ``enwiki``). When present, takes
+            precedence over the ``wiki_pref`` cookie and updates it so that
+            subsequent HTMX article loads (which read the cookie) use the
+            same database.
 
     Returns:
         The full ``index.html`` page. HTMX takes over from here and swaps
         fragments into ``#results`` and ``#article`` without reloading.
     """
-    wiki = _active_wiki(request)
-    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
-    return templates.TemplateResponse(request, "index.html", {
-        "wiki": wiki,
-        "wiki_label": _WIKI_LABELS[wiki],
+    active_wiki = wiki if wiki in KNOWN_WIKIS else _active_wiki(request)
+    other_wiki = next(w for w in KNOWN_WIKIS if w != active_wiki)
+    response = templates.TemplateResponse(request, "index.html", {
+        "wiki": active_wiki,
+        "wiki_label": _WIKI_LABELS[active_wiki],
         "other_wiki": other_wiki,
         "other_wiki_label": _WIKI_LABELS[other_wiki],
         "preload_article": article,
     })
+    if wiki in KNOWN_WIKIS:
+        response.set_cookie("wiki_pref", wiki, max_age=365 * 24 * 3600)
+    return response
 
 
 @app.get("/search", response_class=HTMLResponse)
@@ -786,7 +794,8 @@ def article(request: Request, title: str) -> HTMLResponse:
 
     html = convert_wikitext_to_html(row["text_content"])
 
-    return templates.TemplateResponse(
+    wiki = _active_wiki(request)
+    response = templates.TemplateResponse(
         request,
         "article.html",
         {
@@ -795,6 +804,9 @@ def article(request: Request, title: str) -> HTMLResponse:
             "text_bytes": row["text_bytes"],
             "timestamp": row["timestamp"],
             "redirected_from": redirected_from,
-            "wiki": _active_wiki(request),
+            "wiki": wiki,
         },
     )
+    if request.headers.get("HX-Request") == "true":
+        response.headers["HX-Push-Url"] = f"/?wiki={wiki}&article={quote(row['title'])}"
+    return response
