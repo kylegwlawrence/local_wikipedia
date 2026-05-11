@@ -11,6 +11,7 @@ import mwparserfromhell
 _SECTION_RE = re.compile(r"^(={2,6})\s*(.+?)\s*\1\s*$", re.MULTILINE)
 _CAT_RE = re.compile(r"\[\[Category:([^\]|]+)", re.IGNORECASE)
 _REDIRECT_RE = re.compile(r"^\s*#\s*REDIRECT\s*\[\[", re.IGNORECASE)
+_FILE_PREFIXES = ("file:", "image:", "media:")
 
 # Empirically calibrated against nomic-embed-text on simplewiki via
 # scripts/calibrate_chunks.py: real ratio is ~4.8 chars/token at the cap, so
@@ -54,7 +55,11 @@ def _strip_wikitext(raw: str) -> str:
         to ``raw.strip()`` on malformed input that raises a parser error.
     """
     try:
-        return mwparserfromhell.parse(raw).strip_code().strip()
+        parsed = mwparserfromhell.parse(raw)
+        for wl in parsed.filter_wikilinks():
+            if str(wl.title).lower().startswith(_FILE_PREFIXES):
+                parsed.remove(wl)
+        return parsed.strip_code().strip()
     except (ValueError, AttributeError):
         # mwparserfromhell can raise these on severely malformed input
         return raw.strip()

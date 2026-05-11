@@ -115,3 +115,32 @@ class TestChunkArticle:
         wikitext = "=== Subsection ===\nContent."
         chunks = chunk_article("T", wikitext)
         assert chunks[0]["section"] == "Subsection"
+
+    def test_file_image_stripped(self):
+        wikitext = "[[File:Grand_Canyon.jpg|thumb|The Grand Canyon, Arizona]]\nGeology text."
+        chunks = chunk_article("T", wikitext)
+        assert chunks
+        text = chunks[0]["text"]
+        assert "thumb" not in text
+        assert "Grand Canyon, Arizona" not in text
+        assert "Geology text" in text
+
+    def test_image_namespace_stripped(self):
+        wikitext = "[[Image:foo.jpg|200px|left|A caption here]]\nSome content."
+        chunks = chunk_article("T", wikitext)
+        assert chunks
+        text = chunks[0]["text"]
+        assert "200px" not in text
+        assert "caption" not in text
+
+    def test_media_namespace_stripped(self):
+        wikitext = "[[Media:audio.ogg|Listen here]]\nArticle text."
+        chunks = chunk_article("T", wikitext)
+        assert chunks
+        assert "Listen here" not in chunks[0]["text"]
+
+    def test_normal_wikilinks_preserved(self):
+        wikitext = "See [[Python (programming language)|Python]] for details."
+        chunks = chunk_article("T", wikitext)
+        assert chunks
+        assert "Python" in chunks[0]["text"]

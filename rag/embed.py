@@ -234,6 +234,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ollama-url", default=embedder.OLLAMA_BASE_URL)
     parser.add_argument("--reset", action="store_true",
                         help="Delete all existing data and re-embed from scratch")
+    parser.add_argument("--rechunk", action="store_true",
+                        help="Delete articles whose chunks contain image noise, then exit; "
+                             "run again without --rechunk to re-embed them")
     args = parser.parse_args(argv)
 
     wiki_path = db_path_for(args.wiki)
@@ -243,6 +246,23 @@ def main(argv: list[str] | None = None) -> int:
 
     rag_path = rag_db_path_for(args.wiki)
     rag_conn = connect_rag(rag_path)
+
+    if args.rechunk:
+        rows = rag_conn.execute("""
+            SELECT DISTINCT page_id FROM chunks
+            WHERE text LIKE '%thumb|%'
+               OR text LIKE '%frame|%'
+               OR text LIKE '%frameless|%'
+               OR text LIKE '%upright|%'
+        """).fetchall()
+        affected = [r["page_id"] for r in rows]
+        print(f"Found {len(affected)} articles with image-noise chunks. Deleting...")
+        for page_id in tqdm(affected, desc="Clearing stale chunks", unit="art"):
+            _delete_article(rag_conn, page_id)
+        rag_conn.commit()
+        rag_conn.close()
+        print(f"Done. Run 'python -m rag.embed --wiki {args.wiki}' to re-embed affected articles.")
+        return 0
 
     if args.reset:
         print("Resetting RAG database...")
