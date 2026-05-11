@@ -125,6 +125,9 @@ document.addEventListener('click', function (e) {
     if (banner) setTimeout(function () { banner.remove(); }, 5000);
 
     var articleSpinner = document.getElementById('article-load-spinner');
+    window.addEventListener('pageshow', function () {
+        articleSpinner.classList.remove('active');
+    });
     document.body.addEventListener('htmx:beforeRequest', function (e) {
         var hxGet = e.target && e.target.getAttribute && e.target.getAttribute('hx-get');
         if (hxGet && hxGet.startsWith('/article/')) {
