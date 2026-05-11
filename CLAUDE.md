@@ -38,7 +38,6 @@ local_wikipedia/
     embedder.py     embed_text() sync/async via Ollama; pack/unpack_embedding()
     embed.py        CLI entry point: python -m rag.embed --wiki X
     retriever.py    retrieve() — dense (sqlite-vec) + sparse (FTS5) + RRF merge
-    generator.py    build_prompt(), stream_response() — Ollama chat streaming
   download/
     download.py         dump downloader + SHA-1 verifier
     download_katex.py   one-time script to fetch vendored KaTeX for offline math rendering
@@ -202,10 +201,6 @@ Offline embedding pipeline that chunks articles into sections and embeds them us
 - Sparse: FTS5 BM25 with per-word quoting (not phrase quoting — avoids verbatim-match failures on questions)
 - Merge: Reciprocal Rank Fusion (`score = Σ 1/(k + rank)` across both lists, k=60)
 - Falls back to sparse-only if Ollama is unreachable
-
-**Generation** (`rag/generator.py`):
-- `build_prompt()` formats top-K chunks as numbered context blocks (capped at ~6,000 chars)
-- `stream_response()` is an async generator that streams tokens from Ollama `/api/chat`
 
 **Embedding CLI** (`rag/embed.py`):
 - Incremental by default: loads `(page_id, revision_id)` from `articles_meta`, skips unchanged articles, deletes + re-embeds if `revision_id` changed

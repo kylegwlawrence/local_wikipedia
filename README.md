@@ -43,7 +43,7 @@ A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps.
 - Hybrid retrieval: dense ANN search + FTS5 BM25 merged with Reciprocal Rank Fusion
 - Incremental embedding: skips articles whose `revision_id` hasn't changed; safe to re-run after a wiki refresh
 - RAG index stored in `dumps/{wiki}_rag.db` — separate from the wiki DB so refreshes don't clobber embeddings
-- Ollama chat generation via `rag/generator.py`; web UI integration is not yet built
+- Web UI integration for querying the RAG index is not yet built
 
 ## Installation
 
@@ -256,7 +256,6 @@ pytest tests/test_download.py::TestDownloadWithVerify
 │   ├── embedder.py    # embed_text() via Ollama; pack/unpack_embedding()
 │   ├── embed.py       # `python -m rag.embed` CLI entry point
 │   ├── retriever.py   # retrieve() — dense + sparse + RRF hybrid
-│   └── generator.py   # build_prompt(), stream_response() for Ollama chat
 ├── tests/             # Pytest suite
 ├── templates/         # Jinja2 templates
 ├── static/            # CSS + vendored KaTeX
