@@ -241,41 +241,47 @@ def main(argv: list[str] | None = None) -> int:
     wiki_conn = wiki_db.connect(wiki_path)
     embedded = _load_embedded(rag_conn)
 
+    count_query = "SELECT COUNT(*) FROM articles WHERE namespace=0"
+    total = wiki_conn.execute(count_query).fetchone()[0]
+    if args.limit:
+        total = min(total, args.limit)
+
     query = "SELECT page_id, title, revision_id, text_content FROM articles WHERE namespace=0 ORDER BY page_id"
     params: list[int] = []
     if args.limit:
         query += " LIMIT ?"
         params.append(args.limit)
 
-    rows = wiki_conn.execute(query, params).fetchall()
-    wiki_conn.close()
-
     stats = {"skipped": 0, "embedded": 0, "updated": 0, "failed": 0}
 
-    for i, row in enumerate(tqdm(rows, desc=f"Embedding {args.wiki}", unit="art")):
-        page_id = row["page_id"]
-        revision_id = row["revision_id"]
+    cur = wiki_conn.execute(query, params)
+    try:
+        for i, row in enumerate(tqdm(cur, total=total, desc=f"Embedding {args.wiki}", unit="art")):
+            page_id = row["page_id"]
+            revision_id = row["revision_id"]
 
-        if page_id in embedded:
-            if embedded[page_id] == revision_id:
-                stats["skipped"] += 1
-                continue
-            _delete_article(rag_conn, page_id)
-            stats["updated"] += 1
-        else:
-            stats["embedded"] += 1
+            if page_id in embedded:
+                if embedded[page_id] == revision_id:
+                    stats["skipped"] += 1
+                    continue
+                _delete_article(rag_conn, page_id)
+                stats["updated"] += 1
+            else:
+                stats["embedded"] += 1
 
-        try:
-            _embed_article(
-                rag_conn, page_id, row["title"], revision_id,
-                row["text_content"], args.ollama_url,
-            )
-        except Exception as exc:
-            print(f"\nFailed {row['title']!r}: {exc}", file=sys.stderr)
-            stats["failed"] += 1
+            try:
+                _embed_article(
+                    rag_conn, page_id, row["title"], revision_id,
+                    row["text_content"], args.ollama_url,
+                )
+            except Exception as exc:
+                print(f"\nFailed {row['title']!r}: {exc}", file=sys.stderr)
+                stats["failed"] += 1
 
-        if (i + 1) % args.batch == 0:
-            rag_conn.commit()
+            if (i + 1) % args.batch == 0:
+                rag_conn.commit()
+    finally:
+        wiki_conn.close()
 
     rag_conn.commit()
 
