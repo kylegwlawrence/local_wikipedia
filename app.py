@@ -795,5 +795,6 @@ def article(request: Request, title: str) -> HTMLResponse:
             "text_bytes": row["text_bytes"],
             "timestamp": row["timestamp"],
             "redirected_from": redirected_from,
+            "wiki": _active_wiki(request),
         },
     )

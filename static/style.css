@@ -638,6 +638,17 @@ main {
     flex-wrap: wrap;
 }
 
+.wiki-badge {
+    font-size: 0.75rem;
+    font-family: monospace;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-soft);
+    color: var(--muted);
+    white-space: nowrap;
+}
+
 .embed-controls {
     display: inline-flex;
     align-items: center;

@@ -11,6 +11,7 @@
         {{ "{:,}".format(text_bytes) }} bytes &middot; last edited {{ timestamp }}
     </p>
     <div class="article-controls">
+        <span class="wiki-badge">{{ wiki }}</span>
         <button class="view-toggle"
                 hx-get="/wikitext/{{ title|urlencode }}"
                 hx-target="#article"
