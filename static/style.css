@@ -174,6 +174,10 @@ main {
 .article-header h2 {
     margin: 0.5rem 0 0.25rem;
     font-size: 1.6rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
 }
 
 .article-meta {
@@ -639,14 +643,25 @@ main {
 }
 
 .wiki-badge {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-family: monospace;
-    padding: 0.2rem 0.5rem;
-    border: 1px solid var(--border);
+    font-weight: normal;
+    padding: 0.15rem 0.45rem;
     border-radius: 4px;
-    background: var(--bg-soft);
-    color: var(--muted);
     white-space: nowrap;
+    vertical-align: middle;
+}
+
+.wiki-badge--enwiki {
+    background: #ffe8cc;
+    border: 1px solid #f5a623;
+    color: #7a4200;
+}
+
+.wiki-badge--simplewiki {
+    background: #d0eaff;
+    border: 1px solid #5aabf0;
+    color: #0d4d8a;
 }
 
 .not-found-banner {

@@ -3,7 +3,7 @@
    wikitext -> Markdown -> HTML pipeline, so we mark it |safe. The source
    is our own converter, not user input, so this is not an XSS vector. #}
 <header class="article-header">
-    <h2>{{ title }}</h2>
+    <h2>{{ title }}<span class="wiki-badge wiki-badge--{{ wiki }}">{{ wiki }}</span></h2>
     {% if redirected_from %}
     <p class="article-redirect">Redirected from <em>{{ redirected_from }}</em></p>
     {% endif %}
@@ -11,7 +11,6 @@
         {{ "{:,}".format(text_bytes) }} bytes &middot; last edited {{ timestamp }}
     </p>
     <div class="article-controls">
-        <span class="wiki-badge">{{ wiki }}</span>
         <button class="view-toggle"
                 hx-get="/wikitext/{{ title|urlencode }}"
                 hx-target="#article"

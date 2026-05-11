@@ -186,7 +186,7 @@ class TestArticle:
     def test_returns_rendered_html(self, client):
         resp = client.get("/article/April")
         assert resp.status_code == 200
-        assert "<h2>April</h2>" in resp.text
+        assert "<h2>April<span" in resp.text
         # Bold wikitext -> markdown ** -> <strong>.
         assert "<strong>April</strong>" in resp.text
         # Heading wikitext (== Events ==) -> ## Events -> <h2>Events</h2>.
@@ -229,7 +229,7 @@ class TestRedirects:
         # 'Apples' redirects to 'Apple'; we should see Apple's content.
         resp = client.get("/article/Apples")
         assert resp.status_code == 200
-        assert "<h2>Apple</h2>" in resp.text
+        assert "<h2>Apple<span" in resp.text
         assert "An <strong>apple</strong>" in resp.text
 
     def test_redirect_displays_redirected_from_note(self, client):
@@ -247,7 +247,7 @@ class TestRedirects:
         # Pyton -> Python (programming language).
         resp = client.get("/article/Pyton")
         assert resp.status_code == 200
-        assert "<h2>Python (programming language)</h2>" in resp.text
+        assert "<h2>Python (programming language)<span" in resp.text
         assert "Redirected from" in resp.text
 
     def test_redirect_cycle_returns_404(self, client):
