@@ -10,14 +10,15 @@ from download.download import (
     CHUNK_BYTES,
     FALLBACK_SUFFIXES,
     TARGET_SUFFIXES,
-    _hash_file,
     download_with_verify,
     fetch_sha1sums,
+    hash_file,
     main,
     verify_existing,
 )
 
 WIKI = "simplewiki"
+DATE = "20251101"
 
 
 # ---------------------------------------------------------------------------
@@ -28,11 +29,16 @@ def _sha1(data: bytes) -> str:
     return hashlib.sha1(data).hexdigest()
 
 
+def _dump_filename(wiki: str, suffix: str) -> str:
+    """Realistic Wikimedia dump filename, e.g. simplewiki-20251101-pages-…-bz2."""
+    return f"{wiki}-{DATE}{suffix}"
+
+
 def _manifest_text(wiki: str, overrides: dict[str, str] | None = None) -> str:
     """Build a valid sha1sums manifest for the two multistream target files."""
     lines = []
     for suffix in TARGET_SUFFIXES:
-        filename = f"{wiki}{suffix}"
+        filename = _dump_filename(wiki, suffix)
         sha1 = (overrides or {}).get(filename, _sha1(filename.encode()))
         lines.append(f"{sha1}  {filename}")
     return "\n".join(lines) + "\n"
@@ -42,13 +48,13 @@ def _fallback_manifest_text(wiki: str) -> str:
     """Build a manifest containing only the monolithic articles dump (no multistream)."""
     lines = []
     for suffix in FALLBACK_SUFFIXES:
-        filename = f"{wiki}{suffix}"
+        filename = _dump_filename(wiki, suffix)
         lines.append(f"{_sha1(filename.encode())}  {filename}")
     return "\n".join(lines) + "\n"
 
 
 # ---------------------------------------------------------------------------
-# _hash_file
+# hash_file
 # ---------------------------------------------------------------------------
 
 class TestHashFile:
@@ -56,19 +62,19 @@ class TestHashFile:
         data = b"hello wikipedia"
         f = tmp_path / "file.bin"
         f.write_bytes(data)
-        assert _hash_file(f) == _sha1(data)
+        assert hash_file(f) == _sha1(data)
 
     def test_multi_chunk_matches_single_hash(self, tmp_path: pathlib.Path) -> None:
         # Write a file larger than one chunk so multiple reads are exercised
         data = b"x" * (CHUNK_BYTES * 2 + 512)
         f = tmp_path / "big.bin"
         f.write_bytes(data)
-        assert _hash_file(f) == _sha1(data)
+        assert hash_file(f) == _sha1(data)
 
     def test_empty_file(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "empty.bin"
         f.write_bytes(b"")
-        assert _hash_file(f) == _sha1(b"")
+        assert hash_file(f) == _sha1(b"")
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +114,7 @@ class TestFetchSha1sums:
 
         assert len(result) == 2
         for suffix in TARGET_SUFFIXES:
-            filename = f"{WIKI}{suffix}"
+            filename = _dump_filename(WIKI, suffix)
             assert filename in result
             assert result[filename] == _sha1(filename.encode())
 
@@ -147,7 +153,7 @@ class TestFetchSha1sums:
 
         assert len(result) == len(FALLBACK_SUFFIXES)
         for suffix in FALLBACK_SUFFIXES:
-            filename = f"{WIKI}{suffix}"
+            filename = _dump_filename(WIKI, suffix)
             assert filename in result
 
     @respx.mock
@@ -207,7 +213,7 @@ class TestMain:
         """Wire fetch_sha1sums and DUMPS_DIR so main() uses tmp_path."""
         manifest = {}
         for suffix in TARGET_SUFFIXES:
-            filename = f"{wiki}{suffix}"
+            filename = _dump_filename(wiki, suffix)
             data = filename.encode()
             (tmp_path / filename).write_bytes(data)
             manifest[filename] = _sha1(data)
@@ -220,14 +226,14 @@ class TestMain:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         self._patch_manifest(monkeypatch, WIKI, tmp_path)
-        assert main([]) == 0
+        assert main(["--wiki", WIKI]) == 0
 
     def test_download_succeeds_returns_zero(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         manifest = {}
         for suffix in TARGET_SUFFIXES:
-            filename = f"{WIKI}{suffix}"
+            filename = _dump_filename(WIKI, suffix)
             data = filename.encode()
             manifest[filename] = _sha1(data)
             # Pre-stage the file so download_with_verify is not actually called
@@ -236,14 +242,14 @@ class TestMain:
         monkeypatch.setattr(download, "fetch_sha1sums", lambda w: manifest)
         monkeypatch.setattr(download, "DUMPS_DIR", tmp_path)
 
-        assert main([]) == 0
+        assert main(["--wiki", WIKI]) == 0
 
     def test_failed_download_returns_one(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         manifest = {}
         for suffix in TARGET_SUFFIXES:
-            filename = f"{WIKI}{suffix}"
+            filename = _dump_filename(WIKI, suffix)
             manifest[filename] = "0" * 40  # hash won't match anything
 
         monkeypatch.setattr(download, "fetch_sha1sums", lambda w: manifest)
@@ -254,7 +260,7 @@ class TestMain:
         )
         monkeypatch.setattr(download, "DUMPS_DIR", tmp_path)
 
-        assert main([]) == 1
+        assert main(["--wiki", WIKI]) == 1
 
     def test_wiki_flag_is_forwarded(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -266,7 +272,7 @@ class TestMain:
             # Return valid manifest so main doesn't try to download anything
             manifest = {}
             for suffix in TARGET_SUFFIXES:
-                filename = f"{wiki}{suffix}"
+                filename = _dump_filename(wiki, suffix)
                 data = filename.encode()
                 (tmp_path / filename).write_bytes(data)
                 manifest[filename] = _sha1(data)

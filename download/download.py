@@ -3,14 +3,16 @@ import argparse
 import hashlib
 import os
 import pathlib
+import re
 import sys
+from typing import NamedTuple
+
 import httpx
 from tqdm import tqdm
 
-# Define wikimedia constants
+from paths import DEFAULT_WIKI, DUMPS_DIR
+
 BASE_URL = "https://dumps.wikimedia.org"
-DEFAULT_WIKI = "enwiki"
-DUMPS_DIR = pathlib.Path("dumps")
 TARGET_SUFFIXES = (
     "-pages-articles-multistream.xml.bz2",
     "-pages-articles-multistream-index.txt.bz2",
@@ -20,6 +22,19 @@ TARGET_SUFFIXES = (
 FALLBACK_SUFFIXES = ("-pages-articles.xml.bz2",)
 
 CHUNK_BYTES = 1 << 20
+_HTTP_RETRIES = 3
+
+
+class _FileResult(NamedTuple):
+    filename: str
+    size: int
+    sha1: str
+    status: str
+
+
+def _client() -> httpx.Client:
+    """Return an httpx client that retries connection failures."""
+    return httpx.Client(transport=httpx.HTTPTransport(retries=_HTTP_RETRIES))
 
 
 def fetch_sha1sums(wiki: str) -> dict[str, str]:
@@ -40,10 +55,12 @@ def fetch_sha1sums(wiki: str) -> dict[str, str]:
         httpx.HTTPStatusError: If the manifest URL returns a non-2xx response.
     """
     url = f"{BASE_URL}/{wiki}/latest/{wiki}-latest-sha1sums.txt"
-    resp = httpx.get(url, timeout=30.0)
-    resp.raise_for_status()
+    with _client() as client:
+        resp = client.get(url, timeout=30.0)
+        resp.raise_for_status()
 
     all_targets = TARGET_SUFFIXES + FALLBACK_SUFFIXES
+    prefix = f"{wiki}-"
     manifest: dict[str, str] = {}
     for line in resp.text.splitlines():
         line = line.strip()
@@ -53,7 +70,7 @@ def fetch_sha1sums(wiki: str) -> dict[str, str]:
         sha1, _, filename = line.partition("  ")
         if not filename:
             continue
-        if filename.startswith(wiki) and filename.endswith(all_targets):
+        if filename.startswith(prefix) and filename.endswith(all_targets):
             manifest[filename] = sha1
 
     multistream = {f: s for f, s in manifest.items() if f.endswith(TARGET_SUFFIXES)}
@@ -76,94 +93,68 @@ def fetch_sha1sums(wiki: str) -> dict[str, str]:
     )
 
 
-def _hash_file(path: pathlib.Path) -> str:
-    """Compute the SHA-1 digest of a file, reading it in chunks to avoid loading it all into memory.
-
-    Args:
-        path: Path to the file to hash.
-
-    Returns:
-        The lowercase hex SHA-1 digest string.
-    """
+def hash_file(path: pathlib.Path) -> str:
+    """Return the lowercase hex SHA-1 digest of ``path``, hashed in chunks."""
     h = hashlib.sha1()
     with path.open("rb") as f:
-        # iter with a sentinel stops when read() returns b"" (EOF)
         for block in iter(lambda: f.read(CHUNK_BYTES), b""):
             h.update(block)
     return h.hexdigest()
 
 
 def verify_existing(path: pathlib.Path, expected_sha1: str) -> bool:
-    """Check whether a file already exists and matches the expected SHA-1.
-
-    Args:
-        path: Path to the file to verify.
-        expected_sha1: The hex SHA-1 digest the file should have.
-
-    Returns:
-        ``True`` if the file exists and its digest matches, ``False`` if it is
-        missing or the digest does not match.
-    """
+    """Return True if ``path`` exists and its SHA-1 equals ``expected_sha1``."""
     if not path.exists():
         return False
-    print(f"checking existing {path.name} ...", flush=True)
-    return _hash_file(path) == expected_sha1
+    return hash_file(path) == expected_sha1
 
 
 def download_with_verify(url: str, dest: pathlib.Path, expected_sha1: str) -> None:
     """Stream a file from a URL to disk, verifying its SHA-1 on completion.
 
     Downloads to a ``.tmp`` file first so ``dest`` is never left in a partial
-    state if the transfer is interrupted or the hash check fails.
-
-    Args:
-        url: The URL to download from.
-        dest: The final destination path for the downloaded file.
-        expected_sha1: The hex SHA-1 digest the downloaded file must match.
+    state if the transfer is interrupted or the hash check fails. The tmp
+    file is removed on any failure.
 
     Raises:
         RuntimeError: If the SHA-1 of the downloaded file does not match
-            ``expected_sha1``. The temporary file is deleted before raising.
+            ``expected_sha1``.
         httpx.HTTPStatusError: If the server returns a non-2xx response.
     """
-    # Write to a temp path so a failed/interrupted download never leaves a corrupt dest
     tmp = dest.with_suffix(dest.suffix + ".tmp")
     h = hashlib.sha1()
 
-    with httpx.stream("GET", url, timeout=None, follow_redirects=True) as resp:
-        resp.raise_for_status()
-        total = int(resp.headers.get("Content-Length", 0)) or None
-        with tmp.open("wb") as f, tqdm(
-            total=total, unit="B", unit_scale=True, desc=dest.name
-        ) as bar:
-            for chunk in resp.iter_bytes(chunk_size=CHUNK_BYTES):
-                f.write(chunk)
-                h.update(chunk)
-                bar.update(len(chunk))
+    try:
+        with _client() as client, client.stream(
+            "GET", url, timeout=None, follow_redirects=True
+        ) as resp:
+            resp.raise_for_status()
+            total = int(resp.headers.get("Content-Length", 0)) or None
+            with tmp.open("wb") as f, tqdm(
+                total=total, unit="B", unit_scale=True, desc=dest.name
+            ) as bar:
+                for chunk in resp.iter_bytes(chunk_size=CHUNK_BYTES):
+                    f.write(chunk)
+                    h.update(chunk)
+                    bar.update(len(chunk))
 
-    actual = h.hexdigest()
-    if actual != expected_sha1:
-        try:
-            tmp.unlink()
-        except FileNotFoundError:
-            pass
-        raise RuntimeError(
-            f"SHA-1 mismatch for {dest.name}: expected {expected_sha1}, got {actual}"
-        )
-
-    # Atomic rename so dest is never visible in a partial state
-    os.replace(tmp, dest)
+        actual = h.hexdigest()
+        if actual != expected_sha1:
+            raise RuntimeError(
+                f"SHA-1 mismatch for {dest.name}: expected {expected_sha1}, got {actual}"
+            )
+        # Atomic rename so dest is never visible in a partial state
+        os.replace(tmp, dest)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
     """Download and SHA-1-verify the target dump files for a given wiki.
 
-    Args:
-        argv: Argument list to parse. Defaults to ``sys.argv[1:]`` when ``None``.
-
-    Returns:
-        ``0`` if all files were downloaded or already verified, ``1`` if any
-        file failed.
+    Returns ``0`` if all files were downloaded or already verified, ``1`` if
+    any file failed.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wiki", default=DEFAULT_WIKI, help="wiki name, e.g. simplewiki, enwiki")
@@ -172,30 +163,40 @@ def main(argv: list[str] | None = None) -> int:
     DUMPS_DIR.mkdir(parents=True, exist_ok=True)
 
     manifest = fetch_sha1sums(args.wiki)
-    summary: list[tuple[str, int, str, str]] = []
+    results: list[_FileResult] = []
     failed = False
+    date_re = re.compile(rf"^{re.escape(args.wiki)}-(\d{{8}})-")
 
     for filename, sha1 in manifest.items():
         dest = DUMPS_DIR / filename
-        # Filename is {wiki}-{date}-...; extract date to build the correct directory URL
-        date = filename[len(args.wiki) + 1:].split("-")[0]
-        url = f"{BASE_URL}/{args.wiki}/{date}/{filename}"
+        m = date_re.match(filename)
+        if not m:
+            results.append(_FileResult(
+                filename, 0, sha1,
+                f"FAILED: cannot extract date from filename {filename!r}",
+            ))
+            failed = True
+            continue
+        url = f"{BASE_URL}/{args.wiki}/{m.group(1)}/{filename}"
+
         try:
+            if dest.exists():
+                print(f"checking existing {filename} ...", flush=True)
             if verify_existing(dest, sha1):
                 status = "skipped (already verified)"
             else:
                 download_with_verify(url, dest, sha1)
                 status = "ok"
-        except Exception as e:
+        except (RuntimeError, httpx.HTTPError, OSError) as e:
             status = f"FAILED: {e}"
             failed = True
 
         size = dest.stat().st_size if dest.exists() else 0
-        summary.append((filename, size, sha1, status))
+        results.append(_FileResult(filename, size, sha1, status))
 
     print("\n=== summary ===")
-    for filename, size, sha1, status in summary:
-        print(f"{filename}\n  size={size:,} bytes\n  sha1={sha1}\n  status={status}")
+    for r in results:
+        print(f"{r.filename}\n  size={r.size:,} bytes\n  sha1={r.sha1}\n  status={r.status}")
 
     return 1 if failed else 0
 
