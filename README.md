@@ -241,7 +241,8 @@ pytest tests/test_download.py::TestDownloadWithVerify
 │   ├── protect.py     # Syntaxhighlight + math block extraction/restore
 │   └── strip.py       # Remove templates, refs, comments, categories
 ├── download/
-│   └── download.py    # Dump downloader + SHA-1 verifier
+│   ├── download.py        # Dump downloader + SHA-1 verifier
+│   └── download_katex.py  # One-time script to vendor KaTeX for offline math rendering
 ├── parse/
 │   ├── schema.py      # SQLite schema + PRAGMAs (articles, articles_archive)
 │   ├── xml_reader.py  # MediaWiki <page> element extractor

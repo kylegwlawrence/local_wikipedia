@@ -40,7 +40,8 @@ local_wikipedia/
     retriever.py    retrieve() — dense (sqlite-vec) + sparse (FTS5) + RRF merge
     generator.py    build_prompt(), stream_response() — Ollama chat streaming
   download/
-    download.py     dump downloader + SHA-1 verifier
+    download.py         dump downloader + SHA-1 verifier
+    download_katex.py   one-time script to fetch vendored KaTeX for offline math rendering
   parse/
     schema.py       articles + articles_archive + parse_metadata DDL, PRAGMAs
     xml_reader.py   parse_page_element, MediaWiki namespace constants
@@ -60,9 +61,12 @@ local_wikipedia/
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python download/download_katex.py   # one-time: vendors KaTeX for offline math rendering
 ```
 
 Dependencies: `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`, `uvicorn[standard]`, `jinja2`, `sqlite-vec`.
+
+For the RAG pipeline, [Ollama](https://ollama.com) must be running locally with the embedding model pulled (`ollama pull nomic-embed-text`) and optionally a chat model (`ollama pull llama3`).
 
 ## Common Commands
 
