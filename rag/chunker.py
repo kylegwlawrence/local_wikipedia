@@ -29,7 +29,8 @@ def _strip_wikitext(raw: str) -> str:
     """Convert a wikitext fragment to plain text via mwparserfromhell."""
     try:
         return mwparserfromhell.parse(raw).strip_code().strip()
-    except Exception:
+    except (ValueError, AttributeError):
+        # mwparserfromhell can raise these on severely malformed input
         return raw.strip()
 
 
@@ -64,7 +65,7 @@ def chunk_article(
     title: str,
     wikitext: str,
     max_chars: int = MAX_CHUNK_CHARS,
-) -> list[dict]:
+) -> list[dict[str, str | int | None]]:
     """Split an article into plain-text chunks at section boundaries.
 
     Returns a list of dicts with keys:
@@ -100,12 +101,12 @@ def chunk_article(
             continue
         parts = _split_long_text(plain, max_chars)
         for idx, part in enumerate(parts):
-            if part.strip():
+            if part:
                 chunks.append(
                     {
                         "section": section,
                         "chunk_index": idx,
-                        "text": part.strip(),
+                        "text": part,
                     }
                 )
     return chunks

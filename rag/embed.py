@@ -45,9 +45,40 @@ def _delete_article(rag_conn, page_id: int) -> None:
     rag_conn.execute("DELETE FROM articles_meta WHERE page_id = ?", (page_id,))
 
 
+def _insert_chunk(
+    rag_conn,
+    page_id: int,
+    chunk: dict,
+    vec: list[float],
+    *,
+    fts_incremental: bool,
+) -> int:
+    """Insert one chunk row + vector + optional FTS entry. Returns the chunk_id."""
+    cur = rag_conn.execute(
+        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (page_id, chunk["section"], chunk["chunk_index"],
+         chunk["text"], len(chunk["text"])),
+    )
+    chunk_id = cur.lastrowid
+    rag_conn.execute(
+        "INSERT INTO chunks_vec (chunk_id, embedding) VALUES (?, ?)",
+        (chunk_id, embedder.pack_embedding(vec)),
+    )
+    if fts_incremental:
+        rag_conn.execute(
+            "INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)",
+            (chunk_id, chunk["text"]),
+        )
+    return chunk_id
+
+
 def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
                    wikitext: str, ollama_url: str) -> int:
     """Chunk + embed one article. Returns number of chunks inserted."""
+    if chunker.is_redirect(wikitext):
+        return 0
+
     categories = chunker.extract_categories(wikitext)
     chunks = chunker.chunk_article(title, wikitext)
 
@@ -61,19 +92,9 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
     for chunk in chunks:
         try:
             vec = embedder.embed_text(chunk["text"], base_url=ollama_url)
-        except (httpx.HTTPError, KeyError):
+        except httpx.HTTPError:
             continue
-        cur = rag_conn.execute(
-            "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (page_id, chunk["section"], chunk["chunk_index"],
-             chunk["text"], len(chunk["text"])),
-        )
-        chunk_id = cur.lastrowid
-        rag_conn.execute(
-            "INSERT INTO chunks_vec (chunk_id, embedding) VALUES (?, ?)",
-            (chunk_id, embedder.pack_embedding(vec)),
-        )
+        _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=False)
         count += 1
     return count
 
@@ -111,23 +132,9 @@ def embed_one(
     for chunk in chunks_data:
         try:
             vec = embedder.embed_text(chunk["text"], base_url=ollama_url)
-        except Exception:
+        except httpx.HTTPError:
             continue
-        cur = rag_conn.execute(
-            "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (page_id, chunk["section"], chunk["chunk_index"],
-             chunk["text"], len(chunk["text"])),
-        )
-        chunk_id = cur.lastrowid
-        rag_conn.execute(
-            "INSERT INTO chunks_vec (chunk_id, embedding) VALUES (?, ?)",
-            (chunk_id, embedder.pack_embedding(vec)),
-        )
-        rag_conn.execute(
-            "INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)",
-            (chunk_id, chunk["text"]),
-        )
+        _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=True)
         count += 1
 
     rag_conn.commit()
@@ -166,13 +173,13 @@ def main(argv: list[str] | None = None) -> int:
     wiki_conn = wiki_db.connect(wiki_path)
     embedded = _load_embedded(rag_conn)
 
-    query = "SELECT page_id, title, revision_id, text_content FROM articles WHERE namespace=0"
+    query = "SELECT page_id, title, revision_id, text_content FROM articles WHERE namespace=0 ORDER BY page_id"
+    params: list[int] = []
     if args.limit:
-        query += f" ORDER BY page_id LIMIT {args.limit}"
-    else:
-        query += " ORDER BY page_id"
+        query += " LIMIT ?"
+        params.append(args.limit)
 
-    rows = wiki_conn.execute(query).fetchall()
+    rows = wiki_conn.execute(query, params).fetchall()
     wiki_conn.close()
 
     stats = {"skipped": 0, "embedded": 0, "updated": 0, "failed": 0}

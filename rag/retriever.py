@@ -44,7 +44,7 @@ def retrieve(
     try:
         vec = embedder.embed_text(query, base_url=ollama_url)
         dense = _dense_search(vec, rag_conn, candidate_k)
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
+    except httpx.HTTPError:
         pass  # sparse-only fallback
 
     merged = _rrf_merge(dense, sparse, k=rrf_k)[:top_k]
@@ -53,15 +53,8 @@ def retrieve(
 
     chunk_ids = [cid for cid, _ in merged]
     score_map = {cid: score for cid, score in merged}
-    hydrated = _fetch_chunks(chunk_ids, rag_conn)
-
-    result = []
-    for cid in chunk_ids:
-        if cid in hydrated:
-            c = hydrated[cid]
-            c.score = score_map[cid]
-            result.append(c)
-    return result
+    hydrated = _fetch_chunks(chunk_ids, score_map, rag_conn)
+    return [hydrated[cid] for cid in chunk_ids if cid in hydrated]
 
 
 def _dense_search(
@@ -113,6 +106,7 @@ def _rrf_merge(
 
 def _fetch_chunks(
     chunk_ids: list[int],
+    score_map: dict[int, float],
     rag_conn: sqlite3.Connection,
 ) -> dict[int, Chunk]:
     if not chunk_ids:
@@ -131,7 +125,7 @@ def _fetch_chunks(
             title=r["title"],
             section=r["section"],
             text=r["text"],
-            score=0.0,
+            score=score_map.get(r["chunk_id"], 0.0),
         )
         for r in rows
     }

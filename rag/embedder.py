@@ -15,7 +15,6 @@ _BACKOFF_BASE = 2.0
 
 def embed_text(text: str, base_url: str = OLLAMA_BASE_URL) -> list[float]:
     """Call Ollama /api/embeddings synchronously. Returns 768 floats."""
-    last_exc: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
         if attempt:
             time.sleep(_BACKOFF_BASE ** attempt)
@@ -27,15 +26,13 @@ def embed_text(text: str, base_url: str = OLLAMA_BASE_URL) -> list[float]:
                 )
                 resp.raise_for_status()
                 return resp.json()["embedding"]
-        except Exception as exc:
-            last_exc = exc
-    assert last_exc is not None
-    raise last_exc
+        except httpx.HTTPError:
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
 
 
 async def embed_text_async(text: str, base_url: str = OLLAMA_BASE_URL) -> list[float]:
     """Async version of embed_text for use in FastAPI routes."""
-    last_exc: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
         if attempt:
             await asyncio.sleep(_BACKOFF_BASE ** attempt)
@@ -47,10 +44,9 @@ async def embed_text_async(text: str, base_url: str = OLLAMA_BASE_URL) -> list[f
                 )
                 resp.raise_for_status()
                 return resp.json()["embedding"]
-        except Exception as exc:
-            last_exc = exc
-    assert last_exc is not None
-    raise last_exc
+        except httpx.HTTPError:
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
 
 
 def pack_embedding(embedding: list[float]) -> bytes:

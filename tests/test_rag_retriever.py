@@ -82,24 +82,24 @@ class TestRRFMerge:
 
 class TestFetchChunks:
     def test_hydrates_title_from_articles_meta(self, rag_db):
-        chunks = _fetch_chunks([1], rag_db)
+        chunks = _fetch_chunks([1], {}, rag_db)
         assert 1 in chunks
         assert chunks[1].title == "April"
 
     def test_returns_section_and_text(self, rag_db):
-        chunks = _fetch_chunks([2], rag_db)
+        chunks = _fetch_chunks([2], {}, rag_db)
         assert chunks[2].section is None
         assert "March" in chunks[2].text
 
     def test_missing_chunk_id_not_in_result(self, rag_db):
-        chunks = _fetch_chunks([999], rag_db)
+        chunks = _fetch_chunks([999], {}, rag_db)
         assert 999 not in chunks
 
     def test_empty_list_returns_empty_dict(self, rag_db):
-        assert _fetch_chunks([], rag_db) == {}
+        assert _fetch_chunks([], {}, rag_db) == {}
 
     def test_multiple_chunks(self, rag_db):
-        chunks = _fetch_chunks([1, 2], rag_db)
+        chunks = _fetch_chunks([1, 2], {}, rag_db)
         assert set(chunks.keys()) == {1, 2}
 
 
