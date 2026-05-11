@@ -132,6 +132,23 @@ class TestConvertLinks:
         result = _convert_links(text)
         assert "<code>print()</code></a>" in result
 
+    def test_file_link_stripped(self) -> None:
+        result = _convert_links("[[File:Map.jpg|thumb|A caption]]")
+        assert "thumb" not in result
+        assert "File:" not in result
+
+    def test_image_link_stripped(self) -> None:
+        result = _convert_links("[[Image:Test.png|center|200px]]")
+        assert "Image:" not in result
+
+    def test_media_link_stripped(self) -> None:
+        result = _convert_links("[[Media:Audio.ogg|Listen]]")
+        assert "Media:" not in result
+
+    def test_category_link_stripped(self) -> None:
+        result = _convert_links("[[Category:Maps]]")
+        assert "Category:" not in result
+
 
 class TestConvertLists:
     def test_bullet_list(self) -> None:
@@ -571,6 +588,23 @@ Art has existed since ancient times. See [[History of art]].
         # Check links converted
         assert 'href="/article/History%20of%20art"' in result
         assert ">History of art</a>" in result
+
+    def test_file_link_with_nested_caption_not_rendered(self) -> None:
+        # File links whose captions contain nested wikilinks must be fully
+        # stripped — the plain-text regex can't match across nested brackets.
+        wikitext = "[[File:Tabula_Rogeriana.jpg|thumb|upright=1.35|center|Caption with [[nested link]] here]]"
+        result = convert_wikitext_to_html(wikitext)
+        assert "thumb" not in result
+        assert "upright" not in result
+        assert "File:" not in result
+
+    def test_image_link_with_plain_caption_stripped(self) -> None:
+        wikitext = "Some text.\n\n[[Image:Test.png|400px|A plain caption]]\n\nMore text."
+        result = convert_wikitext_to_html(wikitext)
+        assert "Image:" not in result
+        assert "400px" not in result
+        assert "Some text" in result
+        assert "More text" in result
 
 
 # ---------------------------------------------------------------------------

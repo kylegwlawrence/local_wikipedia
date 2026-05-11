@@ -31,8 +31,12 @@ def strip_comments(text: str) -> str:
 
 
 def strip_categories(text: str) -> str:
-    """Remove [[Category:...]], [[File:...]], [[Image:...]] wikilinks."""
-    return re.sub(r'\[\[(?:Category|File|Image):[^\[\]]*\]\]', '', text, flags=re.IGNORECASE)
+    """Remove [[Category:...]], [[File:...]], [[Image:...]], [[Media:...]] wikilinks."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(r'\[\[(?:Category|File|Image|Media):[^\[\]]*\]\]', '', text, flags=re.IGNORECASE)
+    return text
 
 
 def strip_external_links_section(text: str) -> str:

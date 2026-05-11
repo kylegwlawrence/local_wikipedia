@@ -18,6 +18,8 @@ import re
 
 import mwparserfromhell
 
+_MEDIA_LINK_PREFIXES = ("file:", "image:", "media:")
+
 from render import strip
 from render.strip import strip_external_links_section
 from render.blocks import convert_headings, convert_lists, wrap_paragraphs
@@ -76,37 +78,44 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         collected_refs = collect_inline_refs(wikicode)
         convert_reflist_template(wikicode, collected_refs)
 
-        # 2. Flatten to string.
+        # 2. Remove File/Image/Media wikilinks at the wikicode level before
+        # flattening — the structured tree handles nested brackets in captions
+        # that the string-level strip_categories regex cannot match.
+        for wl in list(wikicode.filter_wikilinks(recursive=False)):
+            if str(wl.title).strip().lower().startswith(_MEDIA_LINK_PREFIXES):
+                wikicode.remove(wl)
+
+        # 3. Flatten to string.
         text = str(wikicode)
 
-        # 3. Strip remaining noise via regex (faster than wikicode.remove() loops).
+        # 4. Strip remaining noise via regex (faster than wikicode.remove() loops).
         text = strip.strip_comments(text)
         text = strip.strip_refs(text)
         text = strip.strip_templates(text)
         text = strip.strip_categories(text)
         text = strip_external_links_section(text)
 
-        # 4. Protect code/math from later string-level passes.
+        # 5. Protect code/math from later string-level passes.
         text, code_blocks = extract_syntaxhighlight(text)
         text, math_blocks = extract_math_tags(text)
 
-        # 5. Block-level structure first.
+        # 6. Block-level structure first.
         text = convert_tables(text)
         text = convert_lists(text)
         text = convert_headings(text)
 
-        # 6. Inline formatting (tables handle their own inline pass).
+        # 7. Inline formatting (tables handle their own inline pass).
         text = convert_bold_italic(text)
         text = convert_links(text)
 
-        # 7. Wrap remaining bare lines in paragraphs.
+        # 8. Wrap remaining bare lines in paragraphs.
         text = wrap_paragraphs(text)
 
-        # 8. Restore protected blocks.
+        # 9. Restore protected blocks.
         text = restore_code_blocks(text, code_blocks)
         text = restore_math_tags(text, math_blocks)
 
-        # 9. Tidy.
+        # 10. Tidy.
 
         text = clean_extra_markup(text)
         return text.strip()

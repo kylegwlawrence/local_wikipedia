@@ -5,6 +5,8 @@ from urllib.parse import quote
 
 from db import normalize_title
 
+_SKIP_LINK_NAMESPACES = ("file:", "image:", "media:", "category:")
+
 
 def convert_bold_italic(text: str) -> str:
     """Convert '''bold''' and ''italic'' to HTML."""
@@ -16,6 +18,8 @@ def convert_bold_italic(text: str) -> str:
 
 
 def _render_link(target: str, label: str, escape_label: bool) -> str:
+    if target.strip().lower().startswith(_SKIP_LINK_NAMESPACES):
+        return ""
     title, _, anchor = target.partition("#")
     title = title.strip()
     if title:
