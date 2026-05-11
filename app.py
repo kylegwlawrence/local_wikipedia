@@ -411,7 +411,12 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
         page = max(1, min(page, total_pages))
         offset = (page - 1) * EMBED_PAGE_SIZE
         rows = rag_conn.execute(
-            "SELECT page_id, title, categories FROM articles_meta ORDER BY title LIMIT ? OFFSET ?",
+            """SELECT m.page_id, m.title, m.categories, COUNT(c.chunk_id) AS chunk_count
+               FROM articles_meta m
+               LEFT JOIN chunks c ON c.page_id = m.page_id
+               GROUP BY m.page_id
+               ORDER BY m.title
+               LIMIT ? OFFSET ?""",
             (EMBED_PAGE_SIZE, offset),
         ).fetchall()
         articles = [dict(r) for r in rows]

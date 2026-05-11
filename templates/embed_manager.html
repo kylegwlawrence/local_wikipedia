@@ -21,6 +21,7 @@
     <thead>
         <tr>
             <th>Title</th>
+            <th>Chunks</th>
             <th>Categories</th>
         </tr>
     </thead>
@@ -29,6 +30,9 @@
         <tr>
             <td>
                 <a href="/?article={{ a.title|urlencode }}">{{ a.title }}</a>
+            </td>
+            <td class="embed-chunks">
+                <a href="/chunks/{{ a.title|urlencode }}">{{ a.chunk_count }}</a>
             </td>
             <td class="embed-categories">
                 {% if a.categories %}{{ a.categories.replace("|", " · ") }}{% endif %}
