@@ -135,6 +135,35 @@ def touch_job(conn: sqlite3.Connection, job_id: int) -> None:
     conn.commit()
 
 
+def clear_orphaned_jobs(conn: sqlite3.Connection) -> int:
+    """Mark any in-flight embed jobs as failed (called on app startup).
+
+    A worker subprocess that was killed mid-flight leaves its job row stuck
+    in 'running' forever, which permanently blocks new embed requests. Items
+    sitting in 'in_progress' under those jobs are also reset to 'failed' so
+    the per-article view doesn't show ghost activity.
+    Returns the number of job rows updated.
+    """
+    conn.execute(
+        "UPDATE embed_job_items "
+        "SET status = 'failed', "
+        "    error_message = COALESCE(error_message, 'interrupted by server restart'), "
+        "    finished_at = datetime('now') "
+        "WHERE status = 'in_progress' "
+        "AND job_id IN (SELECT id FROM embed_jobs WHERE status = 'running')"
+    )
+    cur = conn.execute(
+        "UPDATE embed_jobs "
+        "SET status = 'failed', "
+        "    error_message = COALESCE(error_message, 'interrupted by server restart'), "
+        "    finished_at = datetime('now'), "
+        "    updated_at = datetime('now') "
+        "WHERE status = 'running'"
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 # --- Items -------------------------------------------------------------------
 
 def append_items(

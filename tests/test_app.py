@@ -476,3 +476,181 @@ class TestActiveEmbedding:
         # Polling attribute should be gone once cancel is requested.
         assert 'hx-trigger="every 3s"' not in resp.text
         assert "cancelling" in resp.text or "cancel" in resp.text.lower()
+
+
+@pytest.fixture
+def crash_recovery_env(tmp_path, monkeypatch):
+    """Yield (jobs_db_path, dumps_dir) with app.py pointed at this tmp dir.
+
+    Used by TestCrashRecovery: lifespan startup hook reads from JOBS_DB and
+    db_path_for(), so both must be redirected before the TestClient enters
+    the lifespan context.
+    """
+    import jobs
+    import embed_jobs
+
+    dumps = tmp_path / "dumps"
+    dumps.mkdir()
+    jobs_db = dumps / "jobs.db"
+
+    monkeypatch.setattr(web_app, "JOBS_DB", jobs_db)
+    monkeypatch.setattr(web_app, "db_path_for", lambda wiki: dumps / f"{wiki}.db")
+
+    # Build a fixture wiki DB so the FTS rebuild path has something to operate on.
+    wiki_db_path = dumps / "enwiki.db"
+    _build_fixture_db(wiki_db_path)
+    # WIKI_DB lets non-recovery routes find the same DB if we exercise them.
+    monkeypatch.setenv("WIKI_DB", str(wiki_db_path))
+
+    return {
+        "jobs_db": jobs_db,
+        "dumps": dumps,
+        "wiki_db": wiki_db_path,
+        "jobs": jobs,
+        "embed_jobs": embed_jobs,
+    }
+
+
+class TestCrashRecovery:
+    """Lifespan startup hook cleans up after a crashed worker."""
+
+    def test_orphaned_refresh_job_marked_failed(self, crash_recovery_env):
+        jobs = crash_recovery_env["jobs"]
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            conn.execute(
+                "INSERT INTO refresh_jobs (wiki, status) VALUES (?, ?)",
+                ("enwiki", "downloading"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Entering TestClient triggers the lifespan hook.
+        with TestClient(web_app.app):
+            pass
+
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            row = conn.execute(
+                "SELECT status, error_message FROM refresh_jobs WHERE wiki = ?",
+                ("enwiki",),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["status"] == "failed"
+        assert "interrupted" in row["error_message"].lower()
+
+    def test_orphaned_embed_job_and_items_marked_failed(self, crash_recovery_env):
+        embed_jobs = crash_recovery_env["embed_jobs"]
+        conn = embed_jobs.connect_embed_jobs(crash_recovery_env["jobs_db"])
+        try:
+            cur = conn.execute(
+                "INSERT INTO embed_jobs (wiki, status) VALUES (?, ?)",
+                ("enwiki", "running"),
+            )
+            job_id = cur.lastrowid
+            conn.execute(
+                "INSERT INTO embed_job_items (job_id, title, source_title, status) "
+                "VALUES (?, ?, ?, ?)",
+                (job_id, "April", "April", "in_progress"),
+            )
+            conn.execute(
+                "INSERT INTO embed_job_items (job_id, title, source_title, status) "
+                "VALUES (?, ?, ?, ?)",
+                (job_id, "Apple", "April", "queued"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with TestClient(web_app.app):
+            pass
+
+        conn = embed_jobs.connect_embed_jobs(crash_recovery_env["jobs_db"])
+        try:
+            job = conn.execute(
+                "SELECT status, error_message FROM embed_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+            items = conn.execute(
+                "SELECT title, status FROM embed_job_items WHERE job_id = ? ORDER BY id",
+                (job_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        assert job["status"] == "failed"
+        assert "interrupted" in job["error_message"].lower()
+        # The in_progress item is reset; the queued item is left alone (the
+        # parent job is failed so it won't be picked up anyway).
+        item_status = {r["title"]: r["status"] for r in items}
+        assert item_status["April"] == "failed"
+        assert item_status["Apple"] == "queued"
+
+    def test_dirty_fts_triggers_rebuild_on_startup(self, crash_recovery_env):
+        jobs = crash_recovery_env["jobs"]
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            jobs.set_fts_dirty(conn, "enwiki", True)
+            assert "enwiki" in jobs.get_fts_dirty_wikis(conn)
+        finally:
+            conn.close()
+
+        with TestClient(web_app.app):
+            pass
+
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            assert jobs.get_fts_dirty_wikis(conn) == []
+        finally:
+            conn.close()
+
+    def test_dirty_fts_for_missing_db_clears_flag(self, crash_recovery_env):
+        # Wiki marked dirty but its DB no longer exists. Lifespan should clear
+        # the flag rather than crash on the rebuild attempt.
+        jobs = crash_recovery_env["jobs"]
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            jobs.set_fts_dirty(conn, "simplewiki", True)
+        finally:
+            conn.close()
+
+        with TestClient(web_app.app):
+            pass
+
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            assert "simplewiki" not in jobs.get_fts_dirty_wikis(conn)
+        finally:
+            conn.close()
+
+    def test_terminal_jobs_are_left_alone(self, crash_recovery_env):
+        jobs = crash_recovery_env["jobs"]
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            conn.execute(
+                "INSERT INTO refresh_jobs (wiki, status) VALUES (?, ?)",
+                ("enwiki", "complete"),
+            )
+            conn.execute(
+                "INSERT INTO refresh_jobs (wiki, status, error_message) "
+                "VALUES (?, ?, ?)",
+                ("enwiki", "failed", "earlier failure"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with TestClient(web_app.app):
+            pass
+
+        conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
+        try:
+            rows = conn.execute(
+                "SELECT status, error_message FROM refresh_jobs ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+        assert rows[0]["status"] == "complete"
+        assert rows[1]["status"] == "failed"
+        assert rows[1]["error_message"] == "earlier failure"

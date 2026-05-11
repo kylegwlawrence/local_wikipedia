@@ -57,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(f"No dump file found for {wiki} after download")
 
         # --- Refresh parse ---------------------------------------------------
+        # Mark FTS dirty before any row mutations. If the worker dies between
+        # the article updates and the FTS rebuild, the lifespan hook in app.py
+        # will detect this flag on next startup and rebuild.
+        jobs.set_fts_dirty(jobs_conn, wiki, True)
         jobs.update_job(jobs_conn, job_id, status="parsing")
         print(f"[worker] Refreshing {wiki} database…", flush=True)
         result = refresh_dump(dump_path, db_path, job_id, JOBS_DB)
@@ -69,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         wiki_conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
         wiki_conn.commit()
         wiki_conn.close()
+        jobs.set_fts_dirty(jobs_conn, wiki, False)
 
         # --- Done ------------------------------------------------------------
         jobs.update_job(

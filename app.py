@@ -17,6 +17,7 @@ import pathlib
 import sqlite3
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -44,7 +45,81 @@ SEARCH_LIMIT = 20
 # own limit is 5 hops; matching that is conservative.
 REDIRECT_MAX_HOPS = 5
 
-app = FastAPI(title="Local Wikipedia")
+
+def _recover_from_crash() -> None:
+    """Clean up state left behind by a worker that died mid-flight.
+
+    Runs once at app startup (via the lifespan hook). Two responsibilities:
+      1. Mark any jobs stuck in non-terminal status as 'failed' so the UI
+         stops showing perpetual progress and new requests aren't blocked
+         by the zombie row in get_active_job().
+      2. For any wiki whose FTS index was marked dirty by a crashed refresh,
+         rebuild the FTS index synchronously before serving requests so
+         search results don't silently return stale titles.
+    """
+    conn = refresh_jobs.connect_jobs(JOBS_DB)
+    try:
+        n_refresh = refresh_jobs.clear_orphaned_jobs(conn)
+        if n_refresh:
+            print(
+                f"[startup] cleared {n_refresh} orphaned refresh job(s)",
+                file=sys.stderr, flush=True,
+            )
+        dirty_wikis = refresh_jobs.get_fts_dirty_wikis(conn)
+    finally:
+        conn.close()
+
+    embed_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        n_embed = embed_jobs.clear_orphaned_jobs(embed_conn)
+        if n_embed:
+            print(
+                f"[startup] cleared {n_embed} orphaned embed job(s)",
+                file=sys.stderr, flush=True,
+            )
+    finally:
+        embed_conn.close()
+
+    for wiki in dirty_wikis:
+        db_path = db_path_for(wiki)
+        if not db_path.exists():
+            # The wiki DB was deleted while the flag was set. Clear the flag
+            # so we don't try to rebuild on every startup.
+            conn = refresh_jobs.connect_jobs(JOBS_DB)
+            try:
+                refresh_jobs.set_fts_dirty(conn, wiki, False)
+            finally:
+                conn.close()
+            continue
+
+        print(
+            f"[startup] FTS index for {wiki} is dirty — rebuilding…",
+            file=sys.stderr, flush=True,
+        )
+        wiki_conn = sqlite3.connect(db_path)
+        try:
+            wiki_conn.execute(
+                "INSERT INTO articles_fts(articles_fts) VALUES('rebuild')"
+            )
+            wiki_conn.commit()
+        finally:
+            wiki_conn.close()
+
+        conn = refresh_jobs.connect_jobs(JOBS_DB)
+        try:
+            refresh_jobs.set_fts_dirty(conn, wiki, False)
+        finally:
+            conn.close()
+        print(f"[startup] FTS rebuild complete for {wiki}", file=sys.stderr, flush=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _recover_from_crash()
+    yield
+
+
+app = FastAPI(title="Local Wikipedia", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
