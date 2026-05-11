@@ -51,7 +51,7 @@ def retrieve(
     query: str,
     rag_conn: sqlite3.Connection,
     top_k: int = 5,
-    candidate_k: int = 20,
+    candidate_k: int = 50,
     rrf_k: int = 60,
     ollama_url: str = embedder.OLLAMA_BASE_URL,
 ) -> RetrievalResult:
