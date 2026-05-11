@@ -1,0 +1,30 @@
+{# Full page: chunks viewer for a single embedded article. #}
+{% extends "base.html" %}
+{% block title %}Chunks: {{ title }} · Local Wikipedia{% endblock %}
+
+{% block content %}
+<header class="site-header">
+    <h1>{{ title }}</h1>
+</header>
+
+<div class="nav-links">
+    <a href="/?article={{ title|urlencode }}" class="nav-link">&larr; Back to article</a>
+    <a href="/" class="nav-link">&larr; Back to search</a>
+</div>
+
+<p class="embed-count">{{ chunks|length }} chunk{{ "s" if chunks|length != 1 }}</p>
+
+<div class="chunks-list">
+{% for chunk in chunks %}
+<div class="chunk-card">
+    <div class="chunk-meta">
+        <strong>Chunk {{ loop.index }}</strong>
+        <span>&middot;</span>
+        <span>{{ chunk.section if chunk.section else "Introduction" }}{% if chunk.chunk_index > 0 %} (part {{ chunk.chunk_index + 1 }}){% endif %}</span>
+        <span class="chunk-length">&middot; {{ "{:,}".format(chunk.text_length) }} chars</span>
+    </div>
+    <div class="chunk-text">{{ chunk.text }}</div>
+</div>
+{% endfor %}
+</div>
+{% endblock %}

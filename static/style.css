@@ -692,3 +692,44 @@ main {
     color: var(--link);
     background: #eaeefa;
 }
+
+/* --- Chunks page --------------------------------------------------------- */
+
+.chunks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.chunk-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    background: var(--bg-soft);
+}
+
+.chunk-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+}
+
+.chunk-meta strong {
+    color: var(--fg);
+    font-size: 0.85rem;
+}
+
+.chunk-length {
+    margin-left: auto;
+}
+
+.chunk-text {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

@@ -3,7 +3,10 @@
    POST /embed-article/{title} (after embedding completes).
    Both states share identical padding so swapping them causes no layout shift. #}
 {% if embedded %}
-<span id="embed-widget" class="embed-badge embed-badge--done">&#10003; embedded</span>
+<span id="embed-widget" class="embed-controls">
+    <span class="embed-badge embed-badge--done">&#10003; embedded</span>
+    <a href="/chunks/{{ title|urlencode }}" class="embed-btn">View chunks</a>
+</span>
 {% elif error %}
 <span id="embed-widget" class="embed-controls">
     <button class="embed-btn"

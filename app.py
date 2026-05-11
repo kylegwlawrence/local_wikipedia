@@ -489,6 +489,37 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
     })
 
 
+@app.get("/chunks/{title:path}", response_class=HTMLResponse)
+def chunks(request: Request, title: str) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    rag_conn = _rag_connect(wiki)
+
+    if rag_conn is None:
+        raise HTTPException(status_code=404, detail="No RAG database for this wiki")
+
+    try:
+        meta = rag_conn.execute(
+            "SELECT page_id FROM articles_meta WHERE title = ?", (title,)
+        ).fetchone()
+        if meta is None:
+            raise HTTPException(status_code=404, detail=f"Article not embedded: {title}")
+
+        rows = rag_conn.execute(
+            "SELECT section, chunk_index, text, text_length "
+            "FROM chunks WHERE page_id = ? ORDER BY chunk_id",
+            (meta["page_id"],),
+        ).fetchall()
+        chunk_list = [dict(r) for r in rows]
+    finally:
+        rag_conn.close()
+
+    return templates.TemplateResponse(request, "chunks.html", {
+        "title": title,
+        "chunks": chunk_list,
+        "wiki": wiki,
+    })
+
+
 @app.get("/article/{title:path}", response_class=HTMLResponse)
 def article(request: Request, title: str) -> HTMLResponse:
     """Render a single article as HTML.
