@@ -78,8 +78,20 @@ main {
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: 999;
+    width: 4rem;
+    height: 4rem;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.2);
+}
+#article-load-spinner::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
     width: 2.5rem;
     height: 2.5rem;
+    margin: -1.25rem 0 0 -1.25rem;
     border: 3px solid var(--border);
     border-top-color: var(--link);
     border-radius: 50%;
