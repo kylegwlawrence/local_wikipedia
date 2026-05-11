@@ -16,11 +16,14 @@ The web app (`app.py`) reads from the SQLite database and renders articles via t
 
 ```
 local_wikipedia/
-  app.py            FastAPI app (routes + redirect/search/refresh helpers)
+  app.py            FastAPI app (routes + redirect/search/refresh/embed-links helpers)
   paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, rag_db_path_for
-  db.py             connect(path) -> sqlite3.Connection (Row factory)
+  db.py             connect(), redirect_target(), resolve_redirect() — shared by app + embed pipeline
   jobs.py           CRUD helpers for refresh_jobs table in dumps/jobs.db
+  embed_jobs.py     CRUD helpers for embed_jobs / embed_job_items tables in dumps/jobs.db
   worker.py         background subprocess: download → refresh → FTS rebuild
+  embed_worker.py   background subprocess: drains embed_job_items queue via rag.embed.embed_one
+  start.sh          tmux helper — start/stop/attach the uvicorn server in a persistent session
   render/           wikitext → HTML converter (package)
     __init__.py     public API: convert_wikitext_to_html
     pipeline.py     orchestrator — ordered stage list
@@ -36,7 +39,8 @@ local_wikipedia/
     schema.py       connect_rag(), create_rag_schema() — chunks + vec + FTS tables
     chunker.py      chunk_article(), extract_categories(), is_redirect()
     embedder.py     embed_text() sync/async via Ollama; pack/unpack_embedding()
-    embed.py        CLI entry point: python -m rag.embed --wiki X
+    embed.py        CLI entry point + embed_one() used by embed_worker
+    links.py        extract_article_links() — parse wikilinks from raw wikitext
     retriever.py    retrieve() — dense (sqlite-vec) + sparse (FTS5) + RRF merge
   download/
     download.py         dump downloader + SHA-1 verifier
@@ -49,9 +53,11 @@ local_wikipedia/
     verify.py       verify_database
     cli.py          argparse main(), _find_latest_dump
   tests/            pytest suite (mirrors source layout)
-  templates/, static/
+  templates/        Jinja2 templates (includes active_embedding.html + active_embedding_panel.html)
+  static/
   dumps/            (gitignored) downloaded .xml.bz2 + parsed .db + jobs.db
                     also stores {wiki}_rag.db (RAG chunks + vectors)
+                    also stores {wiki}_embed.log (embed worker output)
 ```
 
 ## Setup and Dependencies
@@ -86,6 +92,11 @@ python -m parse.cli --rebuild-fts --database dumps/enwiki.db
 # Run web app (open http://127.0.0.1:8000)
 uvicorn app:app --reload
 WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
+
+# Run persistently on a remote server (survives SSH disconnect)
+./start.sh             # start in a tmux session named "wikipedia"
+./start.sh attach      # re-attach to see logs
+./start.sh stop        # kill the session
 
 # Build RAG index (requires Ollama running with nomic-embed-text pulled)
 python -m rag.embed --wiki simplewiki            # full run
@@ -169,6 +180,9 @@ Pipeline order matters — stages are applied in sequence:
 - `GET /switch-wiki?to=` sets a `wiki_pref` cookie (1-year max-age) and redirects to `/`; `_active_wiki()` reads it on every request
 - `POST /refresh/{wiki}` creates a job row (inside `BEGIN IMMEDIATE` to avoid duplicate active jobs), then spawns `worker.py` as a detached subprocess (`start_new_session=True`) so it outlives the HTTP connection
 - `GET /refresh/status/{wiki}` returns the latest job row as the `refresh_panel.html` partial — polled by HTMX while a job is active
+- `POST /embed-links/{title}` extracts wikilinks from the article, resolves redirects, and enqueues source + linked articles for batch embedding; spawns `embed_worker.py` if no job is active, otherwise appends to the running job
+- `GET /active-embedding` and `GET /active-embedding/panel` render the batch embedding status page; the panel is polled by HTMX every 3s while a job is running
+- `POST /active-embedding/cancel/{job_id}` sets `cancel_requested` on the job; the worker checks this flag between items
 
 ### Refresh job system (`jobs.py`, `worker.py`, `parse/refresh.py`)
 
@@ -178,6 +192,17 @@ Pipeline order matters — stages are applied in sequence:
 - `refresh_dump` (in `parse/refresh.py`) operates in-place on the existing database — it does **not** atomically replace it. For each article in the dump it skips (same `revision_id`), archives-then-updates (changed revision), or inserts (new `page_id`). The archive step writes the old row to `articles_archive` before overwriting so a crash leaves old data intact.
 - Batch size matches `parse/pipeline.py`'s `BATCH_SIZE` (1000). After each batch, `jobs.update_job` writes running totals to `jobs.db` so the status panel can show live progress.
 - FTS rebuild happens in `worker.py` after `refresh_dump` returns — same `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` used by the initial parse.
+
+### Embed-links pipeline (`embed_jobs.py`, `embed_worker.py`, `rag/links.py`)
+
+UI-triggered batch embedding: clicking "Embed + links" on an article enqueues the article and all its wikilink targets for embedding via `POST /embed-links/{title}`.
+
+- **Link extraction** (`rag/links.py`): `extract_article_links(wikitext, source_title)` parses raw wikitext with a regex (not mwparserfromhell) to extract `[[Target]]` wikilinks, filters out non-article namespaces (File:, Category:, etc.), capitalises first letters, and deduplicates. Source article always leads the queue.
+- **Redirect resolution**: each link target is resolved through the wiki DB's `#REDIRECT` chains (via `db.resolve_redirect`) before enqueueing so the queue stores canonical titles. Unresolvable targets are kept and surface as `not_found` items.
+- **Job model**: `embed_jobs` table holds one job per wiki; items in `embed_job_items` are deduped by `(job_id, title)` so multiple "Embed + links" clicks on different articles append to the same active job without redundant rows. Job status: `running` → `complete` / `cancelled` / `failed`.
+- **Worker** (`embed_worker.py`): drains the queue serially via `rag.embed.embed_one`; checks `cancel_requested` between items for clean cancellation; writes output to `dumps/{wiki}_embed.log`.
+- **Shared DB**: embed jobs share `dumps/jobs.db` with refresh jobs but use separate tables (`embed_jobs`, `embed_job_items`) — both are created idempotently in `embed_jobs.ensure_embed_schema`.
+- `db.redirect_target()` and `db.resolve_redirect()` were moved from `app.py` into `db.py` so the embed pipeline can use them without importing the FastAPI app.
 
 ### RAG pipeline (`rag/`)
 
@@ -220,7 +245,9 @@ Offline embedding pipeline that chunks articles into sections and embeds them us
 | `tests/test_download.py` | `respx`-mocked HTTP; filesystem isolated to `tmp_path` |
 | `tests/test_pipeline.py` | XML dump generation helpers; namespace filtering, atomic writes |
 | `tests/test_render.py` | All wikitext → HTML converter stages |
-| `tests/test_app.py` | `TestClient` against a hermetic fixture DB |
+| `tests/test_app.py` | `TestClient` against a hermetic fixture DB; includes `TestEmbedLinks` and `TestActiveEmbedding` |
+| `tests/test_embed_jobs.py` | CRUD helpers for embed_jobs / embed_job_items tables |
+| `tests/test_links.py` | `extract_article_links` — namespace filtering, dedup, redirect stubs |
 | `tests/test_rag_schema.py` | RAG schema creation and idempotence |
 | `tests/test_rag_chunker.py` | Chunker unit tests — no external deps required |
 | `tests/test_rag_retriever.py` | Retrieval tests against fixture RAG DB; Ollama not required |

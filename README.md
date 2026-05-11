@@ -35,6 +35,8 @@ A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps.
 - Follows `#REDIRECT` chains up to 5 hops
 - Wiki switcher: cookie-based toggle between enwiki and simplewiki without restarting the app
 - One-click incremental refresh: downloads a new dump and updates only changed articles in-place (no full re-parse)
+- "Embed + links" button: enqueues an article and all its wikilink targets for batch embedding in one click
+- Active embedding page (`/active-embedding`): live progress panel showing per-article status, with cancel support
 - No JavaScript build step; all logic stays in Python
 
 ### RAG Pipeline
@@ -136,7 +138,15 @@ Launch the FastAPI app for a browser-based search UI:
 uvicorn app:app --reload
 ```
 
-Then open `http://127.0.0.1:8000`. Type into the search box; matching titles appear below as you type, and clicking one renders the article as HTML. Use the wiki switcher button in the header to toggle between enwiki and simplewiki, or click **Refresh** to incrementally update the database from the latest dump without a full re-parse.
+Or, on a remote server where you need the process to outlive your SSH session:
+
+```bash
+./start.sh             # start in a persistent tmux session
+./start.sh attach      # re-attach to see logs
+./start.sh stop        # stop the server
+```
+
+Then open `http://127.0.0.1:8000`. Type into the search box; matching titles appear below as you type, and clicking one renders the article as HTML. Use the wiki switcher button in the header to toggle between enwiki and simplewiki, or click **Refresh** to incrementally update the database from the latest dump without a full re-parse. Click **Embed + links** on any article to enqueue it and all its linked articles for batch embedding; progress is visible at `/active-embedding`.
 
 To point the app at a specific database file, set `WIKI_DB`:
 
@@ -225,11 +235,14 @@ pytest tests/test_download.py::TestDownloadWithVerify
 
 ```
 .
-├── app.py             # FastAPI web app (routes + wiki switcher + refresh)
+├── app.py             # FastAPI web app (routes + wiki switcher + refresh + embed-links)
 ├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR, JOBS_DB, KNOWN_WIKIS)
-├── db.py              # sqlite3 connect() helper
+├── db.py              # connect(), redirect_target(), resolve_redirect()
 ├── jobs.py            # CRUD helpers for refresh_jobs table in dumps/jobs.db
+├── embed_jobs.py      # CRUD helpers for embed_jobs / embed_job_items tables
 ├── worker.py          # Background subprocess: download → refresh → FTS rebuild
+├── embed_worker.py    # Background subprocess: drains embed_job_items queue
+├── start.sh           # tmux helper — start/stop/attach the uvicorn server
 ├── render/            # Wikitext → HTML converter (package)
 │   ├── __init__.py    # Public API: convert_wikitext_to_html
 │   ├── pipeline.py    # Orchestrator — ordered stage list
@@ -254,10 +267,11 @@ pytest tests/test_download.py::TestDownloadWithVerify
 │   ├── schema.py      # RAG DB schema + connect_rag() (loads sqlite-vec extension)
 │   ├── chunker.py     # chunk_article(), extract_categories(), is_redirect()
 │   ├── embedder.py    # embed_text() via Ollama; pack/unpack_embedding()
-│   ├── embed.py       # `python -m rag.embed` CLI entry point
-│   ├── retriever.py   # retrieve() — dense + sparse + RRF hybrid
+│   ├── embed.py       # `python -m rag.embed` CLI + embed_one() used by embed_worker
+│   ├── links.py       # extract_article_links() — wikilink extraction for embed-links
+│   └── retriever.py   # retrieve() — dense + sparse + RRF hybrid
 ├── tests/             # Pytest suite
-├── templates/         # Jinja2 templates
+├── templates/         # Jinja2 templates (incl. active_embedding*.html)
 ├── static/            # CSS + vendored KaTeX
 ├── dumps/             # Downloaded files + parsed databases + jobs.db
 │                      # also: {wiki}_rag.db (RAG chunks + vectors, gitignored)
