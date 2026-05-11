@@ -6,6 +6,13 @@
 <span id="embed-widget" class="embed-controls">
     <span class="embed-badge embed-badge--done">&#10003; embedded</span>
     <a href="/chunks/{{ title|urlencode }}" class="embed-btn">View chunks</a>
+    {% if links_embedded %}
+    <span class="embed-badge embed-badge--done">&#10003; links embedded</span>
+    {% else %}
+    <button class="embed-btn"
+            hx-post="/embed-links/{{ title|urlencode }}"
+            hx-swap="none">Embed + links</button>
+    {% endif %}
 </span>
 {% elif error %}
 <span id="embed-widget" class="embed-controls">
@@ -17,6 +24,13 @@
         Retry
     </button>
     <span class="embed-error-note">Ollama unreachable</span>
+    {% if links_embedded %}
+    <span class="embed-badge embed-badge--done">&#10003; links embedded</span>
+    {% else %}
+    <button class="embed-btn"
+            hx-post="/embed-links/{{ title|urlencode }}"
+            hx-swap="none">Embed + links</button>
+    {% endif %}
 </span>
 {% else %}
 <span id="embed-widget" class="embed-controls">
@@ -27,5 +41,12 @@
             hx-indicator="#embed-spinner">
         Embed
     </button>
+    {% if links_embedded %}
+    <span class="embed-badge embed-badge--done">&#10003; links embedded</span>
+    {% else %}
+    <button class="embed-btn"
+            hx-post="/embed-links/{{ title|urlencode }}"
+            hx-swap="none">Embed + links</button>
+    {% endif %}
 </span>
 {% endif %}

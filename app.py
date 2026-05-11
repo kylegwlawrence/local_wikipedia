@@ -511,9 +511,21 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
         finally:
             rag_conn.close()
 
+    jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        links_row = jobs_conn.execute(
+            "SELECT 1 FROM embed_jobs WHERE wiki = ? AND triggered_by_title = ? "
+            "AND status = 'complete' LIMIT 1",
+            (wiki, title),
+        ).fetchone()
+        links_embedded = links_row is not None
+    finally:
+        jobs_conn.close()
+
     return templates.TemplateResponse(request, "embed_status_widget.html", {
         "title": title,
         "embedded": embedded,
+        "links_embedded": links_embedded,
         "error": False,
     })
 
@@ -550,9 +562,21 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
     finally:
         rag_conn.close()
 
+    jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        links_row = jobs_conn.execute(
+            "SELECT 1 FROM embed_jobs WHERE wiki = ? AND triggered_by_title = ? "
+            "AND status = 'complete' LIMIT 1",
+            (wiki, title),
+        ).fetchone()
+        links_embedded = links_row is not None
+    finally:
+        jobs_conn.close()
+
     return templates.TemplateResponse(request, "embed_status_widget.html", {
         "title": title,
         "embedded": not error,
+        "links_embedded": links_embedded,
         "error": error,
     })
 

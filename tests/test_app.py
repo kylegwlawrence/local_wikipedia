@@ -442,6 +442,45 @@ class TestEmbedLinks:
         assert resp.headers["hx-redirect"] == "/active-embedding"
 
 
+class TestEmbedStatusWidget:
+    """`GET /embed-status/{title}` reflects whether links have been embedded."""
+
+    def test_shows_embed_links_button_when_no_job(self, embed_client):
+        resp = embed_client.get("/embed-status/April")
+        assert resp.status_code == 200
+        assert "Embed + links" in resp.text
+        assert "links embedded" not in resp.text
+
+    def test_shows_links_embedded_badge_after_complete_job(self, embed_client):
+        # Create a complete job triggered by April.
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            job_id = embed_client.embed_jobs.create_job(
+                conn, "enwiki", "/tmp/x.log", "April"
+            )
+            embed_client.embed_jobs.mark_job(conn, job_id, "complete")
+        finally:
+            conn.close()
+
+        resp = embed_client.get("/embed-status/April")
+        assert resp.status_code == 200
+        assert "links embedded" in resp.text
+        assert "Embed + links" not in resp.text
+
+    def test_running_job_does_not_show_badge(self, embed_client):
+        # A running (not yet complete) job should not trigger the badge.
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            embed_client.embed_jobs.create_job(conn, "enwiki", "/tmp/x.log", "April")
+        finally:
+            conn.close()
+
+        resp = embed_client.get("/embed-status/April")
+        assert resp.status_code == 200
+        assert "Embed + links" in resp.text
+        assert "links embedded" not in resp.text
+
+
 class TestActiveEmbedding:
     """`/active-embedding` and its panel + cancel endpoints."""
 
