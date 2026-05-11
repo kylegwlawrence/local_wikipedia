@@ -160,18 +160,6 @@ def _connect(request: Request) -> sqlite3.Connection:
     return wiki_db.connect(path)
 
 
-def _article_exists(title: str, wiki: str) -> bool:
-    path = db_path_for(wiki)
-    if not path.exists():
-        return False
-    conn = wiki_db.connect(path)
-    try:
-        return conn.execute(
-            "SELECT 1 FROM articles WHERE title = ?", (title,)
-        ).fetchone() is not None
-    finally:
-        conn.close()
-
 
 def _escape_fts5(q: str) -> str:
     """Wrap a raw query in FTS5 phrase quotes, escaping internal double-quotes."""
@@ -353,10 +341,8 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
 def switch_wiki(to: str, article: str = "") -> RedirectResponse:
     if to not in KNOWN_WIKIS:
         raise HTTPException(status_code=400, detail=f"Unknown wiki: {to}")
-    if article and _article_exists(article, to):
+    if article:
         redirect_url = f"/?wiki={to}&article={quote(article)}"
-    elif article:
-        redirect_url = f"/?wiki={to}&not_found={quote(article)}"
     else:
         redirect_url = f"/?wiki={to}"
     response = RedirectResponse(redirect_url, status_code=302)
