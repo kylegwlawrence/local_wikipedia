@@ -18,7 +18,7 @@ import sqlite3
 import subprocess
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -338,7 +338,7 @@ def switch_wiki(to: str) -> RedirectResponse:
 def _format_elapsed(started_at: str) -> str:
     try:
         start = datetime.fromisoformat(started_at)
-        elapsed = int((datetime.utcnow() - start).total_seconds())
+        elapsed = int((datetime.now(UTC) - start.replace(tzinfo=UTC)).total_seconds())
         if elapsed < 60:
             return f"{elapsed}s"
         if elapsed < 3600:
@@ -351,7 +351,7 @@ def _format_elapsed(started_at: str) -> str:
 def _format_started_at(started_at: str) -> str:
     try:
         dt = datetime.fromisoformat(started_at)
-        return dt.strftime("%-d %b %Y %-I:%M %p UTC")
+        return dt.strftime("%-d %b %Y %H:%M %p UTC")
     except Exception:
         return started_at
 
