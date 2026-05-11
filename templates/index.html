@@ -43,7 +43,6 @@
 {% if not_found %}
 <div class="not-found-banner" id="not-found-banner">
     <em>{{ not_found }}</em> does not exist in {{ wiki_label }}
-    <button class="not-found-close" onclick="document.getElementById('not-found-banner').remove()" aria-label="Dismiss">×</button>
 </div>
 {% endif %}
 
@@ -122,7 +121,7 @@ document.addEventListener('click', function (e) {
     }
 
     var banner = document.getElementById('not-found-banner');
-    if (banner) setTimeout(function () { banner.remove(); }, 2000);
+    if (banner) setTimeout(function () { banner.remove(); }, 1000);
 
     var articleSpinner = document.getElementById('article-load-spinner');
     var articleDiv = document.getElementById('article');
@@ -156,16 +155,10 @@ document.addEventListener('click', function (e) {
         newBanner.id = 'not-found-banner';
         var em = document.createElement('em');
         em.textContent = e.detail.title;
-        var btn = document.createElement('button');
-        btn.className = 'not-found-close';
-        btn.setAttribute('aria-label', 'Dismiss');
-        btn.textContent = '×';
-        btn.onclick = function () { newBanner.remove(); };
         newBanner.appendChild(em);
         newBanner.appendChild(document.createTextNode(' does not exist in ' + e.detail.wiki));
-        newBanner.appendChild(btn);
         document.body.appendChild(newBanner);
-        setTimeout(function () { if (newBanner.parentNode) newBanner.remove(); }, 2000);
+        setTimeout(function () { if (newBanner.parentNode) newBanner.remove(); }, 1000);
     });
 }());
 </script>
