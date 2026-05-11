@@ -6,6 +6,7 @@ Results are merged with Reciprocal Rank Fusion (RRF).
 """
 import sqlite3
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import httpx
 
@@ -33,6 +34,19 @@ class Chunk:
     score: float
 
 
+class RetrievalResult(NamedTuple):
+    """Return value of ``retrieve()``.
+
+    Attributes:
+        hits: Retrieved chunks sorted by descending RRF score.
+        used_dense: True when the dense (Ollama) embedding succeeded.
+            False when Ollama was unreachable and results are sparse-only.
+    """
+
+    hits: list[Chunk]
+    used_dense: bool
+
+
 def retrieve(
     query: str,
     rag_conn: sqlite3.Connection,
@@ -40,7 +54,7 @@ def retrieve(
     candidate_k: int = 20,
     rrf_k: int = 60,
     ollama_url: str = embedder.OLLAMA_BASE_URL,
-) -> list[Chunk]:
+) -> RetrievalResult:
     """Retrieve the most relevant chunks for a query using hybrid search.
 
     Combines dense ANN search (sqlite-vec) and sparse FTS5 search, merged
@@ -57,28 +71,32 @@ def retrieve(
         ollama_url: Ollama server base URL for dense embedding.
 
     Returns:
-        List of up to top_k Chunk objects sorted by descending RRF score.
+        RetrievalResult with hits sorted by descending RRF score and a
+        used_dense flag indicating whether Ollama embedding succeeded.
     """
     if not query.strip():
-        return []
+        return RetrievalResult(hits=[], used_dense=False)
 
     sparse = _sparse_search(query, rag_conn, candidate_k)
 
     dense: list[tuple[int, float]] = []
+    used_dense = False
     try:
         vec = embedder.embed_text(query, base_url=ollama_url)
         dense = _dense_search(vec, rag_conn, candidate_k)
+        used_dense = True
     except httpx.HTTPError:
         pass  # sparse-only fallback
 
     merged = _rrf_merge(dense, sparse, k=rrf_k)[:top_k]
     if not merged:
-        return []
+        return RetrievalResult(hits=[], used_dense=used_dense)
 
     chunk_ids = [cid for cid, _ in merged]
     score_map = {cid: score for cid, score in merged}
     hydrated = _fetch_chunks(chunk_ids, score_map, rag_conn)
-    return [hydrated[cid] for cid in chunk_ids if cid in hydrated]
+    hits = [hydrated[cid] for cid in chunk_ids if cid in hydrated]
+    return RetrievalResult(hits=hits, used_dense=used_dense)
 
 
 def _dense_search(

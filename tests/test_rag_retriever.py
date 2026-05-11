@@ -1,7 +1,7 @@
 """Tests for rag/retriever.py — hybrid retrieval logic (no Ollama needed)."""
 import pytest
 
-from rag.retriever import Chunk, _fetch_chunks, _rrf_merge, _sparse_search, retrieve
+from rag.retriever import Chunk, RetrievalResult, _fetch_chunks, _rrf_merge, _sparse_search, retrieve
 from rag.schema import connect_rag
 
 
@@ -105,22 +105,22 @@ class TestFetchChunks:
 
 class TestRetrieve:
     def test_empty_query_returns_empty(self, rag_db):
-        results = retrieve("", rag_db)
-        assert results == []
+        result = retrieve("", rag_db)
+        assert isinstance(result, RetrievalResult)
+        assert result.hits == []
 
     def test_whitespace_query_returns_empty(self, rag_db):
-        results = retrieve("   ", rag_db)
-        assert results == []
+        result = retrieve("   ", rag_db)
+        assert result.hits == []
 
     def test_sparse_fallback_when_ollama_down(self, rag_db):
         # Ollama is not running in tests; retrieve falls back to sparse-only
-        results = retrieve("April month", rag_db, ollama_url="http://127.0.0.1:1")
-        assert isinstance(results, list)
-        # With sparse fallback, we still get results for a known query
-        if results:
-            assert all(isinstance(r, Chunk) for r in results)
+        result = retrieve("April month", rag_db, ollama_url="http://127.0.0.1:1")
+        assert isinstance(result, RetrievalResult)
+        assert not result.used_dense
+        assert all(isinstance(r, Chunk) for r in result.hits)
 
     def test_result_has_score(self, rag_db):
-        results = retrieve("April", rag_db, ollama_url="http://127.0.0.1:1")
-        for r in results:
+        result = retrieve("April", rag_db, ollama_url="http://127.0.0.1:1")
+        for r in result.hits:
             assert r.score > 0.0
