@@ -71,6 +71,24 @@ main {
     flex-shrink: 0;
 }
 
+#article-load-spinner {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 999;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 3px solid var(--border);
+    border-top-color: var(--link);
+    border-radius: 50%;
+    animation: search-spin 0.7s linear infinite;
+}
+#article-load-spinner.active {
+    display: block;
+}
+
 /* Override HTMX's opacity-based hiding so the spinner takes no space when idle */
 #embed-spinner {
     display: none;

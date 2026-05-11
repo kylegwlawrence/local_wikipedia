@@ -99,6 +99,7 @@
     </div>
   </div>
 </section>
+<div id="article-load-spinner" aria-hidden="true"></div>
 <script>
 document.addEventListener('click', function (e) {
     if (!e.target.closest('.search-form') && !e.target.closest('#results')) {
@@ -122,6 +123,20 @@ document.addEventListener('click', function (e) {
 
     var banner = document.getElementById('not-found-banner');
     if (banner) setTimeout(function () { banner.remove(); }, 5000);
+
+    var articleSpinner = document.getElementById('article-load-spinner');
+    document.body.addEventListener('htmx:beforeRequest', function (e) {
+        var hxGet = e.target && e.target.getAttribute && e.target.getAttribute('hx-get');
+        if (hxGet && hxGet.startsWith('/article/')) {
+            articleSpinner.classList.add('active');
+        }
+    });
+    document.body.addEventListener('htmx:afterRequest', function (e) {
+        var hxGet = e.target && e.target.getAttribute && e.target.getAttribute('hx-get');
+        if (hxGet && hxGet.startsWith('/article/')) {
+            articleSpinner.classList.remove('active');
+        }
+    });
 
     document.body.addEventListener('articleNotFound', function (e) {
         var existing = document.getElementById('not-found-banner');
