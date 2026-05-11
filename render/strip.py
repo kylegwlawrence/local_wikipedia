@@ -1,46 +1,38 @@
-"""Wikicode noise removal: templates, refs, comments, category links.
+"""Wikitext noise removal: templates, refs, comments, category links.
 
-These run after the wikicode-level template handlers in `templates.py` so any
-template that produces output has already been replaced; remaining templates
-are noise (navboxes, hatnotes, maintenance tags) we drop wholesale.
+All functions operate on a plain string (post-flatten) via regex rather than
+on the mwparserfromhell wikicode tree, which makes individual `.remove()` calls
+O(n) each — catastrophically slow for large articles with hundreds of templates.
 """
 import re
 
-import mwparserfromhell
+
+def strip_templates(text: str) -> str:
+    """Remove remaining {{template}} markup by iteratively peeling innermost templates."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(r'\{\{[^{}]*\}\}', '', text)
+    return text
 
 
-def strip_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
-    for template in wikicode.filter_templates():
-        try:
-            wikicode.remove(template)
-        except ValueError:
-            pass
+def strip_refs(text: str) -> str:
+    """Remove <ref> and <references> tags."""
+    text = re.sub(r'<ref\b[^>]*/>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<ref\b[^>]*>.*?</ref>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'<references\b[^>]*/>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<references\b[^>]*>.*?</references>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    return text
 
 
-def strip_refs(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
-    for tag in wikicode.filter_tags():
-        if tag.tag.lower() in ("ref", "references"):
-            try:
-                wikicode.remove(tag)
-            except ValueError:
-                pass
+def strip_comments(text: str) -> str:
+    """Remove HTML comments."""
+    return re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
 
 
-def strip_comments(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
-    for comment in wikicode.filter_comments():
-        try:
-            wikicode.remove(comment)
-        except ValueError:
-            pass
-
-
-def strip_categories(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
-    for link in wikicode.filter_wikilinks():
-        if str(link.title).startswith(("Category:", "File:", "Image:")):
-            try:
-                wikicode.remove(link)
-            except ValueError:
-                pass
+def strip_categories(text: str) -> str:
+    """Remove [[Category:...]], [[File:...]], [[Image:...]] wikilinks."""
+    return re.sub(r'\[\[(?:Category|File|Image):[^\[\]]*\]\]', '', text, flags=re.IGNORECASE)
 
 
 def strip_external_links_section(text: str) -> str:

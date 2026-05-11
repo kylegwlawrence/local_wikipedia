@@ -76,14 +76,14 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         collected_refs = collect_inline_refs(wikicode)
         convert_reflist_template(wikicode, collected_refs)
 
-        # 2. Strip everything else (unhandled templates, refs, comments, categories).
-        strip.strip_templates(wikicode)
-        strip.strip_refs(wikicode)
-        strip.strip_comments(wikicode)
-        strip.strip_categories(wikicode)
-
-        # 3. Flatten to string.
+        # 2. Flatten to string.
         text = str(wikicode)
+
+        # 3. Strip remaining noise via regex (faster than wikicode.remove() loops).
+        text = strip.strip_comments(text)
+        text = strip.strip_refs(text)
+        text = strip.strip_templates(text)
+        text = strip.strip_categories(text)
         text = strip_external_links_section(text)
 
         # 4. Protect code/math from later string-level passes.
@@ -107,6 +107,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         text = restore_math_tags(text, math_blocks)
 
         # 9. Tidy.
+
         text = clean_extra_markup(text)
         return text.strip()
 
