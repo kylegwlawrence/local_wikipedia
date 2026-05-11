@@ -5,17 +5,7 @@
 {% if embedded %}
 <span id="embed-widget" class="embed-badge embed-badge--done">&#10003; embedded</span>
 {% elif error %}
-<span id="embed-widget" class="embed-controls">
-    <button class="embed-btn"
-            hx-post="/embed-article/{{ title|urlencode }}"
-            hx-target="#embed-widget"
-            hx-swap="outerHTML"
-            hx-indicator="#embed-spinner">
-        Retry
-    </button>
-    <span id="embed-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
-    <span class="embed-error-note">Ollama unreachable</span>
-</span>
+<span id="embed-widget" class="embed-badge embed-badge--failed">&#10007; Embed failed</span>
 {% else %}
 <span id="embed-widget" class="embed-controls">
     <button class="embed-btn"
