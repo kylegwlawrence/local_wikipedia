@@ -43,10 +43,10 @@ case "${1:-start}" in
 
     CMD="uvicorn app:app --host 0.0.0.0 --port 8000"
     if [[ -n "${WIKI_DB:-}" ]]; then
-      CMD="WIKI_DB=$WIKI_DB $CMD"
+      tmux new-session -d -s "$SESSION" -x 220 -y 50 -e "WIKI_DB=$WIKI_DB" "bash -c '$CMD; exec bash'"
+    else
+      tmux new-session -d -s "$SESSION" -x 220 -y 50 "bash -c '$CMD; exec bash'"
     fi
-
-    tmux new-session -d -s "$SESSION" -x 220 -y 50 "bash -c '$CMD; exec bash'"
     echo "Started. App is running at http://localhost:8000"
     echo "  attach:  ./start.sh attach"
     echo "  stop:    ./start.sh stop"
