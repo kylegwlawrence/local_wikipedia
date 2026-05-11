@@ -29,6 +29,13 @@
       {% if elapsed %}<span class="refresh-elapsed">{{ elapsed }}</span>{% endif %}
       {% if started_at_display %}<span class="refresh-elapsed">{{ started_at_display }}</span>{% endif %}
       <span class="refresh-elapsed">job #{{ job.id }}</span>
+      {% if job.triggered_by_title %}
+      <span class="refresh-elapsed">triggered by <a href="/?article={{ job.triggered_by_title|urlencode }}"
+              hx-get="/article/{{ job.triggered_by_title|urlencode }}"
+              hx-target="#article"
+              hx-swap="innerHTML"
+              hx-push-url="/?article={{ job.triggered_by_title|urlencode }}">{{ job.triggered_by_title }}</a></span>
+      {% endif %}
       {% if job.status == 'running' and not job.cancel_requested %}
       <button class="embed-btn"
               hx-post="/active-embedding/cancel/{{ job.id }}"
@@ -84,6 +91,7 @@
       <li>
         <span class="refresh-badge refresh-badge--{{ entry.job.status }}">{{ entry.job.status }}</span>
         job #{{ entry.job.id }} — started {{ entry.job.started_at }}
+        {% if entry.job.triggered_by_title %} — from <a href="/?article={{ entry.job.triggered_by_title|urlencode }}">{{ entry.job.triggered_by_title }}</a>{% endif %}
         {% if entry.counts %}
         ({% for status, n in entry.counts.items() %}{{ n }} {{ status.replace('_', ' ') }}{% if not loop.last %}, {% endif %}{% endfor %})
         {% endif %}

@@ -713,8 +713,8 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
         if active is None:
             log_path = str(BASE_DIR / "dumps" / f"{wiki}_embed.log")
             cur = jobs_conn.execute(
-                "INSERT INTO embed_jobs (wiki, log_path) VALUES (?, ?)",
-                (wiki, log_path),
+                "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title) VALUES (?, ?, ?)",
+                (wiki, log_path, source_title),
             )
             job_id = cur.lastrowid
             spawn_worker = True

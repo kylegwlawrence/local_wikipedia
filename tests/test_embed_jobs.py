@@ -23,12 +23,19 @@ class TestSchema:
 class TestJobsCrud:
     def test_create_and_get(self, tmp_path):
         conn = _conn(tmp_path)
-        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log", "Python")
         job = embed_jobs.get_job(conn, job_id)
         assert job is not None
         assert job["wiki"] == "simplewiki"
         assert job["status"] == "running"
         assert job["cancel_requested"] == 0
+        assert job["triggered_by_title"] == "Python"
+
+    def test_create_job_without_trigger(self, tmp_path):
+        conn = _conn(tmp_path)
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        job = embed_jobs.get_job(conn, job_id)
+        assert job["triggered_by_title"] is None
 
     def test_get_active_job_only_running(self, tmp_path):
         conn = _conn(tmp_path)

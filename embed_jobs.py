@@ -26,21 +26,26 @@ def ensure_embed_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS embed_jobs (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            wiki              TEXT    NOT NULL,
-            status            TEXT    NOT NULL DEFAULT 'running',
-            cancel_requested  INTEGER NOT NULL DEFAULT 0,
-            started_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            finished_at       TEXT,
-            log_path          TEXT,
-            error_message     TEXT
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            wiki                TEXT    NOT NULL,
+            status              TEXT    NOT NULL DEFAULT 'running',
+            cancel_requested    INTEGER NOT NULL DEFAULT 0,
+            started_at          TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at          TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at         TEXT,
+            log_path            TEXT,
+            error_message       TEXT,
+            triggered_by_title  TEXT
         )
     """)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_embed_jobs_wiki_status "
         "ON embed_jobs(wiki, status)"
     )
+    try:
+        conn.execute("ALTER TABLE embed_jobs ADD COLUMN triggered_by_title TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists (existing database)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS embed_job_items (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,11 +69,16 @@ def ensure_embed_schema(conn: sqlite3.Connection) -> None:
 
 # --- Jobs --------------------------------------------------------------------
 
-def create_job(conn: sqlite3.Connection, wiki: str, log_path: str) -> int:
+def create_job(
+    conn: sqlite3.Connection,
+    wiki: str,
+    log_path: str,
+    triggered_by_title: str | None = None,
+) -> int:
     """Insert a new running job and return its id."""
     cur = conn.execute(
-        "INSERT INTO embed_jobs (wiki, log_path) VALUES (?, ?)",
-        (wiki, log_path),
+        "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title) VALUES (?, ?, ?)",
+        (wiki, log_path, triggered_by_title),
     )
     conn.commit()
     return cur.lastrowid

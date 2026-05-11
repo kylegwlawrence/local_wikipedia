@@ -366,6 +366,8 @@ class TestEmbedLinks:
             assert titles == ["April", "Month"]
             # All items should share the source title.
             assert {r["source_title"] for r in items} == {"April"}
+            # Job should record which article triggered the embed.
+            assert job["triggered_by_title"] == "April"
         finally:
             conn.close()
 
