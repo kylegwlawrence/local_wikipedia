@@ -33,13 +33,19 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
     """Create all RAG tables if they don't exist. Idempotent.
 
     Creates articles_meta, chunks, chunks_fts (FTS5 with porter stemming),
-    and chunks_vec (sqlite-vec 768-dim float32 embeddings).
+    chunks_vec (sqlite-vec 768-dim float32 embeddings), and _meta (key-value
+    store for schema metadata such as the recorded embedding dimension).
 
     Args:
         conn: An open RAG database connection with sqlite-vec already loaded.
     """
     conn.executescript("""
         PRAGMA journal_mode=WAL;
+
+        CREATE TABLE IF NOT EXISTS _meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS articles_meta (
             page_id      INTEGER PRIMARY KEY,
@@ -72,3 +78,17 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
         );
     """)
     conn.commit()
+
+
+def get_embedding_dim(conn: sqlite3.Connection) -> int | None:
+    """Return the stored embedding dimension, or None if not yet recorded."""
+    row = conn.execute("SELECT value FROM _meta WHERE key='embedding_dim'").fetchone()
+    return int(row["value"]) if row else None
+
+
+def set_embedding_dim(conn: sqlite3.Connection, dim: int) -> None:
+    """Write the embedding dimension to _meta. Caller is responsible for commit."""
+    conn.execute(
+        "INSERT OR REPLACE INTO _meta (key, value) VALUES ('embedding_dim', ?)",
+        (str(dim),),
+    )

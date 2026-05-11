@@ -14,7 +14,20 @@ from tqdm import tqdm
 import db as wiki_db
 from paths import db_path_for, rag_db_path_for
 from rag import chunker, embedder
-from rag.schema import connect_rag
+from rag.schema import connect_rag, get_embedding_dim, set_embedding_dim
+
+
+def _check_embedding_dim(rag_conn, vec: list[float]) -> None:
+    """Record the embedding dimension on first use; raise if it changes later."""
+    actual = len(vec)
+    stored = get_embedding_dim(rag_conn)
+    if stored is None:
+        set_embedding_dim(rag_conn, actual)
+    elif actual != stored:
+        raise ValueError(
+            f"Embedding dimension mismatch: RAG database expects {stored}-dim vectors "
+            f"but model returned {actual}. Delete the RAG database file and re-embed."
+        )
 
 
 def _load_embedded(rag_conn) -> dict[int, int]:
@@ -138,6 +151,7 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
     except httpx.HTTPError:
         return 0
 
+    _check_embedding_dim(rag_conn, vecs[0])
     for chunk, vec in zip(chunks, vecs):
         _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=False)
     return len(vecs)
@@ -194,6 +208,7 @@ def embed_one(
         rag_conn.commit()
         return 0
 
+    _check_embedding_dim(rag_conn, vecs[0])
     for chunk, vec in zip(chunks_data, vecs):
         _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=True)
 
@@ -235,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
             DELETE FROM chunks_vec;
             DELETE FROM chunks;
             DELETE FROM articles_meta;
+            DELETE FROM _meta;
         """)
         rag_conn.commit()
 
