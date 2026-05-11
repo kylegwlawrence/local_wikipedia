@@ -12,7 +12,11 @@ _SECTION_RE = re.compile(r"^(={2,6})\s*(.+?)\s*\1\s*$", re.MULTILINE)
 _CAT_RE = re.compile(r"\[\[Category:([^\]|]+)", re.IGNORECASE)
 _REDIRECT_RE = re.compile(r"^\s*#\s*REDIRECT\s*\[\[", re.IGNORECASE)
 
-MAX_CHUNK_CHARS = 1600  # ~400 tokens at 4 chars/token
+# Empirically calibrated against nomic-embed-text on simplewiki via
+# scripts/calibrate_chunks.py: real ratio is ~4.8 chars/token at the cap, so
+# 1600 chars yields p95 ≈ 304 tokens / max ≈ 415 tokens — well inside the
+# model's ~512-token quality sweet spot while keeping retrieval granular.
+MAX_CHUNK_CHARS = 1600
 
 
 def extract_categories(wikitext: str) -> list[str]:
