@@ -6,7 +6,7 @@
 
 {% block content %}
 <header class="site-header">
-    <h1>Local Wikipedia · {{ wiki_label }}</h1>
+    <h1>Local Wikipedia · {{ wiki_label }}<span class="article-count">{{ article_count }} articles</span></h1>
     <div class="wiki-badges">
         {%- if wiki == "enwiki" %}<span class="wiki-badge wiki-badge--enwiki">enwiki</span>{% elif other_wiki == "enwiki" %}<a class="wiki-badge wiki-badge--enwiki wiki-badge--switch" href="/switch-wiki?to=enwiki" data-target-wiki="enwiki">enwiki</a>{% endif %}
         {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki" data-target-wiki="simplewiki">simplewiki</a>{% endif %}

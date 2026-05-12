@@ -270,6 +270,8 @@ def index(request: Request, article: str = "", wiki: str = "", not_found: str = 
     other_wiki = next(w for w in KNOWN_WIKIS if w != active_wiki)
     other_wiki_db = db_path_for(other_wiki)
     other_wiki_for_template = other_wiki if other_wiki_db.exists() else None
+    with wiki_db.connect(db_path_for(active_wiki)) as conn:
+        article_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
     response = templates.TemplateResponse(request, "index.html", {
         "wiki": active_wiki,
         "wiki_label": _WIKI_LABELS[active_wiki],
@@ -277,6 +279,7 @@ def index(request: Request, article: str = "", wiki: str = "", not_found: str = 
         "preload_article": article,
         "not_found": not_found,
         "current_page": "home",
+        "article_count": f"{article_count:,}",
     })
     if wiki in KNOWN_WIKIS:
         response.set_cookie("wiki_pref", wiki, max_age=365 * 24 * 3600)
