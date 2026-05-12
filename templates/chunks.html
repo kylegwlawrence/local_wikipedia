@@ -6,11 +6,7 @@
 <header class="site-header">
     <h1>{{ title }}</h1>
 </header>
-<div class="nav-btn-group">
-    {%- if current_page == 'home' %}<span class="nav-btn nav-btn--active">Home</span>{% else %}<a class="nav-btn" href="/">Home</a>{% endif %}
-    {%- if current_page == 'embeddings' %}<span class="nav-btn nav-btn--active">Embeddings</span>{% else %}<a class="nav-btn" href="/embed-manager">Embeddings</a>{% endif %}
-    {%- if current_page == 'processes' %}<span class="nav-btn nav-btn--active">Processes</span>{% else %}<a class="nav-btn" href="/active-embedding">Processes</a>{% endif %}
-</div>
+{% include "_nav.html" %}
 
 <p class="embed-count">{{ chunks|length }} chunk{{ "s" if chunks|length != 1 }}</p>
 

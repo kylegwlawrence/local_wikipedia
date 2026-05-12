@@ -12,11 +12,7 @@
         {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki" data-target-wiki="simplewiki">simplewiki</a>{% endif %}
     </div>
 </header>
-<div class="nav-btn-group">
-    {%- if current_page == 'home' %}<span class="nav-btn nav-btn--active">Home</span>{% else %}<a class="nav-btn" href="/">Home</a>{% endif %}
-    {%- if current_page == 'embeddings' %}<span class="nav-btn nav-btn--active">Embeddings</span>{% else %}<a class="nav-btn" href="/embed-manager">Embeddings</a>{% endif %}
-    {%- if current_page == 'processes' %}<span class="nav-btn nav-btn--active">Processes</span>{% else %}<a class="nav-btn" href="/active-embedding">Processes</a>{% endif %}
-</div>
+{% include "_nav.html" %}
 
 {# Search box.
    - hx-get          : endpoint that returns the result-list fragment.
