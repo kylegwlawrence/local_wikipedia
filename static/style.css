@@ -829,10 +829,17 @@ a.wiki-badge--switch:hover {
 
 /* --- Embed manager page ----------------------------------------------- */
 
+.embed-count-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 0 1rem;
+}
+
 .embed-count {
     color: var(--muted);
     font-size: 0.9em;
-    margin: 0 0 1rem;
+    margin: 0;
 }
 
 .embed-table-wrapper {

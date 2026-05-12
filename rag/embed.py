@@ -44,6 +44,21 @@ def _load_embedded(rag_conn) -> dict[int, int]:
     return {r["page_id"]: r["revision_id"] for r in rows}
 
 
+def delete_all_articles(rag_conn) -> int:
+    """Remove all embeddings from the RAG database, keeping schema and _meta intact.
+
+    Returns the number of articles that were deleted.
+    """
+    count: int = rag_conn.execute(
+        "SELECT COUNT(*) FROM articles_meta"
+    ).fetchone()[0]
+    rag_conn.execute("DELETE FROM chunks_vec")
+    rag_conn.execute("DELETE FROM chunks")
+    rag_conn.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
+    rag_conn.execute("DELETE FROM articles_meta")
+    return count
+
+
 def delete_article(rag_conn, page_id: int) -> None:
     """Remove all chunks, vectors, FTS entries, and meta for one article.
 

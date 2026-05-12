@@ -19,7 +19,12 @@
 {% if total_count == 0 %}
 <p class="refresh-idle">No articles have been embedded yet. Open any article and click <strong>Embed</strong> to add it to the RAG index.</p>
 {% else %}
-<p class="embed-count">{{ "{:,}".format(total_count) }} article{{ "s" if total_count != 1 }} embedded</p>
+<div class="embed-count-row">
+    <p class="embed-count">{{ "{:,}".format(total_count) }} article{{ "s" if total_count != 1 }} embedded</p>
+    <button class="embed-btn action-delete"
+            hx-delete="/embed-all/{{ wiki }}"
+            hx-confirm="Delete all {{ '{:,}'.format(total_count) }} embeddings for {{ wiki }}? This cannot be undone.">Delete all</button>
+</div>
 
 <div class="embed-table-wrapper">
 <table class="embed-table">

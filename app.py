@@ -32,7 +32,7 @@ import db as wiki_db
 import embed_jobs
 import jobs as refresh_jobs
 from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
-from rag.embed import delete_article as rag_delete_article, embed_one as rag_embed_one
+from rag.embed import delete_all_articles as rag_delete_all_articles, delete_article as rag_delete_article, embed_one as rag_embed_one
 from rag.links import extract_article_links
 from rag.schema import connect_rag
 from render import convert_wikitext_to_html
@@ -868,6 +868,24 @@ def delete_embed(request: Request, wiki: str, title: str) -> Response:
     finally:
         rag_conn.close()
     return Response(content="", status_code=200)
+
+
+@app.delete("/embed-all/{wiki}")
+def delete_all_embeds(request: Request, wiki: str) -> Response:
+    """Remove all chunks, vectors, and metadata for every embedded article in the wiki."""
+    if wiki not in KNOWN_WIKIS:
+        raise HTTPException(status_code=400, detail=f"Unknown wiki: {wiki}")
+    rag_conn = _rag_connect(wiki)
+    if rag_conn is None:
+        raise HTTPException(status_code=404, detail="No RAG database for this wiki")
+    try:
+        rag_delete_all_articles(rag_conn)
+        rag_conn.commit()
+    finally:
+        rag_conn.close()
+    if "HX-Request" in request.headers:
+        return Response(status_code=204, headers={"HX-Redirect": "/embed-manager"})
+    return RedirectResponse("/embed-manager", status_code=303)
 
 
 @app.post("/embed/reembed/{wiki}/{title:path}")
