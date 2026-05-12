@@ -332,12 +332,15 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     other_wiki_for_template = None
     other_wiki_db = db_path_for(other_wiki)
     if other_wiki_db.exists():
-        with wiki_db.connect(other_wiki_db) as ow_conn:
-            hit = ow_conn.execute(
-                "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
-            ).fetchone()
-            if hit:
-                other_wiki_for_template = other_wiki
+        try:
+            with wiki_db.connect(other_wiki_db) as ow_conn:
+                hit = ow_conn.execute(
+                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
+                ).fetchone()
+                if hit:
+                    other_wiki_for_template = other_wiki
+        except Exception:
+            pass
 
     return templates.TemplateResponse(
         request,
@@ -869,12 +872,15 @@ def article(request: Request, title: str) -> HTMLResponse:
     other_wiki_for_template = None
     other_wiki_db = db_path_for(other_wiki)
     if other_wiki_db.exists():
-        with wiki_db.connect(other_wiki_db) as ow_conn:
-            hit = ow_conn.execute(
-                "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
-            ).fetchone()
-            if hit:
-                other_wiki_for_template = other_wiki
+        try:
+            with wiki_db.connect(other_wiki_db) as ow_conn:
+                hit = ow_conn.execute(
+                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
+                ).fetchone()
+                if hit:
+                    other_wiki_for_template = other_wiki
+        except Exception:
+            pass
     response = templates.TemplateResponse(
         request,
         "article.html",
