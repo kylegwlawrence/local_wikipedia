@@ -7,7 +7,16 @@
 {% block content %}
 <header class="site-header">
     <h1>Local Wikipedia · {{ wiki_label }}</h1>
+    <div class="wiki-badges">
+        {%- if wiki == "enwiki" %}<span class="wiki-badge wiki-badge--enwiki">enwiki</span>{% elif other_wiki == "enwiki" %}<a class="wiki-badge wiki-badge--enwiki wiki-badge--switch" href="/switch-wiki?to=enwiki" data-target-wiki="enwiki">enwiki</a>{% endif %}
+        {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki" data-target-wiki="simplewiki">simplewiki</a>{% endif %}
+    </div>
 </header>
+<div class="nav-btn-group">
+    {%- if current_page == 'home' %}<span class="nav-btn nav-btn--active">Home</span>{% else %}<a class="nav-btn" href="/">Home</a>{% endif %}
+    {%- if current_page == 'embeddings' %}<span class="nav-btn nav-btn--active">Embeddings</span>{% else %}<a class="nav-btn" href="/embed-manager">Embeddings</a>{% endif %}
+    {%- if current_page == 'processes' %}<span class="nav-btn nav-btn--active">Processes</span>{% else %}<a class="nav-btn" href="/active-embedding">Processes</a>{% endif %}
+</div>
 
 {# Search box.
    - hx-get          : endpoint that returns the result-list fragment.
@@ -17,10 +26,6 @@
    - hx-swap         : replace the inner HTML of the target.
    - name="q"        : sent as the query param, matching FastAPI's `q` arg.
    - autocomplete    : the browser's own dropdown would fight with ours. #}
-<div class="nav-links">
-    <a href="/embed-manager" class="nav-link">Embed manager</a>
-    <a href="/active-embedding" class="nav-link">Active embedding</a>
-</div>
 
 <form class="search-form" onsubmit="return false;">
     <span id="search-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
@@ -35,9 +40,6 @@
         hx-target="#results"
         hx-swap="innerHTML"
         hx-indicator="#search-spinner">
-    <a href="/switch-wiki?to={{ other_wiki }}"
-       data-target-wiki="{{ other_wiki }}"
-       class="wiki-switch-btn">Switch to {{ other_wiki_label }}</a>
 </form>
 
 {% if not_found %}
@@ -107,18 +109,17 @@ document.addEventListener('click', function (e) {
 });
 
 (function () {
-    var btn = document.querySelector('.wiki-switch-btn');
-    if (btn) {
-        btn.addEventListener('click', function (e) {
+    document.querySelectorAll('.wiki-badge--switch').forEach(function (badge) {
+        badge.addEventListener('click', function (e) {
             var article = new URLSearchParams(window.location.search).get('article');
             if (article) {
                 e.preventDefault();
                 window.location.href =
-                    '/switch-wiki?to=' + encodeURIComponent(btn.dataset.targetWiki) +
+                    '/switch-wiki?to=' + encodeURIComponent(badge.dataset.targetWiki) +
                     '&article=' + encodeURIComponent(article);
             }
         });
-    }
+    });
 
     var banner = document.getElementById('not-found-banner');
     if (banner) setTimeout(function () { banner.remove(); }, 1000);

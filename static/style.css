@@ -655,6 +655,45 @@ main {
     font-style: italic;
 }
 
+/* --- Page nav buttons ------------------------------------------------- */
+
+.nav-btn-group {
+    display: flex;
+    gap: 0.35rem;
+    margin: 0.5rem 0 1rem;
+}
+
+.nav-btn {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-family: monospace;
+    font-weight: normal;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    vertical-align: middle;
+    background: #e8e8e8;
+    border: 1px solid #c0c0c0;
+}
+
+a.nav-btn {
+    color: #555;
+    text-decoration: none;
+}
+
+a.nav-btn:hover {
+    background: #d8d8d8;
+    border-color: #aaa;
+    color: #555;
+}
+
+.nav-btn--active {
+    background: #a8a8a8;
+    border: 1px solid #888;
+    color: #1a1a1a;
+    font-weight: 600;
+}
+
 /* --- Nav links -------------------------------------------------------- */
 
 .nav-links {

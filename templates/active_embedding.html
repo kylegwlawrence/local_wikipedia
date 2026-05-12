@@ -9,10 +9,10 @@
         {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki&return_to=/active-embedding">simplewiki</a>{% endif %}
     </h1>
 </header>
-
-<div class="nav-links">
-    <a href="/" class="nav-link">&larr; Back to search</a>
-    <a href="/embed-manager" class="nav-link">Embed manager</a>
+<div class="nav-btn-group">
+    {%- if current_page == 'home' %}<span class="nav-btn nav-btn--active">Home</span>{% else %}<a class="nav-btn" href="/">Home</a>{% endif %}
+    {%- if current_page == 'embeddings' %}<span class="nav-btn nav-btn--active">Embeddings</span>{% else %}<a class="nav-btn" href="/embed-manager">Embeddings</a>{% endif %}
+    {%- if current_page == 'processes' %}<span class="nav-btn nav-btn--active">Processes</span>{% else %}<a class="nav-btn" href="/active-embedding">Processes</a>{% endif %}
 </div>
 
 {% include "active_embedding_panel.html" %}

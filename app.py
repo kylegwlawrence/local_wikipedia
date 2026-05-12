@@ -267,13 +267,15 @@ def index(request: Request, article: str = "", wiki: str = "", not_found: str = 
     """
     active_wiki = wiki if wiki in KNOWN_WIKIS else _active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != active_wiki)
+    other_wiki_db = db_path_for(other_wiki)
+    other_wiki_for_template = other_wiki if other_wiki_db.exists() else None
     response = templates.TemplateResponse(request, "index.html", {
         "wiki": active_wiki,
         "wiki_label": _WIKI_LABELS[active_wiki],
-        "other_wiki": other_wiki,
-        "other_wiki_label": _WIKI_LABELS[other_wiki],
+        "other_wiki": other_wiki_for_template,
         "preload_article": article,
         "not_found": not_found,
+        "current_page": "home",
     })
     if wiki in KNOWN_WIKIS:
         response.set_cookie("wiki_pref", wiki, max_age=365 * 24 * 3600)
@@ -483,6 +485,7 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
             "total_pages": 0,
             "total_count": 0,
             "per_page": EMBED_PAGE_SIZE,
+            "current_page": "embeddings",
         })
 
     try:
@@ -513,6 +516,7 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
         "total_pages": total_pages,
         "total_count": total_count,
         "per_page": EMBED_PAGE_SIZE,
+        "current_page": "embeddings",
     })
 
 
@@ -629,6 +633,7 @@ def chunks(request: Request, title: str) -> HTMLResponse:
         "title": title,
         "chunks": chunk_list,
         "wiki": wiki,
+        "current_page": "",
     })
 
 
@@ -706,6 +711,7 @@ def _render_active_embedding_panel(
         "elapsed": elapsed,
         "started_at_display": started_at_display,
         "recent_jobs": recent_dicts,
+        "current_page": "processes",
     })
 
 
