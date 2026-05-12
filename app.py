@@ -270,8 +270,24 @@ def index(request: Request, article: str = "", wiki: str = "", not_found: str = 
     other_wiki = next(w for w in KNOWN_WIKIS if w != active_wiki)
     other_wiki_db = db_path_for(other_wiki)
     other_wiki_for_template = other_wiki if other_wiki_db.exists() else None
-    with wiki_db.connect(db_path_for(active_wiki)) as conn:
-        article_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+    wiki_db_path = pathlib.Path(os.environ["WIKI_DB"]) if "WIKI_DB" in os.environ else db_path_for(active_wiki)
+    with wiki_db.connect(wiki_db_path) as conn:
+        try:
+            row = conn.execute(
+                "SELECT value FROM db_metadata WHERE key = 'article_count'"
+            ).fetchone()
+            article_count = int(row["value"]) if row else None
+        except sqlite3.OperationalError:
+            article_count = None
+        if article_count is None:
+            article_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS db_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('article_count', ?)",
+                (str(article_count),),
+            )
     response = templates.TemplateResponse(request, "index.html", {
         "wiki": active_wiki,
         "wiki_label": _WIKI_LABELS[active_wiki],

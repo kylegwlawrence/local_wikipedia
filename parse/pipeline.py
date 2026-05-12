@@ -135,6 +135,12 @@ def parse_dump(
         conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
         conn.commit()
 
+        conn.execute(
+            "INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('article_count', ?)",
+            (str(articles_inserted),),
+        )
+        conn.commit()
+
         end_time = time.time()
         _record_metadata(
             conn,

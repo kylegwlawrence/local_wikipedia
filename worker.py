@@ -71,6 +71,12 @@ def main(argv: list[str] | None = None) -> int:
         create_schema(wiki_conn)
         wiki_conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
         wiki_conn.commit()
+        count = wiki_conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+        wiki_conn.execute(
+            "INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('article_count', ?)",
+            (str(count),),
+        )
+        wiki_conn.commit()
         wiki_conn.close()
         jobs.set_fts_dirty(jobs_conn, wiki, False)
 

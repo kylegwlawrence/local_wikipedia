@@ -37,6 +37,13 @@ def create_schema(conn: sqlite3.Connection) -> None:
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS db_metadata (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS parse_metadata (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             wiki TEXT NOT NULL,
