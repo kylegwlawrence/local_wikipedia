@@ -17,35 +17,33 @@ import math
 import os
 import pathlib
 import sqlite3
-import subprocess
 import sys
 from contextlib import asynccontextmanager
 from urllib.parse import quote
-from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 import db as wiki_db
+from app.config import EMBED_PAGE_SIZE, REDIRECT_MAX_HOPS, WIKI_LABELS, templates
+from app.deps import active_wiki, connect, rag_connect
+from app.helpers import (
+    fetch_article,
+    format_elapsed,
+    format_embedded_at,
+    format_started_at,
+    htmx_redirect,
+    search_titles,
+    spawn_worker,
+    wiki_label,
+)
 from jobs import embed as embed_jobs, refresh as refresh_jobs
-from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
+from paths import BASE_DIR, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
 from rag.embed import delete_all_articles as rag_delete_all_articles, delete_article as rag_delete_article, embed_one as rag_embed_one
 from rag.links import extract_article_links
 from rag.schema import connect_rag
 from render import convert_wikitext_to_html
-
-DEFAULT_DB = db_path_for(DEFAULT_WIKI)
-_WIKI_LABELS = {"enwiki": "EnWiki", "simplewiki": "SimpleWiki"}
-
-# Cap search results so the dropdown stays manageable and the LIKE scan
-# can stop early.
-SEARCH_LIMIT = 20
-
-# Cap redirect-chain following so a cycle can't hang the request. MediaWiki's
-# own limit is 5 hops; matching that is conservative.
-REDIRECT_MAX_HOPS = 5
 
 
 def _recover_from_crash() -> None:
@@ -123,130 +121,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Local Wikipedia", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
-
-
-def _active_wiki(request: Request) -> str:
-    """Return the wiki the user has selected, defaulting to ``DEFAULT_WIKI``."""
-    return request.cookies.get("wiki_pref", DEFAULT_WIKI)
-
-
-def _db_path(request: Request) -> pathlib.Path:
-    """Return the SQLite database path.
-
-    ``WIKI_DB`` env var wins (used by tests); otherwise the ``wiki_pref``
-    cookie determines which wiki database to open.
-    """
-    if "WIKI_DB" in os.environ:
-        return pathlib.Path(os.environ["WIKI_DB"])
-    return db_path_for(_active_wiki(request))
-
-
-def _connect(request: Request) -> sqlite3.Connection:
-    """Open a per-request SQLite connection with row-dict access.
-
-    Returns:
-        A new ``sqlite3.Connection`` whose ``row_factory`` is set to
-        ``sqlite3.Row`` so callers can index columns by name.
-
-    Raises:
-        HTTPException: 503 if the configured database file does not exist.
-            This surfaces a clear error in the UI when a user starts the
-            web app before running the parser.
-    """
-    path = _db_path(request)
-    if not path.exists():
-        raise HTTPException(status_code=503, detail=f"Database not found: {path}")
-    return wiki_db.connect(path)
-
-
-
-def _escape_fts5(q: str) -> str:
-    """Wrap a raw query in FTS5 phrase quotes, escaping internal double-quotes."""
-    return '"' + q.replace('"', '""') + '"'
-
-
-def _search_titles(q: str, request: Request) -> list[str]:
-    """Find article titles matching ``q`` using the FTS5 trigram index.
-
-    The ``articles_fts`` virtual table uses the ``trigram`` tokenizer, which
-    supports both prefix and substring matching in a single indexed query.
-    Queries shorter than 3 characters fall back to a prefix LIKE on
-    ``idx_articles_title`` because the trigram index requires at least 3 chars.
-
-    Args:
-        q: Raw search query from the user; whitespace is trimmed.
-
-    Returns:
-        Up to ``SEARCH_LIMIT`` titles ordered by BM25 relevance rank.
-    """
-    q = q.strip()
-    if not q:
-        return []
-
-    conn = _connect(request)
-    try:
-        if len(q) < 3:
-            needle = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            cur = conn.execute(
-                "SELECT title FROM articles WHERE title LIKE ? ESCAPE '\\' "
-                "ORDER BY title LIMIT ?",
-                (needle + "%", SEARCH_LIMIT),
-            )
-            return [r["title"] for r in cur.fetchall()]
-
-        cur = conn.execute(
-            "SELECT title FROM articles_fts WHERE articles_fts MATCH ? "
-            "ORDER BY rank LIMIT ?",
-            (_escape_fts5(q), SEARCH_LIMIT),
-        )
-        return [r["title"] for r in cur.fetchall()]
-    finally:
-        conn.close()
-
-
-def _fetch_article(title: str, request: Request) -> tuple[sqlite3.Row | None, str | None]:
-    """Look up an article by title, following ``#REDIRECT`` chains.
-
-    A third of the rows in a typical enwiki dump are redirect stubs whose
-    ``text_content`` is just ``#REDIRECT [[Target]]``. Follow those up to
-    ``REDIRECT_MAX_HOPS`` times so the user sees the real target article.
-
-    Args:
-        title: The article's exact title (case-sensitive, matching what the
-            search endpoint returned).
-
-    Returns:
-        A tuple ``(row, redirected_from)`` where ``row`` is the resolved
-        article row (or ``None`` if not found / redirect target missing),
-        and ``redirected_from`` is the *original* title the caller asked
-        for if at least one redirect was followed, otherwise ``None``.
-    """
-    conn = _connect(request)
-    try:
-        original_title = title
-        seen: set[str] = set()
-        for _ in range(REDIRECT_MAX_HOPS + 1):
-            if title in seen:
-                break  # cycle
-            seen.add(title)
-            cur = conn.execute(
-                "SELECT title, text_content, text_bytes, timestamp "
-                "FROM articles WHERE title = ?",
-                (title,),
-            )
-            row = cur.fetchone()
-            if row is None:
-                return None, None
-            target = wiki_db.redirect_target(row["text_content"])
-            if target is None:
-                redirected_from = original_title if title != original_title else None
-                return row, redirected_from
-            title = target
-        # Hit the hop cap — bail out and return what we have.
-        return None, None
-    finally:
-        conn.close()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -265,11 +139,11 @@ def index(request: Request, article: str = "", wiki: str = "", not_found: str = 
         The full ``index.html`` page. HTMX takes over from here and swaps
         fragments into ``#results`` and ``#article`` without reloading.
     """
-    active_wiki = wiki if wiki in KNOWN_WIKIS else _active_wiki(request)
-    other_wiki = next(w for w in KNOWN_WIKIS if w != active_wiki)
+    selected_wiki = wiki if wiki in KNOWN_WIKIS else active_wiki(request)
+    other_wiki = next(w for w in KNOWN_WIKIS if w != selected_wiki)
     other_wiki_db = db_path_for(other_wiki)
     other_wiki_for_template = other_wiki if other_wiki_db.exists() else None
-    wiki_db_path = pathlib.Path(os.environ["WIKI_DB"]) if "WIKI_DB" in os.environ else db_path_for(active_wiki)
+    wiki_db_path = pathlib.Path(os.environ["WIKI_DB"]) if "WIKI_DB" in os.environ else db_path_for(selected_wiki)
     with wiki_db.connect(wiki_db_path) as conn:
         try:
             row = conn.execute(
@@ -288,8 +162,8 @@ def index(request: Request, article: str = "", wiki: str = "", not_found: str = 
                 (str(article_count),),
             )
     response = templates.TemplateResponse(request, "index.html", {
-        "wiki": active_wiki,
-        "wiki_label": _WIKI_LABELS[active_wiki],
+        "wiki": selected_wiki,
+        "wiki_label": WIKI_LABELS[selected_wiki],
         "other_wiki": other_wiki_for_template,
         "preload_article": article,
         "not_found": not_found,
@@ -318,7 +192,7 @@ def search(request: Request, q: str = "") -> HTMLResponse:
         Rendered ``search_results.html`` partial. An empty ``q`` produces
         an empty list rather than an error.
     """
-    titles = _search_titles(q, request)
+    titles = search_titles(q, request)
     return templates.TemplateResponse(
         request, "search_results.html", {"titles": titles, "q": q}
     )
@@ -342,11 +216,11 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     Raises:
         HTTPException: 404 when no article with that exact title exists.
     """
-    row, _redirected_from = _fetch_article(title, request)
+    row, _redirected_from = fetch_article(title, request)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
     other_wiki_for_template = None
     other_wiki_db = db_path_for(other_wiki)
@@ -390,37 +264,6 @@ def switch_wiki(to: str, article: str = "", return_to: str = "") -> RedirectResp
     return response
 
 
-def _format_elapsed(started_at: str) -> str:
-    try:
-        start = datetime.fromisoformat(started_at)
-        elapsed = int((datetime.now(UTC) - start.replace(tzinfo=UTC)).total_seconds())
-        if elapsed < 60:
-            return f"{elapsed}s"
-        if elapsed < 3600:
-            return f"{elapsed // 60}m {elapsed % 60}s"
-        return f"{elapsed // 3600}h {(elapsed % 3600) // 60}m"
-    except Exception:
-        return ""
-
-
-def _format_started_at(started_at: str) -> str:
-    try:
-        dt = datetime.fromisoformat(started_at)
-        return dt.strftime("%-d %b %Y %H:%M UTC")
-    except Exception:
-        return started_at
-
-
-def _format_embedded_at(ts: str | None) -> str:
-    if not ts:
-        return "—"
-    try:
-        dt = datetime.fromisoformat(ts)
-        return dt.strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        return ts
-
-
 def _render_status_panel(
     request: Request, wiki: str, job: sqlite3.Row | None
 ) -> HTMLResponse:
@@ -429,8 +272,8 @@ def _render_status_panel(
             request, "refresh_panel.html", {"wiki": wiki, "job": None, "elapsed": "", "started_at_display": ""}
         )
     active = job["status"] in ("pending", "downloading", "parsing", "rebuilding")
-    elapsed = _format_elapsed(job["started_at"]) if active else ""
-    started_at_display = "" if active else _format_started_at(job["started_at"])
+    elapsed = format_elapsed(job["started_at"]) if active else ""
+    started_at_display = "" if active else format_started_at(job["started_at"])
     return templates.TemplateResponse(
         request,
         "refresh_panel.html",
@@ -463,16 +306,7 @@ def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
     finally:
         conn.close()
 
-    _refresh_log = pathlib.Path(log_path)
-    _refresh_log.parent.mkdir(parents=True, exist_ok=True)
-    with open(_refresh_log, "a") as _log:
-        subprocess.Popen(
-            [sys.executable, "-m", "workers.refresh", "--wiki", wiki, "--job-id", str(job_id)],
-            cwd=BASE_DIR,
-            start_new_session=True,
-            stdout=_log,
-            stderr=_log,
-        )
+    spawn_worker("workers.refresh", wiki, job_id, "refresh")
 
     return _render_status_panel(request, wiki, job)
 
@@ -491,23 +325,12 @@ def refresh_status(request: Request, wiki: str) -> HTMLResponse:
     return _render_status_panel(request, wiki, job)
 
 
-def _rag_connect(wiki: str):
-    """Open the RAG DB if it exists; return None if not yet created."""
-    path = rag_db_path_for(wiki)
-    if not path.exists():
-        return None
-    return connect_rag(path)
-
-
-EMBED_PAGE_SIZE = 50
-
-
 @app.get("/embed-manager", response_class=HTMLResponse)
 def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
     other_wiki_for_template = other_wiki if db_path_for(other_wiki).exists() else None
-    rag_conn = _rag_connect(wiki)
+    rag_conn = rag_connect(wiki)
 
     if rag_conn is None:
         return templates.TemplateResponse(request, "embed_manager.html", {
@@ -541,7 +364,7 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
         ).fetchall()
         articles = [dict(r) for r in rows]
         for a in articles:
-            a["embedded_at_display"] = _format_embedded_at(a.get("embedded_at"))
+            a["embedded_at_display"] = format_embedded_at(a.get("embedded_at"))
     finally:
         rag_conn.close()
 
@@ -559,8 +382,8 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
 
 @app.get("/embed-status/{title:path}", response_class=HTMLResponse)
 def embed_status(request: Request, title: str) -> HTMLResponse:
-    wiki = _active_wiki(request)
-    rag_conn = _rag_connect(wiki)
+    wiki = active_wiki(request)
+    rag_conn = rag_connect(wiki)
 
     embedded = False
     links_embedded = False
@@ -584,9 +407,9 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
 
 @app.post("/embed-article/{title:path}", response_class=HTMLResponse)
 def embed_article(request: Request, title: str) -> HTMLResponse:
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
 
-    wiki_conn = _connect(request)
+    wiki_conn = connect(request)
     try:
         row = wiki_conn.execute(
             "SELECT page_id, title, revision_id, text_content FROM articles WHERE title = ?",
@@ -639,8 +462,8 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
 
 @app.get("/chunks/{title:path}", response_class=HTMLResponse)
 def chunks(request: Request, title: str) -> HTMLResponse:
-    wiki = _active_wiki(request)
-    rag_conn = _rag_connect(wiki)
+    wiki = active_wiki(request)
+    rag_conn = rag_connect(wiki)
 
     if rag_conn is None:
         raise HTTPException(status_code=404, detail="No RAG database for this wiki")
@@ -732,9 +555,9 @@ def _render_active_embedding_panel(
             active_dict["status"] == "running"
             and not active_dict["cancel_requested"]
         )
-        elapsed = _format_elapsed(active_dict["started_at"]) if is_running else ""
+        elapsed = format_elapsed(active_dict["started_at"]) if is_running else ""
         started_at_display = (
-            "" if is_running else _format_started_at(active_dict["started_at"])
+            "" if is_running else format_started_at(active_dict["started_at"])
         )
 
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
@@ -790,9 +613,9 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
     running for the active wiki, new items are appended to it; otherwise a new
     job is created and a worker subprocess is spawned.
     """
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
 
-    wiki_conn = _connect(request)
+    wiki_conn = connect(request)
     try:
         row = wiki_conn.execute(
             "SELECT title, text_content FROM articles WHERE title = ?",
@@ -827,7 +650,7 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
     items = [(t, source_title) for t in resolved]
 
     jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
-    spawn_worker = False
+    started_new_job = False
     try:
         jobs_conn.execute("BEGIN IMMEDIATE")
         active = embed_jobs.get_active_job(jobs_conn, wiki)
@@ -838,7 +661,7 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
                 triggered_by_title=source_title,
                 include_links=1,
             )
-            spawn_worker = True
+            started_new_job = True
         else:
             job_id = active["id"]
 
@@ -849,24 +672,10 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
     finally:
         jobs_conn.close()
 
-    if spawn_worker:
-        _embed_log = BASE_DIR / "dumps" / f"{wiki}_embed.log"
-        _embed_log.parent.mkdir(parents=True, exist_ok=True)
-        with open(_embed_log, "a") as _log:
-            subprocess.Popen(
-                [sys.executable, "-m", "workers.embed",
-                 "--wiki", wiki, "--job-id", str(job_id)],
-                cwd=BASE_DIR,
-                start_new_session=True,
-                stdout=_log,
-                stderr=_log,
-            )
+    if started_new_job:
+        spawn_worker("workers.embed", wiki, job_id, "embed")
 
-    # HTMX requests: send the browser to /active-embedding. Non-HTMX callers
-    # (curl, tests) get a 303 to the same place so behaviour is consistent.
-    if request.headers.get("hx-request"):
-        return Response(status_code=204, headers={"HX-Redirect": "/active-embedding"})
-    return RedirectResponse("/active-embedding", status_code=303)
+    return htmx_redirect("/active-embedding", request)
 
 
 @app.delete("/embed/{wiki}/{title:path}")
@@ -874,7 +683,7 @@ def delete_embed(request: Request, wiki: str, title: str) -> Response:
     """Remove all chunks, vectors, and metadata for one embedded article."""
     if wiki not in KNOWN_WIKIS:
         raise HTTPException(status_code=400, detail=f"Unknown wiki: {wiki}")
-    rag_conn = _rag_connect(wiki)
+    rag_conn = rag_connect(wiki)
     if rag_conn is None:
         raise HTTPException(status_code=404, detail="No RAG database for this wiki")
     try:
@@ -895,7 +704,7 @@ def delete_all_embeds(request: Request, wiki: str) -> Response:
     """Remove all chunks, vectors, and metadata for every embedded article in the wiki."""
     if wiki not in KNOWN_WIKIS:
         raise HTTPException(status_code=400, detail=f"Unknown wiki: {wiki}")
-    rag_conn = _rag_connect(wiki)
+    rag_conn = rag_connect(wiki)
     if rag_conn is None:
         raise HTTPException(status_code=404, detail="No RAG database for this wiki")
     try:
@@ -903,9 +712,7 @@ def delete_all_embeds(request: Request, wiki: str) -> Response:
         rag_conn.commit()
     finally:
         rag_conn.close()
-    if "HX-Request" in request.headers:
-        return Response(status_code=204, headers={"HX-Redirect": "/embed-manager"})
-    return RedirectResponse("/embed-manager", status_code=303)
+    return htmx_redirect("/embed-manager", request)
 
 
 @app.post("/embed/reembed/{wiki}/{title:path}")
@@ -926,7 +733,7 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
         wiki_conn.close()
 
     jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
-    spawn_worker = False
+    started_new_job = False
     try:
         jobs_conn.execute("BEGIN IMMEDIATE")
         log_path = str(BASE_DIR / "dumps" / f"{wiki}_embed.log")
@@ -936,37 +743,25 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
             include_links=0,
         )
         embed_jobs.append_items(jobs_conn, job_id, [(canonical_title, canonical_title)])
-        spawn_worker = True
+        started_new_job = True
     finally:
         jobs_conn.close()
 
-    if spawn_worker:
-        _embed_log = BASE_DIR / "dumps" / f"{wiki}_embed.log"
-        _embed_log.parent.mkdir(parents=True, exist_ok=True)
-        with open(_embed_log, "a") as _log:
-            subprocess.Popen(
-                [sys.executable, "-m", "workers.embed",
-                 "--wiki", wiki, "--job-id", str(job_id)],
-                cwd=BASE_DIR,
-                start_new_session=True,
-                stdout=_log,
-                stderr=_log,
-            )
+    if started_new_job:
+        spawn_worker("workers.embed", wiki, job_id, "embed")
 
-    if request.headers.get("hx-request"):
-        return Response(status_code=204, headers={"HX-Redirect": "/active-embedding"})
-    return RedirectResponse("/active-embedding", status_code=303)
+    return htmx_redirect("/active-embedding", request)
 
 
 @app.get("/active-embedding", response_class=HTMLResponse)
 def active_embedding(request: Request) -> HTMLResponse:
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     return _render_active_embedding_panel(request, wiki, fragment_only=False)
 
 
 @app.get("/active-embedding/jobs", response_class=HTMLResponse)
 def active_embedding_jobs(request: Request, q: str = "", page: int = 1) -> HTMLResponse:
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     return _render_job_list_panel(request, wiki, q=q, page=page)
 
 
@@ -978,26 +773,24 @@ def delete_all_jobs(request: Request) -> Response:
         embed_jobs.delete_all_jobs(conn)
     finally:
         conn.close()
-    if "HX-Request" in request.headers:
-        return Response(status_code=204, headers={"HX-Redirect": "/active-embedding"})
-    return RedirectResponse("/active-embedding", status_code=303)
+    return htmx_redirect("/active-embedding", request)
 
 
 @app.get("/active-embedding/panel", response_class=HTMLResponse)
 def active_embedding_panel(request: Request) -> HTMLResponse:
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     return _render_active_embedding_panel(request, wiki, fragment_only=True)
 
 
 @app.get("/active-embedding/panel/{job_id}", response_class=HTMLResponse)
 def active_embedding_panel_for_job(request: Request, job_id: int) -> HTMLResponse:
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     return _render_active_embedding_panel(request, wiki, fragment_only=True, job_id=job_id)
 
 
 @app.post("/active-embedding/cancel/{job_id}", response_class=HTMLResponse)
 def active_embedding_cancel(request: Request, job_id: int) -> HTMLResponse:
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     conn = embed_jobs.connect_embed_jobs(JOBS_DB)
     try:
         embed_jobs.request_cancel(conn, job_id)
@@ -1028,22 +821,21 @@ def article(request: Request, title: str) -> HTMLResponse:
     Raises:
         HTTPException: 404 when no article with that exact title exists.
     """
-    row, redirected_from = _fetch_article(title, request)
+    row, redirected_from = fetch_article(title, request)
     if row is None:
         if request.headers.get("HX-Request") == "true":
-            wiki = _active_wiki(request)
-            wiki_label = _WIKI_LABELS.get(wiki, wiki)
+            wiki = active_wiki(request)
             resp = Response(content="", status_code=200)
             resp.headers["HX-Reswap"] = "none"
             resp.headers["HX-Trigger"] = json.dumps(
-                {"articleNotFound": {"title": title, "wiki": wiki_label}}
+                {"articleNotFound": {"title": title, "wiki": wiki_label(wiki)}}
             )
             return resp
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
     html = convert_wikitext_to_html(row["text_content"])
 
-    wiki = _active_wiki(request)
+    wiki = active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
     other_wiki_for_template = None
     other_wiki_db = db_path_for(other_wiki)

@@ -468,7 +468,8 @@ class TestEmbedStatusWidget:
         rag_conn.commit()
         rag_conn.close()
 
-        monkeypatch.setattr(web_app, "rag_db_path_for", lambda wiki: rag_path)
+        import paths
+        monkeypatch.setattr(paths, "rag_db_path_for", lambda wiki: rag_path)
 
         resp = embed_client.get("/embed-status/April")
         assert resp.status_code == 200
