@@ -1,7 +1,14 @@
 """Tests for rag/retriever.py — hybrid retrieval logic (no Ollama needed)."""
 import pytest
 
-from rag.retriever import Chunk, RetrievalResult, _fetch_chunks, _rrf_merge, _sparse_search, retrieve
+from rag.retriever import (
+    Chunk,
+    RetrievalResult,
+    _fetch_chunks,
+    _rrf_merge,
+    _sparse_search,
+    retrieve,
+)
 from rag.schema import connect_rag
 
 

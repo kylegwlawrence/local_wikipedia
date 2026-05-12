@@ -3,13 +3,13 @@ import bz2
 import pathlib
 import sqlite3
 import xml.etree.ElementTree as ET
+
 import pytest
 
 import parse.cli as cli_module
 from parse.cli import main
 from parse.pipeline import (
     BATCH_SIZE,
-    NAMESPACE_MAIN,
     _batch_insert_articles,
     parse_dump,
 )

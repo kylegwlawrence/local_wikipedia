@@ -104,7 +104,7 @@ def main(argv=None) -> int:
     # Compute the chars/token ratio observed at the largest chunks (top
     # decile). That's the boundary that determines whether the cap is set
     # right — small chunks will always fit regardless.
-    pairs = sorted(zip(char_counts, token_counts), key=lambda p: -p[0])
+    pairs = sorted(zip(char_counts, token_counts, strict=True), key=lambda p: -p[0])
     top = pairs[: max(10, len(pairs) // 10)]
     high_ratio = statistics.mean(c / t for c, t in top if t)
 

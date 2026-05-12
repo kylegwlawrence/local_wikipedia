@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 
 import app as web_app
 
-
 # A handful of fixture articles. The wikitext is intentionally tiny but uses
 # real wikitext markup so we exercise the full conversion pipeline.
 FIXTURE_ARTICLES = [
@@ -137,6 +136,7 @@ def embed_client(wiki_db_path, tmp_path, monkeypatch):
     ``subprocess.Popen`` so no worker subprocess is actually spawned.
     """
     import subprocess
+
     import paths
     from jobs import embed as embed_jobs
 
@@ -177,8 +177,7 @@ def crash_recovery_env(tmp_path, monkeypatch):
     TestClient enters the lifespan context.
     """
     import paths
-    from jobs import refresh as refresh_jobs
-    from jobs import embed as embed_jobs
+    from jobs import embed as embed_jobs, refresh as refresh_jobs
 
     dumps = tmp_path / "dumps"
     dumps.mkdir()

@@ -8,7 +8,6 @@ Wikipedia dump to be parsed first.
 Shared fixtures (``client``, ``embed_client``, ``crash_recovery_env``,
 ``wiki_db_path``) live in ``tests/conftest.py``.
 """
-import pytest
 from fastapi.testclient import TestClient
 
 import app as web_app

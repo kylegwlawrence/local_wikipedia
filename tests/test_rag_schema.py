@@ -1,8 +1,6 @@
 """Tests for rag/schema.py — schema creation and idempotence."""
 import sqlite3
 
-import pytest
-
 from rag.schema import connect_rag, create_rag_schema, get_embedding_dim, set_embedding_dim
 
 

@@ -1,5 +1,4 @@
 """Tests for rag/embedder.py — Ollama embedding calls."""
-import struct
 
 import httpx
 import pytest
@@ -114,7 +113,7 @@ class TestPackUnpack:
         packed = pack_embedding(vec)
         unpacked = unpack_embedding(packed)
         assert len(unpacked) == len(vec)
-        for a, b in zip(unpacked, vec):
+        for a, b in zip(unpacked, vec, strict=True):
             assert abs(a - b) < 1e-6
 
     def test_pack_produces_correct_byte_length(self):

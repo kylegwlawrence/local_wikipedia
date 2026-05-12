@@ -1,7 +1,6 @@
 """Tests for rag/chunker.py — wikitext chunking logic."""
-import pytest
 
-from rag.chunker import MAX_CHUNK_CHARS, chunk_article, extract_categories, is_redirect
+from rag.chunker import chunk_article, extract_categories, is_redirect
 
 
 class TestExtractCategories:

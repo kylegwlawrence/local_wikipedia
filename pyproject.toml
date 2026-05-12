@@ -1,0 +1,41 @@
+[project]
+name = "local_wikipedia"
+version = "0.1.0"
+description = "Wikipedia dump downloader, parser, browser-based reader, and RAG pipeline."
+requires-python = ">=3.11"
+dependencies = [
+    "httpx==0.28.1",
+    "tqdm==4.67.3",
+    "pytest==9.0.3",
+    "respx==0.23.1",
+    "mwparserfromhell==0.7.2",
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.46.0",
+    "jinja2==3.1.6",
+    "sqlite-vec==0.1.9",
+]
+
+[tool.ruff]
+# 120 instead of the more common 100 because the codebase has long literal
+# strings — wikitext fixtures, SQL, and template-handler tag bodies — that
+# don't wrap cleanly at 100.
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+    "E402",  # module-level imports not at top — used in app/__init__.py for the
+             # post-FastAPI-instantiation router includes.
+    "B904",  # raise ... from err — too noisy for the existing codebase.
+]
+
+[tool.ruff.lint.isort]
+# Coalesce ``from X import a as A, b as B`` into one statement instead of
+# splitting each aliased import onto its own from-block.
+combine-as-imports = true
+
+[tool.ruff.format]
+# Match the project's existing style: double quotes, indent with spaces.
+quote-style = "double"
+indent-style = "space"

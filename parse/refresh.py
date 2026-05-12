@@ -69,7 +69,9 @@ def refresh_dump(
     Returns a summary dict with keys:
         scanned, skipped, updated, inserted, archived
     """
-    from jobs import refresh as refresh_jobs  # imported here to avoid circular import at module level
+    from jobs import (
+        refresh as refresh_jobs,  # imported here to avoid circular import at module level
+    )
 
     if not dump_path.exists():
         raise RuntimeError(f"Dump file not found: {dump_path}")

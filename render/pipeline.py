@@ -21,7 +21,6 @@ import mwparserfromhell
 _MEDIA_LINK_PREFIXES = ("file:", "image:", "media:")
 
 from render import strip
-from render.strip import convert_gallery, strip_external_links_section, strip_nowiki
 from render.blocks import convert_headings, convert_lists, wrap_paragraphs
 from render.inline import convert_bold_italic, convert_links
 from render.protect import (
@@ -30,6 +29,7 @@ from render.protect import (
     restore_code_blocks,
     restore_math_tags,
 )
+from render.strip import convert_gallery, strip_external_links_section, strip_nowiki
 from render.tables import convert_tables
 from render.templates import (
     collect_inline_refs,

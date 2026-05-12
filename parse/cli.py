@@ -4,10 +4,10 @@ import pathlib
 import sqlite3
 import sys
 
-from paths import DEFAULT_WIKI, DUMPS_DIR
 from parse.pipeline import NAMESPACE_MAIN, parse_dump
 from parse.schema import create_schema
 from parse.verify import verify_database
+from paths import DEFAULT_WIKI, DUMPS_DIR
 
 
 def _find_latest_dump(wiki: str, dumps_dir: pathlib.Path | None = None) -> pathlib.Path | None:
@@ -63,15 +63,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_only:
         try:
             stats = verify_database(db_path)
-            print(f"\n=== Database Statistics ===")
+            print("\n=== Database Statistics ===")
             print(f"Database: {db_path}")
             print(f"Articles: {stats['article_count']:,}")
-            print(f"\nSample articles:")
+            print("\nSample articles:")
             for title, text_bytes in stats["samples"]:
                 print(f"  - {title} ({text_bytes:,} bytes)")
             if stats["metadata"]:
                 meta = stats["metadata"]
-                print(f"\nLast parse:")
+                print("\nLast parse:")
                 print(f"  Wiki: {meta[1]}")
                 print(f"  Source: {meta[2]}")
                 print(f"  Total pages: {meta[3]:,}")
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         total_pages, articles_inserted = parse_dump(dump_path, db_path, NAMESPACE_MAIN)
-        print(f"\n=== Summary ===")
+        print("\n=== Summary ===")
         print(f"Dump: {dump_path.name}")
         print(f"Database: {db_path}")
         print(f"Total pages parsed: {total_pages:,}")

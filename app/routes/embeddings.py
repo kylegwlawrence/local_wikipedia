@@ -9,7 +9,11 @@ from app.deps import active_wiki, connect, rag_connect
 from app.helpers import format_embedded_at, htmx_redirect, spawn_worker
 from jobs import embed as embed_jobs
 from paths import KNOWN_WIKIS
-from rag.embed import delete_all_articles as rag_delete_all_articles, delete_article as rag_delete_article, embed_one as rag_embed_one
+from rag.embed import (
+    delete_all_articles as rag_delete_all_articles,
+    delete_article as rag_delete_article,
+    embed_one as rag_embed_one,
+)
 from rag.links import extract_article_links
 from rag.schema import connect_rag
 

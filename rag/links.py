@@ -13,7 +13,6 @@ import mwparserfromhell
 
 from db import normalize_title
 
-
 # MediaWiki namespaces that aren't real articles. Anything starting with one of
 # these prefixes is skipped. The list covers the common-and-confusing cases
 # across enwiki, simplewiki, and most language editions.

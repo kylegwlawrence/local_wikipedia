@@ -89,7 +89,9 @@ pip install -r requirements.txt
 python download/download_katex.py   # one-time: vendors KaTeX for offline math rendering
 ```
 
-Dependencies: `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`, `uvicorn[standard]`, `jinja2`, `sqlite-vec`.
+Dependencies (pinned in `requirements.txt` and mirrored in `pyproject.toml`): `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`, `uvicorn[standard]`, `jinja2`, `sqlite-vec`.
+
+Dev tooling: install `ruff` (`pip install ruff`) to lint and format. Config lives in `pyproject.toml` (`[tool.ruff]`). Run `ruff check .` and `ruff format .` from the project root.
 
 For the RAG pipeline, [Ollama](https://ollama.com) must be running locally with the embedding model pulled (`ollama pull nomic-embed-text`) and optionally a chat model (`ollama pull llama3`).
 

@@ -1,16 +1,15 @@
 """Tests for render.py (wikitext → HTML converter)."""
-import pytest
 from render import (
-    convert_wikitext_to_html,
+    _clean_extra_markup,
     _convert_bold_italic,
     _convert_headings,
     _convert_links,
     _convert_lists,
     _convert_tables,
-    _parse_cell,
-    _clean_extra_markup,
     _extract_math_tags,
+    _parse_cell,
     _restore_math_tags,
+    convert_wikitext_to_html,
 )
 
 

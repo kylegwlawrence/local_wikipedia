@@ -7,7 +7,7 @@ Usage:
 """
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 from tqdm import tqdm
@@ -160,7 +160,7 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
         "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (page_id, title, revision_id, "|".join(categories),
-         datetime.now(timezone.utc).isoformat(),
+         datetime.now(UTC).isoformat(),
          len(wikitext.encode("utf-8")),
          links_embedded),
     )
@@ -175,7 +175,7 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
         return 0
 
     _check_embedding_dim(rag_conn, vecs[0])
-    for chunk, vec in zip(chunks, vecs):
+    for chunk, vec in zip(chunks, vecs, strict=True):
         _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=False)
     return len(vecs)
 
@@ -224,7 +224,7 @@ def embed_one(
         "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (page_id, title, revision_id, "|".join(categories),
-         datetime.now(timezone.utc).isoformat(),
+         datetime.now(UTC).isoformat(),
          len(wikitext.encode("utf-8")),
          preserved_links_embedded),
     )
@@ -241,7 +241,7 @@ def embed_one(
         return 0
 
     _check_embedding_dim(rag_conn, vecs[0])
-    for chunk, vec in zip(chunks_data, vecs):
+    for chunk, vec in zip(chunks_data, vecs, strict=True):
         _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=True)
 
     rag_conn.commit()

@@ -8,7 +8,6 @@ survive paragraph wrapping; inline math gets a ``<span>`` placeholder.
 import html
 import re
 
-
 _SYNTAX_RE = re.compile(
     r'<syntaxhighlight[^>]*>(.*?)</syntaxhighlight>',
     re.DOTALL | re.IGNORECASE,

@@ -24,7 +24,6 @@ from render.data import (
 )
 from render.inline import convert_bold_italic, convert_links
 
-
 # Matches <ref name="X">content</ref>, with name in any of three quoting styles.
 _REF_TAG_RE = re.compile(
     r'<ref\s+name\s*=\s*(?:"([^"]+)"|\'([^\']+)\'|([^>\s]+))\s*>(.*?)</ref>',
