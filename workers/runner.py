@@ -4,6 +4,7 @@ Handles log-file open, stdout/stderr redirect, exception capture with
 traceback, mark-failed callback, and I/O cleanup. Each worker module
 provides a body_fn with its logic and a mark_failed_fn to update job status.
 """
+
 import sys
 import traceback
 

@@ -1,4 +1,5 @@
 """Tests for rag/retriever.py — hybrid retrieval logic (no Ollama needed)."""
+
 import pytest
 
 from rag.retriever import (
@@ -16,12 +17,8 @@ from rag.schema import connect_rag
 def rag_db(tmp_path):
     """Small RAG DB with known chunks for testing sparse search and RRF."""
     conn = connect_rag(tmp_path / "rag.db")
-    conn.execute(
-        "INSERT INTO articles_meta (page_id, title, revision_id) VALUES (1, 'April', 1)"
-    )
-    conn.execute(
-        "INSERT INTO articles_meta (page_id, title, revision_id) VALUES (2, 'March', 2)"
-    )
+    conn.execute("INSERT INTO articles_meta (page_id, title, revision_id) VALUES (1, 'April', 1)")
+    conn.execute("INSERT INTO articles_meta (page_id, title, revision_id) VALUES (2, 'March', 2)")
     conn.execute(
         "INSERT INTO chunks (chunk_id, page_id, section, chunk_index, text, text_length) "
         "VALUES (1, 1, NULL, 0, 'April is the fourth month of the year.', 38)"

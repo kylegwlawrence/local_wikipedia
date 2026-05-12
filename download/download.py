@@ -1,4 +1,5 @@
 """Download and SHA-1-verify the latest Wikipedia multistream dump + index."""
+
 import argparse
 import hashlib
 import os
@@ -80,17 +81,13 @@ def fetch_sha1sums(wiki: str) -> dict[str, str]:
         matched = {s for f in multistream for s in TARGET_SUFFIXES if f.endswith(s)}
         missing = set(TARGET_SUFFIXES) - matched
         if missing:
-            raise RuntimeError(
-                f"sha1sums manifest is missing target file(s): {sorted(missing)}"
-            )
+            raise RuntimeError(f"sha1sums manifest is missing target file(s): {sorted(missing)}")
         return multistream
 
     if fallback:
         return fallback
 
-    raise RuntimeError(
-        f"sha1sums manifest contains no article dump files for {wiki!r}"
-    )
+    raise RuntimeError(f"sha1sums manifest contains no article dump files for {wiki!r}")
 
 
 def hash_file(path: pathlib.Path) -> str:
@@ -125,14 +122,10 @@ def download_with_verify(url: str, dest: pathlib.Path, expected_sha1: str) -> No
     h = hashlib.sha1()
 
     try:
-        with _client() as client, client.stream(
-            "GET", url, timeout=None, follow_redirects=True
-        ) as resp:
+        with _client() as client, client.stream("GET", url, timeout=None, follow_redirects=True) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("Content-Length", 0)) or None
-            with tmp.open("wb") as f, tqdm(
-                total=total, unit="B", unit_scale=True, desc=dest.name
-            ) as bar:
+            with tmp.open("wb") as f, tqdm(total=total, unit="B", unit_scale=True, desc=dest.name) as bar:
                 for chunk in resp.iter_bytes(chunk_size=CHUNK_BYTES):
                     f.write(chunk)
                     h.update(chunk)
@@ -140,9 +133,7 @@ def download_with_verify(url: str, dest: pathlib.Path, expected_sha1: str) -> No
 
         actual = h.hexdigest()
         if actual != expected_sha1:
-            raise RuntimeError(
-                f"SHA-1 mismatch for {dest.name}: expected {expected_sha1}, got {actual}"
-            )
+            raise RuntimeError(f"SHA-1 mismatch for {dest.name}: expected {expected_sha1}, got {actual}")
         # Atomic rename so dest is never visible in a partial state
         os.replace(tmp, dest)
     except BaseException:
@@ -171,10 +162,14 @@ def main(argv: list[str] | None = None) -> int:
         dest = DUMPS_DIR / filename
         m = date_re.match(filename)
         if not m:
-            results.append(_FileResult(
-                filename, 0, sha1,
-                f"FAILED: cannot extract date from filename {filename!r}",
-            ))
+            results.append(
+                _FileResult(
+                    filename,
+                    0,
+                    sha1,
+                    f"FAILED: cannot extract date from filename {filename!r}",
+                )
+            )
             failed = True
             continue
         url = f"{BASE_URL}/{args.wiki}/{m.group(1)}/{filename}"

@@ -1,4 +1,5 @@
 """Command-line entry point for parsing a dump into SQLite."""
+
 import argparse
 import pathlib
 import sqlite3

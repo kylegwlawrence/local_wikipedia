@@ -1,4 +1,5 @@
 """SQLite schema for the parsed Wikipedia database."""
+
 import sqlite3
 
 
@@ -75,12 +76,8 @@ def create_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_archive_page_id ON articles_archive(page_id)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_archive_archived_at ON articles_archive(archived_at)"
-    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_archive_page_id ON articles_archive(page_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_archive_archived_at ON articles_archive(archived_at)")
 
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA page_size=4096")

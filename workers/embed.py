@@ -8,6 +8,7 @@ flag between items so a long-running batch can be stopped cleanly.
 Invoke as ``python -m workers.embed --wiki WIKI --job-id N`` from the
 project root.
 """
+
 import argparse
 import sys
 
@@ -39,13 +40,14 @@ def _process_item(
     embed_jobs.update_item(jobs_conn, item_id, "in_progress")
 
     row = wiki_conn.execute(
-        "SELECT page_id, title, revision_id, text_content "
-        "FROM articles WHERE title = ?",
+        "SELECT page_id, title, revision_id, text_content FROM articles WHERE title = ?",
         (title,),
     ).fetchone()
     if row is None:
         embed_jobs.update_item(
-            jobs_conn, item_id, "not_found",
+            jobs_conn,
+            item_id,
+            "not_found",
             error_message=f"No article with title {title!r}",
         )
         return
@@ -64,18 +66,27 @@ def _process_item(
 
     try:
         chunk_count = embed_one(
-            rag_conn, page_id, row["title"], revision_id, wikitext,
+            rag_conn,
+            page_id,
+            row["title"],
+            revision_id,
+            wikitext,
         )
     except Exception as exc:
         embed_jobs.update_item(
-            jobs_conn, item_id, "failed",
+            jobs_conn,
+            item_id,
+            "failed",
             error_message=f"{type(exc).__name__}: {exc}",
         )
         return
 
     already_embedded[page_id] = revision_id
     embed_jobs.update_item(
-        jobs_conn, item_id, "complete", chunk_count=chunk_count,
+        jobs_conn,
+        item_id,
+        "complete",
+        chunk_count=chunk_count,
     )
 
 
@@ -101,9 +112,7 @@ def main(argv: list[str] | None = None) -> int:
 
             already_embedded = {
                 r["page_id"]: r["revision_id"]
-                for r in rag_conn.execute(
-                    "SELECT page_id, revision_id FROM articles_meta"
-                ).fetchall()
+                for r in rag_conn.execute("SELECT page_id, revision_id FROM articles_meta").fetchall()
             }
 
             print(f"[embed_worker] job {job_id} started for {wiki}", flush=True)
@@ -137,8 +146,7 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
 
                 print(
-                    f"[embed_worker] processing {item['title']!r} "
-                    f"(item {item['id']})",
+                    f"[embed_worker] processing {item['title']!r} (item {item['id']})",
                     flush=True,
                 )
                 _process_item(item, jobs_conn, wiki_conn, rag_conn, already_embedded)

@@ -3,6 +3,7 @@
 Named after the URL prefix rather than ``jobs.py`` so the route file's name
 doesn't collide with the top-level ``jobs/`` CRUD package.
 """
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse
 

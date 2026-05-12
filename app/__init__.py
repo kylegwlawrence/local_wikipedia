@@ -4,6 +4,7 @@ The single-page UI serves ``GET /`` and HTMX-driven fragments for search and
 article rendering. ``WIKI_DB`` env var overrides the database path so the
 tests can point the app at a hermetic fixture DB.
 """
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 

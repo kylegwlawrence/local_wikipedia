@@ -1,4 +1,5 @@
 """Extract article fields from a MediaWiki ``<page>`` XML element."""
+
 import xml.etree.ElementTree as ET
 from typing import Any
 

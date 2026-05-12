@@ -4,6 +4,7 @@ These pack one or more queries against ``jobs.db`` into the shape each
 template needs. Kept separate from the route handlers so the panels can be
 re-rendered from multiple endpoints without duplicating the data wrangling.
 """
+
 import math
 import sqlite3
 
@@ -17,9 +18,7 @@ from jobs import embed as embed_jobs
 from paths import KNOWN_WIKIS
 
 
-def render_status_panel(
-    request: Request, wiki: str, job: sqlite3.Row | None
-) -> HTMLResponse:
+def render_status_panel(request: Request, wiki: str, job: sqlite3.Row | None) -> HTMLResponse:
     if not job:
         return templates.TemplateResponse(
             request,
@@ -67,21 +66,15 @@ def render_active_embedding_panel(
         items_by_job: dict[int, list[dict]] = {}
         counts_by_job: dict[int, dict[str, int]] = {}
         if active is not None:
-            items_by_job[active["id"]] = [
-                dict(r) for r in embed_jobs.get_items(conn, active["id"])
-            ]
-            counts_by_job[active["id"]] = embed_jobs.count_items_by_status(
-                conn, active["id"]
-            )
+            items_by_job[active["id"]] = [dict(r) for r in embed_jobs.get_items(conn, active["id"])]
+            counts_by_job[active["id"]] = embed_jobs.count_items_by_status(conn, active["id"])
 
         list_jobs: list[sqlite3.Row] = []
         list_total = 0
         list_counts: dict[int, dict[str, int]] = {}
         if not fragment_only:
             list_jobs, list_total = embed_jobs.get_jobs_page(conn)
-            list_counts = embed_jobs.get_item_counts_for_jobs(
-                conn, [j["id"] for j in list_jobs]
-            )
+            list_counts = embed_jobs.get_item_counts_for_jobs(conn, [j["id"] for j in list_jobs])
     finally:
         conn.close()
 
@@ -98,37 +91,34 @@ def render_active_embedding_panel(
         for item in items:
             groups.setdefault(item["source_title"], []).append(item)
         grouped_items = list(groups.items())
-        is_running = (
-            active_dict["status"] == "running"
-            and not active_dict["cancel_requested"]
-        )
+        is_running = active_dict["status"] == "running" and not active_dict["cancel_requested"]
         elapsed = format_elapsed(active_dict["started_at"]) if is_running else ""
-        started_at_display = (
-            "" if is_running else format_started_at(active_dict["started_at"])
-        )
+        started_at_display = "" if is_running else format_started_at(active_dict["started_at"])
 
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
-    other_wiki_for_template = (
-        other_wiki if paths.db_path_for(other_wiki).exists() else None
-    )
+    other_wiki_for_template = other_wiki if paths.db_path_for(other_wiki).exists() else None
 
     template = "active_embedding_panel.html" if fragment_only else "active_embedding.html"
-    return templates.TemplateResponse(request, template, {
-        "wiki": wiki,
-        "other_wiki": other_wiki_for_template,
-        "job": active_dict,
-        "grouped_items": grouped_items,
-        "counts": counts,
-        "elapsed": elapsed,
-        "started_at_display": started_at_display,
-        "current_page": "processes",
-        "list_jobs": [dict(j) for j in list_jobs],
-        "list_total": list_total,
-        "list_counts": list_counts,
-        "list_page": 1,
-        "list_total_pages": math.ceil(list_total / 5) if list_total else 0,
-        "list_q": "",
-    })
+    return templates.TemplateResponse(
+        request,
+        template,
+        {
+            "wiki": wiki,
+            "other_wiki": other_wiki_for_template,
+            "job": active_dict,
+            "grouped_items": grouped_items,
+            "counts": counts,
+            "elapsed": elapsed,
+            "started_at_display": started_at_display,
+            "current_page": "processes",
+            "list_jobs": [dict(j) for j in list_jobs],
+            "list_total": list_total,
+            "list_counts": list_counts,
+            "list_page": 1,
+            "list_total_pages": math.ceil(list_total / 5) if list_total else 0,
+            "list_q": "",
+        },
+    )
 
 
 def render_job_list_panel(
@@ -144,11 +134,15 @@ def render_job_list_panel(
         counts = embed_jobs.get_item_counts_for_jobs(conn, [j["id"] for j in jobs])
     finally:
         conn.close()
-    return templates.TemplateResponse(request, "job_list_panel.html", {
-        "list_jobs": [dict(j) for j in jobs],
-        "list_total": total,
-        "list_counts": counts,
-        "list_page": page,
-        "list_total_pages": math.ceil(total / 5) if total else 0,
-        "list_q": q,
-    })
+    return templates.TemplateResponse(
+        request,
+        "job_list_panel.html",
+        {
+            "list_jobs": [dict(j) for j in jobs],
+            "list_total": total,
+            "list_counts": counts,
+            "list_page": page,
+            "list_total_pages": math.ceil(total / 5) if total else 0,
+            "list_q": q,
+        },
+    )

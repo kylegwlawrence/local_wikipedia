@@ -1,4 +1,5 @@
 """Per-article embed routes + the embed-manager listing page."""
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 
@@ -28,21 +29,23 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
     rag_conn = rag_connect(wiki)
 
     if rag_conn is None:
-        return templates.TemplateResponse(request, "embed_manager.html", {
-            "wiki": wiki,
-            "other_wiki": other_wiki_for_template,
-            "articles": [],
-            "page": 1,
-            "total_pages": 0,
-            "total_count": 0,
-            "per_page": EMBED_PAGE_SIZE,
-            "current_page": "embeddings",
-        })
+        return templates.TemplateResponse(
+            request,
+            "embed_manager.html",
+            {
+                "wiki": wiki,
+                "other_wiki": other_wiki_for_template,
+                "articles": [],
+                "page": 1,
+                "total_pages": 0,
+                "total_count": 0,
+                "per_page": EMBED_PAGE_SIZE,
+                "current_page": "embeddings",
+            },
+        )
 
     try:
-        total_count = rag_conn.execute(
-            "SELECT COUNT(*) FROM articles_meta"
-        ).fetchone()[0]
+        total_count = rag_conn.execute("SELECT COUNT(*) FROM articles_meta").fetchone()[0]
         total_pages = max(1, (total_count + EMBED_PAGE_SIZE - 1) // EMBED_PAGE_SIZE)
         page = max(1, min(page, total_pages))
         offset = (page - 1) * EMBED_PAGE_SIZE
@@ -63,16 +66,20 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
     finally:
         rag_conn.close()
 
-    return templates.TemplateResponse(request, "embed_manager.html", {
-        "wiki": wiki,
-        "other_wiki": other_wiki_for_template,
-        "articles": articles,
-        "page": page,
-        "total_pages": total_pages,
-        "total_count": total_count,
-        "per_page": EMBED_PAGE_SIZE,
-        "current_page": "embeddings",
-    })
+    return templates.TemplateResponse(
+        request,
+        "embed_manager.html",
+        {
+            "wiki": wiki,
+            "other_wiki": other_wiki_for_template,
+            "articles": articles,
+            "page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "per_page": EMBED_PAGE_SIZE,
+            "current_page": "embeddings",
+        },
+    )
 
 
 @router.get("/embed-status/{title:path}", response_class=HTMLResponse)
@@ -84,20 +91,22 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
     links_embedded = False
     if rag_conn is not None:
         try:
-            row = rag_conn.execute(
-                "SELECT links_embedded FROM articles_meta WHERE title = ?", (title,)
-            ).fetchone()
+            row = rag_conn.execute("SELECT links_embedded FROM articles_meta WHERE title = ?", (title,)).fetchone()
             embedded = row is not None
             links_embedded = bool(row and row["links_embedded"])
         finally:
             rag_conn.close()
 
-    return templates.TemplateResponse(request, "embed_status_widget.html", {
-        "title": title,
-        "embedded": embedded,
-        "links_embedded": links_embedded,
-        "error": False,
-    })
+    return templates.TemplateResponse(
+        request,
+        "embed_status_widget.html",
+        {
+            "title": title,
+            "embedded": embedded,
+            "links_embedded": links_embedded,
+            "error": False,
+        },
+    )
 
 
 @router.post("/embed-article/{title:path}", response_class=HTMLResponse)
@@ -147,12 +156,16 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
     finally:
         jobs_conn.close()
 
-    return templates.TemplateResponse(request, "embed_status_widget.html", {
-        "title": title,
-        "embedded": not error,
-        "links_embedded": links_embedded,
-        "error": error,
-    })
+    return templates.TemplateResponse(
+        request,
+        "embed_status_widget.html",
+        {
+            "title": title,
+            "embedded": not error,
+            "links_embedded": links_embedded,
+            "error": error,
+        },
+    )
 
 
 @router.post("/embed-links/{title:path}", response_class=HTMLResponse)
@@ -207,7 +220,9 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
         if active is None:
             log_path = str(paths.BASE_DIR / "dumps" / f"{wiki}_embed.log")
             job_id = embed_jobs.create_job(
-                jobs_conn, wiki, log_path,
+                jobs_conn,
+                wiki,
+                log_path,
                 triggered_by_title=source_title,
                 include_links=1,
             )
@@ -237,9 +252,7 @@ def delete_embed(request: Request, wiki: str, title: str) -> Response:
     if rag_conn is None:
         raise HTTPException(status_code=404, detail="No RAG database for this wiki")
     try:
-        meta = rag_conn.execute(
-            "SELECT page_id FROM articles_meta WHERE title = ?", (title,)
-        ).fetchone()
+        meta = rag_conn.execute("SELECT page_id FROM articles_meta WHERE title = ?", (title,)).fetchone()
         if meta is None:
             raise HTTPException(status_code=404, detail=f"Article not embedded: {title}")
         rag_delete_article(rag_conn, meta["page_id"])
@@ -273,9 +286,7 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
 
     wiki_conn = wiki_db.connect(paths.db_path_for(wiki))
     try:
-        row = wiki_conn.execute(
-            "SELECT title FROM articles WHERE title = ?", (title,)
-        ).fetchone()
+        row = wiki_conn.execute("SELECT title FROM articles WHERE title = ?", (title,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail=f"Article not found: {title}")
         canonical_title = row["title"]
@@ -288,7 +299,9 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
         jobs_conn.execute("BEGIN IMMEDIATE")
         log_path = str(paths.BASE_DIR / "dumps" / f"{wiki}_embed.log")
         job_id = embed_jobs.create_job(
-            jobs_conn, wiki, log_path,
+            jobs_conn,
+            wiki,
+            log_path,
             triggered_by_title=canonical_title,
             include_links=0,
         )

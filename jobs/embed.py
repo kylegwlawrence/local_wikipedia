@@ -5,6 +5,7 @@ clicks "Embed + links" on an article. Items are deduped by ``(job_id, title)``
 so multiple clicks on different source articles append to the same active job
 without redundant work.
 """
+
 import pathlib
 import sqlite3
 
@@ -38,10 +39,7 @@ def ensure_embed_schema(conn: sqlite3.Connection) -> None:
             triggered_by_title  TEXT
         )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_embed_jobs_wiki_status "
-        "ON embed_jobs(wiki, status)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_embed_jobs_wiki_status ON embed_jobs(wiki, status)")
     try:
         conn.execute("ALTER TABLE embed_jobs ADD COLUMN triggered_by_title TEXT")
     except sqlite3.OperationalError:
@@ -64,14 +62,12 @@ def ensure_embed_schema(conn: sqlite3.Connection) -> None:
             UNIQUE(job_id, title)
         )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_embed_job_items_job_status "
-        "ON embed_job_items(job_id, status)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_embed_job_items_job_status ON embed_job_items(job_id, status)")
     conn.commit()
 
 
 # --- Jobs --------------------------------------------------------------------
+
 
 def create_job(
     conn: sqlite3.Connection,
@@ -82,8 +78,7 @@ def create_job(
 ) -> int:
     """Insert a new running job and return its id."""
     cur = conn.execute(
-        "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title, include_links) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title, include_links) VALUES (?, ?, ?, ?)",
         (wiki, log_path, triggered_by_title, include_links),
     )
     conn.commit()
@@ -91,9 +86,7 @@ def create_job(
 
 
 def get_job(conn: sqlite3.Connection, job_id: int) -> sqlite3.Row | None:
-    return conn.execute(
-        "SELECT * FROM embed_jobs WHERE id = ?", (job_id,)
-    ).fetchone()
+    return conn.execute("SELECT * FROM embed_jobs WHERE id = ?", (job_id,)).fetchone()
 
 
 def get_active_job(conn: sqlite3.Connection, wiki: str) -> sqlite3.Row | None:
@@ -106,9 +99,7 @@ def get_active_job(conn: sqlite3.Connection, wiki: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
-def get_latest_jobs(
-    conn: sqlite3.Connection, wiki: str, limit: int = 5
-) -> list[sqlite3.Row]:
+def get_latest_jobs(conn: sqlite3.Connection, wiki: str, limit: int = 5) -> list[sqlite3.Row]:
     """Return the most recent jobs for ``wiki`` (any status)."""
     return conn.execute(
         "SELECT * FROM embed_jobs WHERE wiki = ? ORDER BY id DESC LIMIT ?",
@@ -135,8 +126,7 @@ def mark_job(
 def request_cancel(conn: sqlite3.Connection, job_id: int) -> None:
     """Set the cancel_requested flag; the worker checks it between items."""
     conn.execute(
-        "UPDATE embed_jobs SET cancel_requested = 1, "
-        "updated_at = datetime('now') WHERE id = ?",
+        "UPDATE embed_jobs SET cancel_requested = 1, updated_at = datetime('now') WHERE id = ?",
         (job_id,),
     )
     conn.commit()
@@ -182,6 +172,7 @@ def clear_orphaned_jobs(conn: sqlite3.Connection) -> int:
 
 # --- Items -------------------------------------------------------------------
 
+
 def append_items(
     conn: sqlite3.Connection,
     job_id: int,
@@ -201,8 +192,7 @@ def append_items(
     if not items:
         return 0
     cur = conn.executemany(
-        "INSERT OR IGNORE INTO embed_job_items (job_id, title, source_title) "
-        "VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO embed_job_items (job_id, title, source_title) VALUES (?, ?, ?)",
         [(job_id, t, s) for t, s in items],
     )
     conn.commit()
@@ -217,13 +207,10 @@ def get_items(conn: sqlite3.Connection, job_id: int) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def get_next_queued(
-    conn: sqlite3.Connection, job_id: int
-) -> sqlite3.Row | None:
+def get_next_queued(conn: sqlite3.Connection, job_id: int) -> sqlite3.Row | None:
     """Return the oldest queued item for ``job_id``, or None if the queue is empty."""
     return conn.execute(
-        "SELECT * FROM embed_job_items WHERE job_id = ? AND status = 'queued' "
-        "ORDER BY id LIMIT 1",
+        "SELECT * FROM embed_job_items WHERE job_id = ? AND status = 'queued' ORDER BY id LIMIT 1",
         (job_id,),
     ).fetchone()
 
@@ -256,13 +243,10 @@ def update_item(
     conn.commit()
 
 
-def count_items_by_status(
-    conn: sqlite3.Connection, job_id: int
-) -> dict[str, int]:
+def count_items_by_status(conn: sqlite3.Connection, job_id: int) -> dict[str, int]:
     """Return ``{status: count}`` for the items in ``job_id``."""
     rows = conn.execute(
-        "SELECT status, COUNT(*) AS n FROM embed_job_items "
-        "WHERE job_id = ? GROUP BY status",
+        "SELECT status, COUNT(*) AS n FROM embed_job_items WHERE job_id = ? GROUP BY status",
         (job_id,),
     ).fetchall()
     return {r["status"]: r["n"] for r in rows}
@@ -277,9 +261,7 @@ def delete_all_jobs(conn: sqlite3.Connection) -> int:
     return count
 
 
-def get_item_counts_for_jobs(
-    conn: sqlite3.Connection, job_ids: list[int]
-) -> dict[int, dict[str, int]]:
+def get_item_counts_for_jobs(conn: sqlite3.Connection, job_ids: list[int]) -> dict[int, dict[str, int]]:
     """Return ``{job_id: {status: count}}`` for all jobs in ``job_ids``."""
     if not job_ids:
         return {}
@@ -318,9 +300,7 @@ def get_jobs_page(
             where_clauses.append("triggered_by_title LIKE ?")
             params.append(f"%{q}%")
     where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-    total: int = conn.execute(
-        f"SELECT COUNT(*) FROM embed_jobs {where}", params
-    ).fetchone()[0]
+    total: int = conn.execute(f"SELECT COUNT(*) FROM embed_jobs {where}", params).fetchone()[0]
     offset = (page - 1) * per_page
     rows = conn.execute(
         f"SELECT * FROM embed_jobs {where} ORDER BY id DESC LIMIT ? OFFSET ?",

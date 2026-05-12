@@ -6,6 +6,7 @@ browser disconnects. All output goes to a per-wiki log file in dumps/.
 Invoke as ``python -m workers.refresh --wiki WIKI --job-id N`` from the
 project root.
 """
+
 import argparse
 import pathlib
 import sqlite3

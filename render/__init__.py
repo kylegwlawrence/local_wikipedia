@@ -3,6 +3,7 @@
 The public entry point is ``convert_wikitext_to_html``. The underscore-prefixed
 re-exports preserve the old flat-module API used by ``tests/test_render.py``.
 """
+
 from render.blocks import (
     convert_headings as _convert_headings,
     convert_lists as _convert_lists,

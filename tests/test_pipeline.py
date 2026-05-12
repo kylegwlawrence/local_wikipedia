@@ -1,4 +1,5 @@
 """Tests for the parse pipeline (schema, xml_reader, pipeline, verify, cli)."""
+
 import bz2
 import pathlib
 import sqlite3
@@ -168,9 +169,7 @@ class TestParsePageElement:
             text="Article content here",
             namespace=0,
         )
-        root = ET.fromstring(
-            f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>'
-        )
+        root = ET.fromstring(f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>')
         page_elem = root.find("{http://www.mediawiki.org/xml/export-0.11/}page")
 
         article = _parse_page_element(page_elem)
@@ -196,9 +195,7 @@ class TestParsePageElement:
             </revision>
         </page>
         """
-        root = ET.fromstring(
-            f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>'
-        )
+        root = ET.fromstring(f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>')
         page_elem = root.find("{http://www.mediawiki.org/xml/export-0.11/}page")
 
         article = _parse_page_element(page_elem)
@@ -220,9 +217,7 @@ class TestParsePageElement:
             </revision>
         </page>
         """
-        root = ET.fromstring(
-            f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>'
-        )
+        root = ET.fromstring(f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>')
         page_elem = root.find("{http://www.mediawiki.org/xml/export-0.11/}page")
 
         article = _parse_page_element(page_elem)
@@ -236,9 +231,7 @@ class TestParsePageElement:
             text="Discussion",
             namespace=1,  # Talk namespace
         )
-        root = ET.fromstring(
-            f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>'
-        )
+        root = ET.fromstring(f'<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.11/">{xml}</mediawiki>')
         page_elem = root.find("{http://www.mediawiki.org/xml/export-0.11/}page")
 
         article = _parse_page_element(page_elem)
@@ -387,10 +380,7 @@ class TestParseDump:
 
     def test_batch_commits(self, tmp_path: pathlib.Path) -> None:
         # Create dump with more than BATCH_SIZE articles to test batching
-        pages = [
-            {"page_id": i, "title": f"Article {i}", "text": f"Content {i}"}
-            for i in range(BATCH_SIZE + 500)
-        ]
+        pages = [{"page_id": i, "title": f"Article {i}", "text": f"Content {i}"} for i in range(BATCH_SIZE + 500)]
         dump_path = _create_test_dump(tmp_path, pages)
         db_path = tmp_path / "test.db"
 
@@ -421,8 +411,7 @@ class TestParseDump:
         # ET.ParseError at the truncation point.
         ns = "http://www.mediawiki.org/xml/export-0.11/"
         complete_pages = "".join(
-            _minimal_page_xml(page_id=i, title=f"Article {i}", text=f"Content {i}")
-            for i in range(1, 3)
+            _minimal_page_xml(page_id=i, title=f"Article {i}", text=f"Content {i}") for i in range(1, 3)
         )
         # Intentionally omit the closing </mediawiki> tag
         truncated_xml = f'<mediawiki xmlns="{ns}"><siteinfo></siteinfo>{complete_pages}'

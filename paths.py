@@ -1,4 +1,5 @@
 """Project paths, resolved relative to this file (not the working directory)."""
+
 import pathlib
 
 BASE_DIR = pathlib.Path(__file__).parent.resolve()

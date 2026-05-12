@@ -1,4 +1,5 @@
 """Tests for the embed_jobs schema and CRUD helpers."""
+
 from jobs import embed as embed_jobs
 
 
@@ -13,9 +14,7 @@ class TestSchema:
         c1.close()
         c2 = embed_jobs.connect_embed_jobs(tmp_path / "j.db")
         # Schema present:
-        names = {r[0] for r in c2.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
+        names = {r[0] for r in c2.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         assert {"embed_jobs", "embed_job_items"}.issubset(names)
         c2.close()
 
@@ -59,11 +58,15 @@ class TestItems:
     def test_append_items_dedupes(self, tmp_path):
         conn = _conn(tmp_path)
         job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
-        inserted = embed_jobs.append_items(conn, job_id, [
-            ("Apple", "Fruits"),
-            ("Banana", "Fruits"),
-            ("Apple", "OtherSource"),  # duplicate title — should be ignored
-        ])
+        inserted = embed_jobs.append_items(
+            conn,
+            job_id,
+            [
+                ("Apple", "Fruits"),
+                ("Banana", "Fruits"),
+                ("Apple", "OtherSource"),  # duplicate title — should be ignored
+            ],
+        )
         assert inserted == 2
         items = embed_jobs.get_items(conn, job_id)
         assert [i["title"] for i in items] == ["Apple", "Banana"]
@@ -101,13 +104,18 @@ class TestItems:
     def test_count_items_by_status(self, tmp_path):
         conn = _conn(tmp_path)
         job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
-        embed_jobs.append_items(conn, job_id, [
-            ("A", "Src"), ("B", "Src"), ("C", "Src"),
-        ])
+        embed_jobs.append_items(
+            conn,
+            job_id,
+            [
+                ("A", "Src"),
+                ("B", "Src"),
+                ("C", "Src"),
+            ],
+        )
         items = embed_jobs.get_items(conn, job_id)
         embed_jobs.update_item(conn, items[0]["id"], "complete", chunk_count=1)
-        embed_jobs.update_item(conn, items[1]["id"], "failed",
-                               error_message="boom")
+        embed_jobs.update_item(conn, items[1]["id"], "failed", error_message="boom")
 
         counts = embed_jobs.count_items_by_status(conn, job_id)
         assert counts == {"complete": 1, "failed": 1, "queued": 1}

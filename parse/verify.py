@@ -1,4 +1,5 @@
 """Database integrity check used by ``parse --verify-only``."""
+
 import pathlib
 import sqlite3
 from typing import Any

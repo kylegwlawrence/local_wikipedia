@@ -7,6 +7,7 @@ Runs once at app startup before the first request. Two responsibilities:
      rebuild the FTS index synchronously before serving requests so search
      results don't silently return stale titles.
 """
+
 import sqlite3
 import sys
 from contextlib import asynccontextmanager
@@ -24,7 +25,8 @@ def recover_from_crash() -> None:
         if n_refresh:
             print(
                 f"[startup] cleared {n_refresh} orphaned refresh job(s)",
-                file=sys.stderr, flush=True,
+                file=sys.stderr,
+                flush=True,
             )
         dirty_wikis = refresh_jobs.get_fts_dirty_wikis(conn)
     finally:
@@ -36,7 +38,8 @@ def recover_from_crash() -> None:
         if n_embed:
             print(
                 f"[startup] cleared {n_embed} orphaned embed job(s)",
-                file=sys.stderr, flush=True,
+                file=sys.stderr,
+                flush=True,
             )
     finally:
         embed_conn.close()
@@ -55,13 +58,12 @@ def recover_from_crash() -> None:
 
         print(
             f"[startup] FTS index for {wiki} is dirty — rebuilding…",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )
         wiki_conn = sqlite3.connect(db_path)
         try:
-            wiki_conn.execute(
-                "INSERT INTO articles_fts(articles_fts) VALUES('rebuild')"
-            )
+            wiki_conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
             wiki_conn.commit()
         finally:
             wiki_conn.close()

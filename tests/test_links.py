@@ -1,4 +1,5 @@
 """Tests for the wikilink extractor used by the embed-links feature."""
+
 from rag.links import extract_article_links
 
 
@@ -46,24 +47,13 @@ class TestExtractArticleLinks:
     def test_links_inside_templates_are_found(self):
         # mwparserfromhell.filter_wikilinks() descends into templates by
         # default, so infobox/cite/whatever params yield their links too.
-        wt = (
-            "{{Infobox\n"
-            "| field1 = [[Linked from infobox]]\n"
-            "| field2 = plain text\n"
-            "}}\n"
-            "Body links to [[Body link]]."
-        )
+        wt = "{{Infobox\n| field1 = [[Linked from infobox]]\n| field2 = plain text\n}}\nBody links to [[Body link]]."
         result = extract_article_links(wt)
         assert "Linked from infobox" in result
         assert "Body link" in result
 
     def test_links_inside_tables_are_found(self):
-        wt = (
-            "{| class=\"wikitable\"\n"
-            "|-\n"
-            "| [[Cell link]] || plain\n"
-            "|}\n"
-        )
+        wt = '{| class="wikitable"\n|-\n| [[Cell link]] || plain\n|}\n'
         assert extract_article_links(wt) == ["Cell link"]
 
     def test_empty_and_whitespace_returns_empty(self):

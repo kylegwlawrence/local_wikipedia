@@ -4,6 +4,7 @@ Splits raw wikitext into plain-text chunks at section boundaries.
 Uses regex for section detection (much faster than mwparserfromhell.get_sections)
 and mwparserfromhell.strip_code() to convert each section fragment to plain text.
 """
+
 import re
 
 import mwparserfromhell

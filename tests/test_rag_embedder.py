@@ -35,24 +35,21 @@ class TestEmbedText:
         embed_text("test text")
         body = route.calls[0].request.read()
         import json
+
         payload = json.loads(body)
         assert payload["model"] == EMBED_MODEL
         assert payload["prompt"] == "test text"
 
     @respx.mock
     def test_raises_after_all_retries_fail(self):
-        respx.post(f"{OLLAMA_BASE_URL}/api/embeddings").mock(
-            return_value=httpx.Response(503)
-        )
+        respx.post(f"{OLLAMA_BASE_URL}/api/embeddings").mock(return_value=httpx.Response(503))
         with pytest.raises(httpx.HTTPStatusError):
             embed_text("hello")
 
     @respx.mock
     def test_respects_custom_base_url(self):
         custom = "http://remotehost:11434"
-        respx.post(f"{custom}/api/embeddings").mock(
-            return_value=httpx.Response(200, json={"embedding": _FAKE_VEC})
-        )
+        respx.post(f"{custom}/api/embeddings").mock(return_value=httpx.Response(200, json={"embedding": _FAKE_VEC}))
         result = embed_text("hello", base_url=custom)
         assert result == _FAKE_VEC
 
@@ -76,15 +73,14 @@ class TestEmbedTextsBatch:
         )
         embed_texts_batch(texts)
         import json
+
         payload = json.loads(route.calls[0].request.read())
         assert payload["model"] == EMBED_MODEL
         assert payload["input"] == texts
 
     @respx.mock
     def test_raises_after_all_retries_fail(self):
-        respx.post(f"{OLLAMA_BASE_URL}/api/embed").mock(
-            return_value=httpx.Response(503)
-        )
+        respx.post(f"{OLLAMA_BASE_URL}/api/embed").mock(return_value=httpx.Response(503))
         with pytest.raises(httpx.HTTPStatusError):
             embed_texts_batch(["hello"])
 
@@ -100,9 +96,7 @@ class TestEmbedTextsBatch:
     @respx.mock
     def test_respects_custom_base_url(self):
         custom = "http://remotehost:11434"
-        respx.post(f"{custom}/api/embed").mock(
-            return_value=httpx.Response(200, json={"embeddings": _FAKE_VECS[:2]})
-        )
+        respx.post(f"{custom}/api/embed").mock(return_value=httpx.Response(200, json={"embeddings": _FAKE_VECS[:2]}))
         result = embed_texts_batch(["a", "b"], base_url=custom)
         assert result == _FAKE_VECS[:2]
 

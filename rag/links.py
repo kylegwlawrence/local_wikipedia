@@ -9,6 +9,7 @@ into templates (infoboxes, citations, navigation boxes, table cells), so links
 buried inside ``{{infobox}}`` parameters or ``{| ... |}`` tables are included
 without special handling here.
 """
+
 import mwparserfromhell
 
 from db import normalize_title
@@ -17,11 +18,26 @@ from db import normalize_title
 # these prefixes is skipped. The list covers the common-and-confusing cases
 # across enwiki, simplewiki, and most language editions.
 _NAMESPACE_PREFIXES: tuple[str, ...] = (
-    "Category:", "File:", "Image:", "Media:",
-    "Help:", "User:", "User talk:", "Talk:",
-    "Wikipedia:", "WP:", "Template:", "Template talk:",
-    "Portal:", "Special:", "Module:", "MediaWiki:",
-    "Book:", "Draft:", "TimedText:", "Education Program:",
+    "Category:",
+    "File:",
+    "Image:",
+    "Media:",
+    "Help:",
+    "User:",
+    "User talk:",
+    "Talk:",
+    "Wikipedia:",
+    "WP:",
+    "Template:",
+    "Template talk:",
+    "Portal:",
+    "Special:",
+    "Module:",
+    "MediaWiki:",
+    "Book:",
+    "Draft:",
+    "TimedText:",
+    "Education Program:",
 )
 
 

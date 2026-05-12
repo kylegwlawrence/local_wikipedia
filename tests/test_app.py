@@ -8,6 +8,7 @@ Wikipedia dump to be parsed first.
 Shared fixtures (``client``, ``embed_client``, ``crash_recovery_env``,
 ``wiki_db_path``) live in ``tests/conftest.py``.
 """
+
 from fastapi.testclient import TestClient
 
 import app as web_app
@@ -187,7 +188,8 @@ class TestEmbedLinks:
 
     def test_404_for_unknown_source(self, embed_client):
         resp = embed_client.post(
-            "/embed-links/NoSuchArticle", follow_redirects=False,
+            "/embed-links/NoSuchArticle",
+            follow_redirects=False,
         )
         assert resp.status_code == 404
 
@@ -224,6 +226,7 @@ class TestEmbedLinks:
         # the queue, not the redirect stub title.
         import os
         import sqlite3
+
         c = sqlite3.connect(os.environ["WIKI_DB"])
         c.execute(
             "INSERT INTO articles (page_id, title, namespace, revision_id, "
@@ -235,16 +238,21 @@ class TestEmbedLinks:
         c.close()
 
         resp = embed_client.post(
-            "/embed-links/LinkerArticle", follow_redirects=False,
+            "/embed-links/LinkerArticle",
+            follow_redirects=False,
         )
         assert resp.status_code == 303
 
         conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
         try:
             job = embed_client.embed_jobs.get_active_job(conn, "enwiki")
-            titles = [r["title"] for r in embed_client.embed_jobs.get_items(
-                conn, job["id"],
-            )]
+            titles = [
+                r["title"]
+                for r in embed_client.embed_jobs.get_items(
+                    conn,
+                    job["id"],
+                )
+            ]
             # 'Apples' is a redirect to 'Apple'; canonical 'Apple' should appear.
             assert "Apple" in titles
             assert "Apples" not in titles
@@ -294,9 +302,7 @@ class TestEmbedStatusWidget:
         assert "Embed + links" in resp.text
         assert "links embedded" not in resp.text
 
-    def test_shows_links_embedded_badge_after_complete_job(
-        self, embed_client, tmp_path, monkeypatch
-    ):
+    def test_shows_links_embedded_badge_after_complete_job(self, embed_client, tmp_path, monkeypatch):
         from rag.schema import connect_rag
 
         # Create a RAG DB with April marked as links_embedded=1.
@@ -312,6 +318,7 @@ class TestEmbedStatusWidget:
         rag_conn.close()
 
         import paths
+
         monkeypatch.setattr(paths, "rag_db_path_for", lambda wiki: rag_path)
 
         resp = embed_client.get("/embed-status/April")
@@ -411,13 +418,11 @@ class TestCrashRecovery:
             )
             job_id = cur.lastrowid
             conn.execute(
-                "INSERT INTO embed_job_items (job_id, title, source_title, status) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO embed_job_items (job_id, title, source_title, status) VALUES (?, ?, ?, ?)",
                 (job_id, "April", "April", "in_progress"),
             )
             conn.execute(
-                "INSERT INTO embed_job_items (job_id, title, source_title, status) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO embed_job_items (job_id, title, source_title, status) VALUES (?, ?, ?, ?)",
                 (job_id, "Apple", "April", "queued"),
             )
             conn.commit()
@@ -493,8 +498,7 @@ class TestCrashRecovery:
                 ("enwiki", "complete"),
             )
             conn.execute(
-                "INSERT INTO refresh_jobs (wiki, status, error_message) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO refresh_jobs (wiki, status, error_message) VALUES (?, ?, ?)",
                 ("enwiki", "failed", "earlier failure"),
             )
             conn.commit()
@@ -506,9 +510,7 @@ class TestCrashRecovery:
 
         conn = jobs.connect_jobs(crash_recovery_env["jobs_db"])
         try:
-            rows = conn.execute(
-                "SELECT status, error_message FROM refresh_jobs ORDER BY id"
-            ).fetchall()
+            rows = conn.execute("SELECT status, error_message FROM refresh_jobs ORDER BY id").fetchall()
         finally:
             conn.close()
         assert rows[0]["status"] == "complete"

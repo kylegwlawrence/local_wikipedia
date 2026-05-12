@@ -4,6 +4,7 @@ Dense search uses sqlite-vec ANN on chunk embeddings.
 Sparse search uses FTS5 BM25 on chunk text.
 Results are merged with Reciprocal Rank Fusion (RRF).
 """
+
 import sqlite3
 from dataclasses import dataclass
 from typing import NamedTuple

@@ -1,4 +1,5 @@
 """Stream a bz2 XML dump into SQLite."""
+
 import bz2
 import os
 import pathlib
@@ -16,9 +17,7 @@ BATCH_SIZE = 1000
 NAMESPACE_MAIN = 0
 
 
-def _batch_insert_articles(
-    conn: sqlite3.Connection, articles: list[dict[str, Any]]
-) -> None:
+def _batch_insert_articles(conn: sqlite3.Connection, articles: list[dict[str, Any]]) -> None:
     """Insert a batch of articles using ``executemany``."""
     if not articles:
         return
@@ -122,8 +121,7 @@ def parse_dump(
 
         if truncated:
             print(
-                f"Warning: dump truncated — saving {articles_inserted:,} articles "
-                "parsed before end of file",
+                f"Warning: dump truncated — saving {articles_inserted:,} articles parsed before end of file",
                 flush=True,
             )
 

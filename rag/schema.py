@@ -3,6 +3,7 @@
 All connections to the RAG database must go through ``connect_rag`` so that
 the sqlite-vec extension is loaded before any queries run.
 """
+
 import pathlib
 import sqlite3
 
@@ -84,9 +85,9 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
 
     # Migrate existing databases: add new columns if absent.
     _col_migrations = [
-        ("embedded_at",        "ALTER TABLE articles_meta ADD COLUMN embedded_at TEXT"),
+        ("embedded_at", "ALTER TABLE articles_meta ADD COLUMN embedded_at TEXT"),
         ("article_size_bytes", "ALTER TABLE articles_meta ADD COLUMN article_size_bytes INTEGER"),
-        ("links_embedded",     "ALTER TABLE articles_meta ADD COLUMN links_embedded INTEGER NOT NULL DEFAULT 0"),
+        ("links_embedded", "ALTER TABLE articles_meta ADD COLUMN links_embedded INTEGER NOT NULL DEFAULT 0"),
     ]
     for col_name, sql in _col_migrations:
         try:

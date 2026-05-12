@@ -6,6 +6,7 @@ operates on the live database in-place. For each article in the dump it:
   - archives the old row then updates if revision_id differs,
   - inserts if the page_id is new.
 """
+
 import bz2
 import pathlib
 import sqlite3
@@ -76,9 +77,7 @@ def refresh_dump(
     if not dump_path.exists():
         raise RuntimeError(f"Dump file not found: {dump_path}")
     if not db_path.exists():
-        raise RuntimeError(
-            f"Database not found: {db_path}. Run the initial parse first."
-        )
+        raise RuntimeError(f"Database not found: {db_path}. Run the initial parse first.")
 
     wiki_conn = sqlite3.connect(db_path)
     jobs_conn = refresh_jobs.connect_jobs(jobs_db_path)
@@ -106,8 +105,7 @@ def refresh_dump(
             page_ids = [a["page_id"] for a in staging]
             existing: dict[int, int] = dict(
                 wiki_conn.execute(
-                    f"SELECT page_id, revision_id FROM articles "
-                    f"WHERE page_id IN ({placeholders})",
+                    f"SELECT page_id, revision_id FROM articles WHERE page_id IN ({placeholders})",
                     page_ids,
                 ).fetchall()
             )
@@ -172,8 +170,7 @@ def refresh_dump(
 
         if truncated:
             print(
-                f"Warning: dump truncated — saving {stats['scanned']:,} articles "
-                "processed before end of file",
+                f"Warning: dump truncated — saving {stats['scanned']:,} articles processed before end of file",
                 flush=True,
             )
 

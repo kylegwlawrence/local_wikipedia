@@ -7,6 +7,7 @@ Downloads the KaTeX release tarball from GitHub and extracts only the files
 needed by the web app (CSS, JS, fonts) into static/katex/. After this runs
 the app requires no internet connection to render mathematical formulas.
 """
+
 import argparse
 import io
 import os
@@ -20,10 +21,7 @@ import httpx
 from paths import BASE_DIR
 
 KATEX_VERSION = "0.16.11"
-TARBALL_URL = (
-    f"https://github.com/KaTeX/KaTeX/releases/download/"
-    f"v{KATEX_VERSION}/katex.tar.gz"
-)
+TARBALL_URL = f"https://github.com/KaTeX/KaTeX/releases/download/v{KATEX_VERSION}/katex.tar.gz"
 
 DEST_DIR = BASE_DIR / "static" / "katex"
 

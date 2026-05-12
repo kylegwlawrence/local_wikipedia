@@ -1,4 +1,5 @@
 """Ollama embedding calls for the RAG pipeline."""
+
 import asyncio
 import struct
 import time
@@ -30,7 +31,7 @@ def embed_text(text: str, base_url: str = OLLAMA_BASE_URL) -> list[float]:
     """
     for attempt in range(_MAX_ATTEMPTS):
         if attempt:
-            time.sleep(_BACKOFF_BASE ** attempt)
+            time.sleep(_BACKOFF_BASE**attempt)
         try:
             with httpx.Client(timeout=30.0) as client:
                 resp = client.post(
@@ -61,7 +62,7 @@ async def embed_text_async(text: str, base_url: str = OLLAMA_BASE_URL) -> list[f
     """
     for attempt in range(_MAX_ATTEMPTS):
         if attempt:
-            await asyncio.sleep(_BACKOFF_BASE ** attempt)
+            await asyncio.sleep(_BACKOFF_BASE**attempt)
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
@@ -93,7 +94,7 @@ def embed_texts_batch(texts: list[str], base_url: str = OLLAMA_BASE_URL) -> list
     """
     for attempt in range(_MAX_ATTEMPTS):
         if attempt:
-            time.sleep(_BACKOFF_BASE ** attempt)
+            time.sleep(_BACKOFF_BASE**attempt)
         try:
             with httpx.Client(timeout=120.0) as client:
                 resp = client.post(

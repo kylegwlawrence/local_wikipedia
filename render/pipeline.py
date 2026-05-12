@@ -13,6 +13,7 @@ The pipeline is a fixed sequence of stages whose order is load-bearing:
   8. restore code/math from placeholders
   9. whitespace cleanup
 """
+
 import html as _html
 import re
 

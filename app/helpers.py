@@ -3,6 +3,7 @@
 These don't manage application lifecycle and depend only on their arguments
 (plus module-level constants from ``app.config`` and the ``paths`` module).
 """
+
 import sqlite3
 import subprocess
 import sys
@@ -46,15 +47,13 @@ def search_titles(q: str, request: Request) -> list[str]:
         if len(q) < 3:
             needle = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             cur = conn.execute(
-                "SELECT title FROM articles WHERE title LIKE ? ESCAPE '\\' "
-                "ORDER BY title LIMIT ?",
+                "SELECT title FROM articles WHERE title LIKE ? ESCAPE '\\' ORDER BY title LIMIT ?",
                 (needle + "%", SEARCH_LIMIT),
             )
             return [r["title"] for r in cur.fetchall()]
 
         cur = conn.execute(
-            "SELECT title FROM articles_fts WHERE articles_fts MATCH ? "
-            "ORDER BY rank LIMIT ?",
+            "SELECT title FROM articles_fts WHERE articles_fts MATCH ? ORDER BY rank LIMIT ?",
             (escape_fts5(q), SEARCH_LIMIT),
         )
         return [r["title"] for r in cur.fetchall()]
@@ -62,9 +61,7 @@ def search_titles(q: str, request: Request) -> list[str]:
         conn.close()
 
 
-def fetch_article(
-    title: str, request: Request
-) -> tuple[sqlite3.Row | None, str | None]:
+def fetch_article(title: str, request: Request) -> tuple[sqlite3.Row | None, str | None]:
     """Look up an article by title, following ``#REDIRECT`` chains.
 
     A third of the rows in a typical enwiki dump are redirect stubs whose
@@ -83,8 +80,7 @@ def fetch_article(
                 break  # cycle
             seen.add(title)
             cur = conn.execute(
-                "SELECT title, text_content, text_bytes, timestamp "
-                "FROM articles WHERE title = ?",
+                "SELECT title, text_content, text_bytes, timestamp FROM articles WHERE title = ?",
                 (title,),
             )
             row = cur.fetchone()

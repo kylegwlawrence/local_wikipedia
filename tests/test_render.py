@@ -1,4 +1,5 @@
 """Tests for render.py (wikitext → HTML converter)."""
+
 from render import (
     _clean_extra_markup,
     _convert_bold_italic,
@@ -275,16 +276,7 @@ class TestParseCell:
 
 class TestConvertTables:
     def test_basic_table_with_headers(self) -> None:
-        wikitext = (
-            "{| class=\"wikitable\"\n"
-            "|-\n"
-            "! Name !! Age\n"
-            "|-\n"
-            "| Alice || 30\n"
-            "|-\n"
-            "| Bob || 25\n"
-            "|}"
-        )
+        wikitext = '{| class="wikitable"\n|-\n! Name !! Age\n|-\n| Alice || 30\n|-\n| Bob || 25\n|}'
         result = _convert_tables(wikitext)
         assert "<table" in result
         assert "<thead>" in result
@@ -298,14 +290,7 @@ class TestConvertTables:
         assert "</table>" in result
 
     def test_table_without_explicit_headers(self) -> None:
-        wikitext = (
-            "{|\n"
-            "|-\n"
-            "| A || B\n"
-            "|-\n"
-            "| C || D\n"
-            "|}"
-        )
+        wikitext = "{|\n|-\n| A || B\n|-\n| C || D\n|}"
         result = _convert_tables(wikitext)
         # First data row becomes the header
         assert "<thead>" in result
@@ -316,68 +301,33 @@ class TestConvertTables:
         assert "<td>D</td>" in result
 
     def test_caption_is_preserved(self) -> None:
-        wikitext = (
-            "{|\n"
-            "|+ My Caption\n"
-            "|-\n"
-            "! H1\n"
-            "|-\n"
-            "| D1\n"
-            "|}"
-        )
+        wikitext = "{|\n|+ My Caption\n|-\n! H1\n|-\n| D1\n|}"
         result = _convert_tables(wikitext)
         assert "<caption>My Caption</caption>" in result
         assert "<th>H1</th>" in result
 
     def test_cell_attributes_parsed(self) -> None:
-        wikitext = (
-            "{|\n"
-            "|-\n"
-            '! style="width:50%" | Name\n'
-            "|-\n"
-            '| align="center" | Alice\n'
-            "|}"
-        )
+        wikitext = '{|\n|-\n! style="width:50%" | Name\n|-\n| align="center" | Alice\n|}'
         result = _convert_tables(wikitext)
         assert "Name" in result
         assert "Alice" in result
         assert 'class="align-center"' in result
 
     def test_colspan_attribute(self) -> None:
-        wikitext = (
-            "{|\n"
-            "|-\n"
-            "! colspan=2 | Header\n"
-            "|-\n"
-            "| A || B\n"
-            "|}"
-        )
+        wikitext = "{|\n|-\n! colspan=2 | Header\n|-\n| A || B\n|}"
         result = _convert_tables(wikitext)
         assert 'colspan="2"' in result
         assert "<th" in result
 
     def test_cells_on_separate_lines(self) -> None:
-        wikitext = (
-            "{|\n"
-            "|-\n"
-            "! Header 1 !! Header 2\n"
-            "|-\n"
-            "| Cell 1\n"
-            "| Cell 2\n"
-            "| Cell 3\n"
-            "|}"
-        )
+        wikitext = "{|\n|-\n! Header 1 !! Header 2\n|-\n| Cell 1\n| Cell 2\n| Cell 3\n|}"
         result = _convert_tables(wikitext)
         assert "<td>Cell 1</td>" in result
         assert "<td>Cell 2</td>" in result
         assert "<td>Cell 3</td>" in result
 
     def test_multiple_tables(self) -> None:
-        wikitext = (
-            "{|\n|-\n! A\n|-\n| 1\n|}\n"
-            "Some text\n"
-            "{|\n|-\n! B\n|-\n| 2\n|}"
-        )
+        wikitext = "{|\n|-\n! A\n|-\n| 1\n|}\nSome text\n{|\n|-\n! B\n|-\n| 2\n|}"
         result = _convert_tables(wikitext)
         assert "<th>A</th>" in result
         assert "<th>B</th>" in result
@@ -397,14 +347,7 @@ class TestConvertTables:
         assert _convert_tables(text) == text
 
     def test_colon_prefixed_table_is_converted(self) -> None:
-        wikitext = (
-            ':{| class="wikitable"\n'
-            "|-\n"
-            "! Name !! Value\n"
-            "|-\n"
-            "| Foo || Bar\n"
-            "|}"
-        )
+        wikitext = ':{| class="wikitable"\n|-\n! Name !! Value\n|-\n| Foo || Bar\n|}'
         result = _convert_tables(wikitext)
         assert "<th>Name</th>" in result
         assert "<th>Value</th>" in result
@@ -413,7 +356,7 @@ class TestConvertTables:
 
     def test_full_conversion_renders_table_links(self) -> None:
         wikitext = (
-            "{| class=\"wikitable\"\n"
+            '{| class="wikitable"\n'
             "|-\n"
             "! Language !! Creator\n"
             "|-\n"
@@ -427,12 +370,7 @@ class TestConvertTables:
         assert ">Guido van Rossum</a>" in result
 
     def test_full_conversion_renders_table_bold(self) -> None:
-        wikitext = (
-            "{|\n"
-            "|-\n"
-            "| '''bold cell''' || normal cell\n"
-            "|}"
-        )
+        wikitext = "{|\n|-\n| '''bold cell''' || normal cell\n|}"
         result = convert_wikitext_to_html(wikitext)
         assert "<strong>bold cell</strong>" in result
 
@@ -648,9 +586,7 @@ class TestMathRendering:
         assert "\\(\\sigma\\)" in result
 
     def test_multiple_inline_formulas(self) -> None:
-        result = convert_wikitext_to_html(
-            "When <math>\\mu = 0</math> and <math>\\sigma = 1</math>."
-        )
+        result = convert_wikitext_to_html("When <math>\\mu = 0</math> and <math>\\sigma = 1</math>.")
         assert result.count("\\(") == 2
         assert result.count("\\)") == 2
         assert "\\mu = 0" in result
@@ -703,11 +639,11 @@ class TestMathRendering:
 
     def test_indicator_variants(self) -> None:
         # Test various template name variants
-        assert 'indicator-yes' in convert_wikitext_to_html("{{tick}}")
-        assert 'indicator-yes' in convert_wikitext_to_html("{{checked}}")
-        assert 'indicator-no' in convert_wikitext_to_html("{{cross}}")
-        assert 'indicator-unknown' in convert_wikitext_to_html("{{dunno}}")
-        assert 'indicator-na' in convert_wikitext_to_html("{{n/a}}")
+        assert "indicator-yes" in convert_wikitext_to_html("{{tick}}")
+        assert "indicator-yes" in convert_wikitext_to_html("{{checked}}")
+        assert "indicator-no" in convert_wikitext_to_html("{{cross}}")
+        assert "indicator-unknown" in convert_wikitext_to_html("{{dunno}}")
+        assert "indicator-na" in convert_wikitext_to_html("{{n/a}}")
 
 
 class TestSectionLinkTemplates:
@@ -738,170 +674,149 @@ class TestSectionLinkTemplates:
 class TestReflistTemplate:
     def test_reflist_with_cite_web(self) -> None:
         wikitext = (
-            '{{Reflist|2|refs=\n'
-            '<ref name=Foo>{{cite web|title=Some Article|url=https://example.com|date=2020}}</ref>\n'
-            '}}'
+            "{{Reflist|2|refs=\n"
+            "<ref name=Foo>{{cite web|title=Some Article|url=https://example.com|date=2020}}</ref>\n"
+            "}}"
         )
         result = convert_wikitext_to_html(wikitext)
         assert '<ol class="references">' in result
-        assert 'Some Article' in result
+        assert "Some Article" in result
         assert 'href="https://example.com"' in result
-        assert '2020' in result
+        assert "2020" in result
 
     def test_reflist_multiple_refs(self) -> None:
         wikitext = (
-            '{{Reflist|refs=\n'
-            '<ref name=A>{{cite web|title=First|url=https://first.com}}</ref>\n'
-            '<ref name=B>{{cite web|title=Second|url=https://second.com}}</ref>\n'
-            '}}'
+            "{{Reflist|refs=\n"
+            "<ref name=A>{{cite web|title=First|url=https://first.com}}</ref>\n"
+            "<ref name=B>{{cite web|title=Second|url=https://second.com}}</ref>\n"
+            "}}"
         )
         result = convert_wikitext_to_html(wikitext)
-        assert 'First' in result
-        assert 'Second' in result
+        assert "First" in result
+        assert "Second" in result
         assert 'href="https://first.com"' in result
         assert 'href="https://second.com"' in result
 
     def test_reflist_without_refs_param_removed(self) -> None:
         """Plain {{Reflist}} with no refs= is silently removed."""
-        result = convert_wikitext_to_html('Some text.\n{{Reflist}}\nMore text.')
-        assert '{{Reflist}}' not in result
-        assert 'Some text.' in result
+        result = convert_wikitext_to_html("Some text.\n{{Reflist}}\nMore text.")
+        assert "{{Reflist}}" not in result
+        assert "Some text." in result
 
     def test_reflist_ref_ids(self) -> None:
         """Each <li> gets an id so anchor links can target it."""
-        wikitext = (
-            '{{Reflist|refs=\n'
-            '<ref name=MyRef>{{cite web|title=Target|url=https://x.com}}</ref>\n'
-            '}}'
-        )
+        wikitext = "{{Reflist|refs=\n<ref name=MyRef>{{cite web|title=Target|url=https://x.com}}</ref>\n}}"
         result = convert_wikitext_to_html(wikitext)
         assert 'id="ref_MyRef"' in result
 
 
 class TestInlineRefCollection:
     def test_unnamed_inline_ref_rendered(self) -> None:
-        wikitext = (
-            'Text.<ref>{{cite book |last=Smith |title=Foo |date=2020}}</ref>\n'
-            '{{Reflist}}'
-        )
+        wikitext = "Text.<ref>{{cite book |last=Smith |title=Foo |date=2020}}</ref>\n{{Reflist}}"
         result = convert_wikitext_to_html(wikitext)
         assert '<ol class="references">' in result
-        assert 'Smith' in result
-        assert '<em>Foo</em>' in result
-        assert '2020' in result
+        assert "Smith" in result
+        assert "<em>Foo</em>" in result
+        assert "2020" in result
 
     def test_named_inline_ref_rendered(self) -> None:
         wikitext = (
-            'Text.<ref name="Ballou2008">{{cite book |last=Ballou |title=Handbook |date=2008}}</ref>\n'
-            '{{Reflist}}'
+            'Text.<ref name="Ballou2008">{{cite book |last=Ballou |title=Handbook |date=2008}}</ref>\n{{Reflist}}'
         )
         result = convert_wikitext_to_html(wikitext)
         assert '<ol class="references">' in result
         assert 'id="ref_Ballou2008"' in result
-        assert 'Ballou' in result
+        assert "Ballou" in result
 
     def test_named_ref_appears_multiple_times(self) -> None:
         """Named ref with content appearing twice in the body renders twice."""
         wikitext = (
             'First.<ref name="A">{{cite book |title=Alpha |date=2021}}</ref> '
             'Second.<ref name="A">{{cite book |title=Alpha |date=2021}}</ref>\n'
-            '{{Reflist}}'
+            "{{Reflist}}"
         )
         result = convert_wikitext_to_html(wikitext)
-        assert result.count('Alpha') == 2
+        assert result.count("Alpha") == 2
 
     def test_back_ref_not_collected(self) -> None:
-        wikitext = (
-            'First.<ref name="B">{{cite book |title=Beta |date=2022}}</ref> '
-            'Second.<ref name="B"/>\n'
-            '{{Reflist}}'
-        )
+        wikitext = 'First.<ref name="B">{{cite book |title=Beta |date=2022}}</ref> Second.<ref name="B"/>\n{{Reflist}}'
         result = convert_wikitext_to_html(wikitext)
-        assert result.count('Beta') == 1
+        assert result.count("Beta") == 1
 
     def test_multiple_mixed_refs(self) -> None:
         wikitext = (
-            'A.<ref>{{cite book |title=Unnamed1 |date=2001}}</ref> '
+            "A.<ref>{{cite book |title=Unnamed1 |date=2001}}</ref> "
             'B.<ref name="Named">{{cite book |title=Named1 |date=2002}}</ref> '
-            'C.<ref>{{cite book |title=Unnamed2 |date=2003}}</ref>\n'
-            '{{Reflist}}'
+            "C.<ref>{{cite book |title=Unnamed2 |date=2003}}</ref>\n"
+            "{{Reflist}}"
         )
         result = convert_wikitext_to_html(wikitext)
-        assert 'Unnamed1' in result
-        assert 'Named1' in result
-        assert 'Unnamed2' in result
-        assert result.count('<li') >= 3
+        assert "Unnamed1" in result
+        assert "Named1" in result
+        assert "Unnamed2" in result
+        assert result.count("<li") >= 3
 
     def test_plain_text_ref_fallback(self) -> None:
-        wikitext = (
-            'Text.<ref>A plain-text footnote without a template.</ref>\n'
-            '{{Reflist}}'
-        )
+        wikitext = "Text.<ref>A plain-text footnote without a template.</ref>\n{{Reflist}}"
         result = convert_wikitext_to_html(wikitext)
-        assert 'plain-text footnote' in result
+        assert "plain-text footnote" in result
         assert '<ol class="references">' in result
 
     def test_bare_reflist_no_inline_refs_still_silent(self) -> None:
-        result = convert_wikitext_to_html('Some text.\n{{Reflist}}\nMore text.')
+        result = convert_wikitext_to_html("Some text.\n{{Reflist}}\nMore text.")
         assert '<ol class="references">' not in result
-        assert '{{Reflist}}' not in result
+        assert "{{Reflist}}" not in result
 
     def test_reflist_refs_param_unaffected(self) -> None:
         wikitext = (
-            '{{Reflist|refs=\n'
-            '<ref name=Foo>{{cite web|title=ExplicitRef|url=https://ex.com|date=2020}}</ref>\n'
-            '}}'
+            "{{Reflist|refs=\n<ref name=Foo>{{cite web|title=ExplicitRef|url=https://ex.com|date=2020}}</ref>\n}}"
         )
         result = convert_wikitext_to_html(wikitext)
         assert '<ol class="references">' in result
-        assert 'ExplicitRef' in result
+        assert "ExplicitRef" in result
         assert 'href="https://ex.com"' in result
 
     def test_unnamed_ref_id_is_numeric(self) -> None:
         wikitext = (
-            'A.<ref>{{cite book |title=First |date=2001}}</ref> '
-            'B.<ref>{{cite book |title=Second |date=2002}}</ref>\n'
-            '{{Reflist}}'
+            "A.<ref>{{cite book |title=First |date=2001}}</ref> "
+            "B.<ref>{{cite book |title=Second |date=2002}}</ref>\n"
+            "{{Reflist}}"
         )
         result = convert_wikitext_to_html(wikitext)
         assert 'id="ref_1"' in result
         assert 'id="ref_2"' in result
 
     def test_no_reflist_inline_refs_stripped(self) -> None:
-        wikitext = 'Text.<ref>{{cite book |title=Gone |date=2020}}</ref> More text.'
+        wikitext = "Text.<ref>{{cite book |title=Gone |date=2020}}</ref> More text."
         result = convert_wikitext_to_html(wikitext)
-        assert '<ref>' not in result
-        assert 'Gone' not in result
+        assert "<ref>" not in result
+        assert "Gone" not in result
 
 
 class TestStripExternalLinksSection:
     def test_removes_external_links_section(self) -> None:
-        wikitext = 'Intro text.\n\n== External links ==\n* [http://example.com Example]\n'
+        wikitext = "Intro text.\n\n== External links ==\n* [http://example.com Example]\n"
         result = convert_wikitext_to_html(wikitext)
-        assert 'External links' not in result
-        assert 'example.com' not in result
-        assert 'Intro text' in result
+        assert "External links" not in result
+        assert "example.com" not in result
+        assert "Intro text" in result
 
     def test_preserves_content_after_section(self) -> None:
-        wikitext = (
-            'Intro.\n\n'
-            '== External links ==\n* [http://example.com Example]\n\n'
-            '== See also ==\n* [[Python]]\n'
-        )
+        wikitext = "Intro.\n\n== External links ==\n* [http://example.com Example]\n\n== See also ==\n* [[Python]]\n"
         result = convert_wikitext_to_html(wikitext)
-        assert 'External links' not in result
-        assert 'See also' in result
+        assert "External links" not in result
+        assert "See also" in result
 
     def test_case_insensitive(self) -> None:
-        wikitext = 'Intro.\n\n== external links ==\n* [http://example.com Example]\n'
+        wikitext = "Intro.\n\n== external links ==\n* [http://example.com Example]\n"
         result = convert_wikitext_to_html(wikitext)
-        assert 'external links' not in result
+        assert "external links" not in result
 
     def test_no_external_links_section_unchanged(self) -> None:
-        wikitext = '== History ==\nSome history text.\n'
+        wikitext = "== History ==\nSome history text.\n"
         result = convert_wikitext_to_html(wikitext)
-        assert 'History' in result
-        assert 'history text' in result
+        assert "History" in result
+        assert "history text" in result
 
 
 class TestTableTemplateHandlers:
@@ -909,8 +824,8 @@ class TestTableTemplateHandlers:
 
     def test_rn_template_standalone(self) -> None:
         result = convert_wikitext_to_html("{{rn|VII}}")
-        assert 'font-variant:small-caps' in result
-        assert 'VII' in result
+        assert "font-variant:small-caps" in result
+        assert "VII" in result
 
     def test_rn_template_in_table_cell(self) -> None:
         wikitext = """{| class="wikitable"
@@ -921,9 +836,9 @@ class TestTableTemplateHandlers:
 | 4 || {{rn|IV}}
 |}"""
         result = convert_wikitext_to_html(wikitext)
-        assert 'font-variant:small-caps' in result
-        assert '>I<' in result
-        assert '>IV<' in result
+        assert "font-variant:small-caps" in result
+        assert ">I<" in result
+        assert ">IV<" in result
 
     def test_rn_individual_decimal_places_table(self) -> None:
         wikitext = """{| class="wikitable"
@@ -936,94 +851,94 @@ class TestTableTemplateHandlers:
 | 2 || {{rn|MM}} || {{rn|CC}} || {{rn|XX}} || {{rn|II}}
 |}"""
         result = convert_wikitext_to_html(wikitext)
-        assert '>M<' in result
-        assert '>C<' in result
-        assert '>X<' in result
-        assert '>I<' in result
-        assert '>MM<' in result
+        assert ">M<" in result
+        assert ">C<" in result
+        assert ">X<" in result
+        assert ">I<" in result
+        assert ">MM<" in result
 
     def test_nowrap_template(self) -> None:
         result = convert_wikitext_to_html("{{nowrap|hello world}}")
-        assert 'white-space:nowrap' in result
-        assert 'hello world' in result
+        assert "white-space:nowrap" in result
+        assert "hello world" in result
 
     def test_ipa_template(self) -> None:
         result = convert_wikitext_to_html("{{ipa|/ˈɪŋɡlɪʃ/}}")
-        assert '/ˈɪŋɡlɪʃ/' in result
+        assert "/ˈɪŋɡlɪʃ/" in result
 
     def test_ipac_en_template(self) -> None:
         result = convert_wikitext_to_html("{{ipac-en|ˈɪŋɡlɪʃ}}")
-        assert 'ˈɪŋɡlɪʃ' in result
+        assert "ˈɪŋɡlɪʃ" in result
 
     def test_nts_template(self) -> None:
         result = convert_wikitext_to_html("{{nts|42}}")
-        assert '42' in result
+        assert "42" in result
 
     def test_sort_template_shows_display(self) -> None:
         result = convert_wikitext_to_html("{{sort|000123|123 km}}")
-        assert '123 km' in result
+        assert "123 km" in result
 
     def test_sort_template_single_arg(self) -> None:
         result = convert_wikitext_to_html("{{sort|abc}}")
-        assert 'abc' in result
+        assert "abc" in result
 
     def test_sortname_template(self) -> None:
         result = convert_wikitext_to_html("{{sortname|John|Smith}}")
-        assert 'John Smith' in result
+        assert "John Smith" in result
 
     def test_tooltip_template(self) -> None:
         result = convert_wikitext_to_html("{{tooltip|NATO|North Atlantic Treaty Organization}}")
-        assert '<abbr' in result
-        assert 'North Atlantic Treaty Organization' in result
-        assert 'NATO' in result
+        assert "<abbr" in result
+        assert "North Atlantic Treaty Organization" in result
+        assert "NATO" in result
 
     def test_flag_template_shows_country(self) -> None:
         result = convert_wikitext_to_html("{{flag|France}}")
-        assert 'France' in result
+        assert "France" in result
 
     def test_flagicon_template_removed(self) -> None:
         result = convert_wikitext_to_html("Gold {{flagicon|USA}} {{sortname|Michael|Phelps}}")
-        assert 'flagicon' not in result
-        assert 'Michael Phelps' in result
+        assert "flagicon" not in result
+        assert "Michael Phelps" in result
 
     def test_dts_year_month_day(self) -> None:
         result = convert_wikitext_to_html("{{dts|2023|1|15}}")
-        assert 'January 15, 2023' in result
+        assert "January 15, 2023" in result
 
     def test_dts_year_month(self) -> None:
         result = convert_wikitext_to_html("{{dts|2023|3}}")
-        assert 'March 2023' in result
+        assert "March 2023" in result
 
     def test_dts_year_only(self) -> None:
         result = convert_wikitext_to_html("{{dts|2023}}")
-        assert '2023' in result
+        assert "2023" in result
 
     def test_increasenegative_indicator(self) -> None:
         result = convert_wikitext_to_html("{{increasenegative}}")
-        assert '▲' in result
-        assert 'indicator-increase-negative' in result
+        assert "▲" in result
+        assert "indicator-increase-negative" in result
 
     def test_decreasepositive_indicator(self) -> None:
         result = convert_wikitext_to_html("{{decreasepositive}}")
-        assert '▼' in result
-        assert 'indicator-decrease-positive' in result
+        assert "▼" in result
+        assert "indicator-decrease-positive" in result
 
     def test_frac_two_args(self) -> None:
         result = convert_wikitext_to_html("{{frac|1|1728}}")
-        assert '1' in result
-        assert '1728' in result
-        assert '⁄' in result
+        assert "1" in result
+        assert "1728" in result
+        assert "⁄" in result
 
     def test_frac_one_arg(self) -> None:
         result = convert_wikitext_to_html("{{frac|4}}")
-        assert '4' in result
-        assert '⁄' in result
+        assert "4" in result
+        assert "⁄" in result
 
     def test_frac_mixed_number(self) -> None:
         result = convert_wikitext_to_html("{{frac|1|1|2}}")
-        assert '1' in result
-        assert '2' in result
-        assert '⁄' in result
+        assert "1" in result
+        assert "2" in result
+        assert "⁄" in result
 
     def test_frac_in_table_cell(self) -> None:
         wikitext = """{| class="wikitable"
@@ -1034,6 +949,6 @@ class TestTableTemplateHandlers:
 | {{frac|1|72}} || Sextula
 |}"""
         result = convert_wikitext_to_html(wikitext)
-        assert '288' in result
-        assert '72' in result
-        assert '⁄' in result
+        assert "288" in result
+        assert "72" in result
+        assert "⁄" in result

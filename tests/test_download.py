@@ -1,4 +1,5 @@
 """Tests for download.py."""
+
 import hashlib
 import pathlib
 
@@ -26,6 +27,7 @@ DATE = "20251101"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _sha1(data: bytes) -> str:
     return hashlib.sha1(data).hexdigest()
@@ -59,6 +61,7 @@ def _fallback_manifest_text(wiki: str) -> str:
 # hash_file
 # ---------------------------------------------------------------------------
 
+
 class TestHashFile:
     def test_known_content(self, tmp_path: pathlib.Path) -> None:
         data = b"hello wikipedia"
@@ -83,6 +86,7 @@ class TestHashFile:
 # verify_existing
 # ---------------------------------------------------------------------------
 
+
 class TestVerifyExisting:
     def test_missing_file_returns_false(self, tmp_path: pathlib.Path) -> None:
         assert verify_existing(tmp_path / "no_such_file.bin", "abc123") is False
@@ -102,6 +106,7 @@ class TestVerifyExisting:
 # ---------------------------------------------------------------------------
 # fetch_sha1sums
 # ---------------------------------------------------------------------------
+
 
 class TestFetchSha1sums:
     def _manifest_url(self, wiki: str) -> str:
@@ -171,6 +176,7 @@ class TestFetchSha1sums:
 # download_with_verify
 # ---------------------------------------------------------------------------
 
+
 class TestDownloadWithVerify:
     FILE_URL = f"{BASE_URL}/{WIKI}/latest/dump.bz2"
 
@@ -210,6 +216,7 @@ class TestDownloadWithVerify:
 # main
 # ---------------------------------------------------------------------------
 
+
 class TestMain:
     def _patch_manifest(self, monkeypatch: pytest.MonkeyPatch, wiki: str, tmp_path: pathlib.Path) -> dict[str, str]:
         """Wire fetch_sha1sums and DUMPS_DIR so main() uses tmp_path."""
@@ -224,15 +231,11 @@ class TestMain:
         monkeypatch.setattr(download, "DUMPS_DIR", tmp_path)
         return manifest
 
-    def test_all_verified_returns_zero(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-    ) -> None:
+    def test_all_verified_returns_zero(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         self._patch_manifest(monkeypatch, WIKI, tmp_path)
         assert main(["--wiki", WIKI]) == 0
 
-    def test_download_succeeds_returns_zero(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-    ) -> None:
+    def test_download_succeeds_returns_zero(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         manifest = {}
         for suffix in TARGET_SUFFIXES:
             filename = _dump_filename(WIKI, suffix)
@@ -246,9 +249,7 @@ class TestMain:
 
         assert main(["--wiki", WIKI]) == 0
 
-    def test_failed_download_returns_one(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-    ) -> None:
+    def test_failed_download_returns_one(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         manifest = {}
         for suffix in TARGET_SUFFIXES:
             filename = _dump_filename(WIKI, suffix)
@@ -264,9 +265,7 @@ class TestMain:
 
         assert main(["--wiki", WIKI]) == 1
 
-    def test_wiki_flag_is_forwarded(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-    ) -> None:
+    def test_wiki_flag_is_forwarded(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         received = []
 
         def fake_fetch(wiki: str) -> dict:

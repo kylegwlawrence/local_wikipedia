@@ -14,6 +14,7 @@ distribution + a suggested MAX_CHUNK_CHARS to land p95 ≈ ``--target-tokens``.
 Usage:
     python -m scripts.calibrate_chunks --wiki simplewiki --sample 100
 """
+
 import argparse
 import statistics
 import sys
@@ -46,11 +47,15 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wiki", default="simplewiki")
     parser.add_argument(
-        "--sample", type=int, default=100,
+        "--sample",
+        type=int,
+        default=100,
         help="Number of articles to sample (default: 100)",
     )
     parser.add_argument(
-        "--target-tokens", type=int, default=512,
+        "--target-tokens",
+        type=int,
+        default=512,
         help="Token count to land p95 at (default: 512)",
     )
     parser.add_argument("--ollama-url", default=OLLAMA_BASE_URL)
@@ -70,8 +75,7 @@ def main(argv=None) -> int:
     ).fetchall()
     conn.close()
 
-    print(f"Sampling {len(rows)} articles from {args.wiki} "
-          f"(MAX_CHUNK_CHARS={chunker.MAX_CHUNK_CHARS})…", flush=True)
+    print(f"Sampling {len(rows)} articles from {args.wiki} (MAX_CHUNK_CHARS={chunker.MAX_CHUNK_CHARS})…", flush=True)
 
     char_counts: list[int] = []
     token_counts: list[int] = []
@@ -88,8 +92,7 @@ def main(argv=None) -> int:
             char_counts.append(len(text))
             token_counts.append(tokens)
         if i % 10 == 0:
-            print(f"  …{i}/{len(rows)} articles, {len(token_counts)} chunks measured",
-                  flush=True)
+            print(f"  …{i}/{len(rows)} articles, {len(token_counts)} chunks measured", flush=True)
 
     if not token_counts:
         print("error: no chunks produced", file=sys.stderr)
@@ -121,8 +124,7 @@ def main(argv=None) -> int:
     print(f"  max: {tmax}")
     print()
     print(f"Chars/token at top 10% of chunks: {high_ratio:.2f}")
-    print(f"Suggested MAX_CHUNK_CHARS for p95 ≈ {args.target_tokens} tokens: "
-          f"{suggested}")
+    print(f"Suggested MAX_CHUNK_CHARS for p95 ≈ {args.target_tokens} tokens: {suggested}")
     return 0
 
 

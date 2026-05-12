@@ -1,4 +1,5 @@
 """Article and wikitext views + the chunks debug page."""
+
 import json
 from urllib.parse import quote
 
@@ -32,9 +33,7 @@ def article(request: Request, title: str) -> HTMLResponse:
             wiki = active_wiki(request)
             resp = Response(content="", status_code=200)
             resp.headers["HX-Reswap"] = "none"
-            resp.headers["HX-Trigger"] = json.dumps(
-                {"articleNotFound": {"title": title, "wiki": wiki_label(wiki)}}
-            )
+            resp.headers["HX-Trigger"] = json.dumps({"articleNotFound": {"title": title, "wiki": wiki_label(wiki)}})
             return resp
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
@@ -47,9 +46,7 @@ def article(request: Request, title: str) -> HTMLResponse:
     if other_wiki_db.exists():
         try:
             with wiki_db.connect(other_wiki_db) as ow_conn:
-                hit = ow_conn.execute(
-                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
-                ).fetchone()
+                hit = ow_conn.execute("SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)).fetchone()
                 if hit:
                     other_wiki_for_template = other_wiki
         except Exception:
@@ -90,9 +87,7 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     if other_wiki_db.exists():
         try:
             with wiki_db.connect(other_wiki_db) as ow_conn:
-                hit = ow_conn.execute(
-                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
-                ).fetchone()
+                hit = ow_conn.execute("SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)).fetchone()
                 if hit:
                     other_wiki_for_template = other_wiki
         except Exception:
@@ -121,24 +116,25 @@ def chunks(request: Request, title: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="No RAG database for this wiki")
 
     try:
-        meta = rag_conn.execute(
-            "SELECT page_id FROM articles_meta WHERE title = ?", (title,)
-        ).fetchone()
+        meta = rag_conn.execute("SELECT page_id FROM articles_meta WHERE title = ?", (title,)).fetchone()
         if meta is None:
             raise HTTPException(status_code=404, detail=f"Article not embedded: {title}")
 
         rows = rag_conn.execute(
-            "SELECT section, chunk_index, text, text_length "
-            "FROM chunks WHERE page_id = ? ORDER BY chunk_id",
+            "SELECT section, chunk_index, text, text_length FROM chunks WHERE page_id = ? ORDER BY chunk_id",
             (meta["page_id"],),
         ).fetchall()
         chunk_list = [dict(r) for r in rows]
     finally:
         rag_conn.close()
 
-    return templates.TemplateResponse(request, "chunks.html", {
-        "title": title,
-        "chunks": chunk_list,
-        "wiki": wiki,
-        "current_page": "",
-    })
+    return templates.TemplateResponse(
+        request,
+        "chunks.html",
+        {
+            "title": title,
+            "chunks": chunk_list,
+            "wiki": wiki,
+            "current_page": "",
+        },
+    )

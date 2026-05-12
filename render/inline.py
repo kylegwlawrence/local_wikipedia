@@ -1,4 +1,5 @@
 """Inline text-level wikitext converters: bold/italic and wikilinks."""
+
 import html
 import re
 from urllib.parse import quote

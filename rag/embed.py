@@ -5,6 +5,7 @@ Usage:
     python -m rag.embed --wiki enwiki --limit 1000 --batch 50
     python -m rag.embed --wiki simplewiki --reset
 """
+
 import argparse
 import sys
 from datetime import UTC, datetime
@@ -49,9 +50,7 @@ def delete_all_articles(rag_conn) -> int:
 
     Returns the number of articles that were deleted.
     """
-    count: int = rag_conn.execute(
-        "SELECT COUNT(*) FROM articles_meta"
-    ).fetchone()[0]
+    count: int = rag_conn.execute("SELECT COUNT(*) FROM articles_meta").fetchone()[0]
     rag_conn.execute("DELETE FROM chunks_vec")
     rag_conn.execute("DELETE FROM chunks")
     rag_conn.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
@@ -66,15 +65,11 @@ def delete_article(rag_conn, page_id: int) -> None:
         rag_conn: Open RAG database connection.
         page_id: The article's page_id to delete.
     """
-    rows = rag_conn.execute(
-        "SELECT chunk_id, text FROM chunks WHERE page_id = ?", (page_id,)
-    ).fetchall()
+    rows = rag_conn.execute("SELECT chunk_id, text FROM chunks WHERE page_id = ?", (page_id,)).fetchall()
     if rows:
         chunk_ids = [r["chunk_id"] for r in rows]
         placeholders = ",".join("?" * len(chunk_ids))
-        rag_conn.execute(
-            f"DELETE FROM chunks_vec WHERE chunk_id IN ({placeholders})", chunk_ids
-        )
+        rag_conn.execute(f"DELETE FROM chunks_vec WHERE chunk_id IN ({placeholders})", chunk_ids)
         # chunks_fts is a content table so deletions must be issued explicitly;
         # DELETE FROM chunks alone doesn't update the FTS index.
         for r in rows:
@@ -82,9 +77,7 @@ def delete_article(rag_conn, page_id: int) -> None:
                 "INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', ?, ?)",
                 (r["chunk_id"], r["text"]),
             )
-        rag_conn.execute(
-            f"DELETE FROM chunks WHERE chunk_id IN ({placeholders})", chunk_ids
-        )
+        rag_conn.execute(f"DELETE FROM chunks WHERE chunk_id IN ({placeholders})", chunk_ids)
     rag_conn.execute("DELETE FROM articles_meta WHERE page_id = ?", (page_id,))
 
 
@@ -110,10 +103,8 @@ def _insert_chunk(
         The newly assigned chunk_id.
     """
     cur = rag_conn.execute(
-        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (page_id, chunk["section"], chunk["chunk_index"],
-         chunk["text"], len(chunk["text"])),
+        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) VALUES (?, ?, ?, ?, ?)",
+        (page_id, chunk["section"], chunk["chunk_index"], chunk["text"], len(chunk["text"])),
     )
     chunk_id = cur.lastrowid
     rag_conn.execute(
@@ -128,9 +119,9 @@ def _insert_chunk(
     return chunk_id
 
 
-def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
-                   wikitext: str, ollama_url: str,
-                   links_embedded: int = 0) -> int:
+def _embed_article(
+    rag_conn, page_id: int, title: str, revision_id: int, wikitext: str, ollama_url: str, links_embedded: int = 0
+) -> int:
     """Chunk and embed one article, writing results to the RAG database.
 
     Uses ``fts_incremental=False`` because the CLI does a bulk FTS rebuild after
@@ -159,10 +150,15 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
         "INSERT OR REPLACE INTO articles_meta "
         "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (page_id, title, revision_id, "|".join(categories),
-         datetime.now(UTC).isoformat(),
-         len(wikitext.encode("utf-8")),
-         links_embedded),
+        (
+            page_id,
+            title,
+            revision_id,
+            "|".join(categories),
+            datetime.now(UTC).isoformat(),
+            len(wikitext.encode("utf-8")),
+            links_embedded,
+        ),
     )
 
     if not chunks:
@@ -209,9 +205,7 @@ def embed_one(
     if chunker.is_redirect(wikitext):
         return 0
 
-    existing = rag_conn.execute(
-        "SELECT links_embedded FROM articles_meta WHERE page_id = ?", (page_id,)
-    ).fetchone()
+    existing = rag_conn.execute("SELECT links_embedded FROM articles_meta WHERE page_id = ?", (page_id,)).fetchone()
     preserved_links_embedded = existing["links_embedded"] if existing else 0
 
     delete_article(rag_conn, page_id)
@@ -223,10 +217,15 @@ def embed_one(
         "INSERT INTO articles_meta "
         "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (page_id, title, revision_id, "|".join(categories),
-         datetime.now(UTC).isoformat(),
-         len(wikitext.encode("utf-8")),
-         preserved_links_embedded),
+        (
+            page_id,
+            title,
+            revision_id,
+            "|".join(categories),
+            datetime.now(UTC).isoformat(),
+            len(wikitext.encode("utf-8")),
+            preserved_links_embedded,
+        ),
     )
 
     if not chunks_data:
@@ -259,16 +258,16 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wiki", default="enwiki")
-    parser.add_argument("--limit", type=int, default=None,
-                        help="Process at most N articles (for testing)")
-    parser.add_argument("--batch", type=int, default=100,
-                        help="Commit every N articles (default: 100)")
+    parser.add_argument("--limit", type=int, default=None, help="Process at most N articles (for testing)")
+    parser.add_argument("--batch", type=int, default=100, help="Commit every N articles (default: 100)")
     parser.add_argument("--ollama-url", default=embedder.OLLAMA_BASE_URL)
-    parser.add_argument("--reset", action="store_true",
-                        help="Delete all existing data and re-embed from scratch")
-    parser.add_argument("--rechunk", action="store_true",
-                        help="Delete articles whose chunks contain image noise, then exit; "
-                             "run again without --rechunk to re-embed them")
+    parser.add_argument("--reset", action="store_true", help="Delete all existing data and re-embed from scratch")
+    parser.add_argument(
+        "--rechunk",
+        action="store_true",
+        help="Delete articles whose chunks contain image noise, then exit; "
+        "run again without --rechunk to re-embed them",
+    )
     args = parser.parse_args(argv)
 
     wiki_path = db_path_for(args.wiki)
@@ -344,8 +343,12 @@ def main(argv: list[str] | None = None) -> int:
 
             try:
                 _embed_article(
-                    rag_conn, page_id, row["title"], revision_id,
-                    row["text_content"], args.ollama_url,
+                    rag_conn,
+                    page_id,
+                    row["title"],
+                    revision_id,
+                    row["text_content"],
+                    args.ollama_url,
                     links_embedded=preserved_links_embedded,
                 )
             except Exception as exc:

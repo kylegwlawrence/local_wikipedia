@@ -1,4 +1,5 @@
 """Refresh-job routes: kick off a refresh and poll its status."""
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 

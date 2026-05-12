@@ -3,6 +3,7 @@
 These reach ``paths`` via module attribute lookup (``paths.db_path_for(...)``)
 so tests can monkeypatch the lookup in one place.
 """
+
 import os
 import pathlib
 import sqlite3

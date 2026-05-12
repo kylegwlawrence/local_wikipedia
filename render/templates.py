@@ -7,6 +7,7 @@ wikicode and replaces matching templates with HTML or wikilink strings.
 Anything not handled here is removed wholesale by ``strip.strip_templates``
 in the next pipeline stage.
 """
+
 import html
 import re
 
@@ -38,7 +39,7 @@ _REF_TAG_RE = re.compile(
 
 def _render_lang(code: str, text: str) -> str:
     """Format a {{lang}} / {{langx}} pair as 'Language: <em>text</em>'."""
-    return f'{lang_code_to_name(code)}: <em>{text}</em>'
+    return f"{lang_code_to_name(code)}: <em>{text}</em>"
 
 
 def _render_ref_body(contents: str) -> str:
@@ -54,8 +55,8 @@ def _render_ref_body(contents: str) -> str:
             if formatted:
                 cite_parts.append(formatted)
     if cite_parts:
-        return ' '.join(cite_parts)
-    return html.escape(re.sub(r'\{\{[^}]*\}\}', '', contents).strip())
+        return " ".join(cite_parts)
+    return html.escape(re.sub(r"\{\{[^}]*\}\}", "", contents).strip())
 
 
 # ---------------------------------------------------------------------------
@@ -75,47 +76,46 @@ def format_cite_template(template) -> str:
     parts: list[str] = []
 
     # Author handling: 'author' wins; else last/first or last1/first1, last2/...
-    author = fields.get('author')
+    author = fields.get("author")
     if not author:
-        if 'last' in fields:
-            author = (fields.get('last', '') + ', ' + fields.get('first', '')).strip(', ')
+        if "last" in fields:
+            author = (fields.get("last", "") + ", " + fields.get("first", "")).strip(", ")
         else:
             authors: list[str] = []
             for i in range(1, 10):
-                last = fields.get(f'last{i}')
-                first = fields.get(f'first{i}')
+                last = fields.get(f"last{i}")
+                first = fields.get(f"first{i}")
                 if last:
-                    authors.append((last + ', ' + first).strip(', ') if first else last)
+                    authors.append((last + ", " + first).strip(", ") if first else last)
                 elif not authors:
                     break
-            author = '; '.join(authors) if authors else ''
+            author = "; ".join(authors) if authors else ""
     if author:
         parts.append(html.escape(author))
 
-    title = fields.get('title', '')
-    url = fields.get('url', '')
+    title = fields.get("title", "")
+    url = fields.get("url", "")
     if title and url:
         parts.append(
             f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer" '
             f'target="_blank">{html.escape(title)}</a>'
         )
     elif title:
-        parts.append(f'<em>{html.escape(title)}</em>')
+        parts.append(f"<em>{html.escape(title)}</em>")
     elif url:
         parts.append(
-            f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer" '
-            f'target="_blank">{html.escape(url)}</a>'
+            f'<a href="{html.escape(url, quote=True)}" rel="noopener noreferrer" target="_blank">{html.escape(url)}</a>'
         )
 
-    for field in ('work', 'website', 'journal', 'newspaper', 'magazine', 'publisher'):
+    for field in ("work", "website", "journal", "newspaper", "magazine", "publisher"):
         if field in fields:
             parts.append(html.escape(fields[field]))
             break
 
-    if 'date' in fields:
-        parts.append(html.escape(fields['date']))
+    if "date" in fields:
+        parts.append(html.escape(fields["date"]))
 
-    return '. '.join(parts)
+    return ". ".join(parts)
 
 
 def convert_citation_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
@@ -154,9 +154,9 @@ def collect_inline_refs(
     # Build a name → content lookup for refs defined only in refs= parameters.
     refs_param_content: dict[str, str] = {}
     for tmpl in wikicode.filter_templates():
-        if str(tmpl.name).strip().lower() != 'reflist':
+        if str(tmpl.name).strip().lower() != "reflist":
             continue
-        rp = next((p for p in tmpl.params if str(p.name).strip() == 'refs'), None)
+        rp = next((p for p in tmpl.params if str(p.name).strip() == "refs"), None)
         if not rp:
             continue
         for m in _REF_TAG_RE.finditer(str(rp.value)):
@@ -168,10 +168,10 @@ def collect_inline_refs(
     collected: list[tuple[str | None, str]] = []
 
     for tag in wikicode.filter_tags(recursive=False):
-        if str(tag.tag).strip().lower() != 'ref':
+        if str(tag.tag).strip().lower() != "ref":
             continue
 
-        name = str(tag.get('name').value).strip() if tag.has('name') else None
+        name = str(tag.get("name").value).strip() if tag.has("name") else None
 
         if tag.self_closing:
             # Resolve only if content was defined in a refs= param. Inline
@@ -206,11 +206,11 @@ def convert_reflist_template(
     Non-Reflist templates are left for ``strip.strip_templates`` to remove.
     """
     for template in wikicode.filter_templates():
-        if str(template.name).strip().lower() != 'reflist':
+        if str(template.name).strip().lower() != "reflist":
             continue
 
         refs_param = next(
-            (p for p in template.params if str(p.name).strip() == 'refs'),
+            (p for p in template.params if str(p.name).strip() == "refs"),
             None,
         )
 
@@ -232,14 +232,9 @@ def convert_reflist_template(
                 except Exception:
                     rendered = html.escape(ref_content)
                 if rendered:
-                    items.append(
-                        f'<li id="ref_{html.escape(ref_name, quote=True)}">{rendered}</li>'
-                    )
+                    items.append(f'<li id="ref_{html.escape(ref_name, quote=True)}">{rendered}</li>')
 
-        replacement = (
-            '<ol class="references">\n' + '\n'.join(items) + '\n</ol>'
-            if items else ''
-        )
+        replacement = '<ol class="references">\n' + "\n".join(items) + "\n</ol>" if items else ""
         try:
             wikicode.replace(template, replacement)
         except ValueError:
@@ -275,7 +270,7 @@ def convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None
     """
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
-        if name not in ('code', 'codes', 'codett', 'c', 'mono', 'tt', 'kbd'):
+        if name not in ("code", "codes", "codett", "c", "mono", "tt", "kbd"):
             continue
         params = list(template.params)
         if not params:
@@ -287,16 +282,13 @@ def convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None
         code_content: str | None = None
         for param in reversed(params):
             param_str = str(param).strip()
-            if '=' not in param_str or not param_str.split('=')[0].strip().isalpha():
-                code_content = (
-                    param_str.split('=', 1)[1].strip()
-                    if '=' in param_str else param_str
-                )
+            if "=" not in param_str or not param_str.split("=")[0].strip().isalpha():
+                code_content = param_str.split("=", 1)[1].strip() if "=" in param_str else param_str
                 break
 
         if code_content:
             try:
-                wikicode.replace(template, f'<code>{html.escape(code_content)}</code>')
+                wikicode.replace(template, f"<code>{html.escape(code_content)}</code>")
             except ValueError:
                 pass
 
@@ -305,18 +297,11 @@ def convert_lang_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None
     """Replace {{lang|XX|text}} / {{langx|XX|...|text}} with rendered HTML."""
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
-        if name not in ('lang', 'langx'):
+        if name not in ("lang", "langx"):
             continue
-        positional = [
-            str(p.value).strip()
-            for p in template.params
-            if str(p.name).strip().isdigit()
-        ]
+        positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
         # First positional is the language code; last is the text.
-        replacement = (
-            _render_lang(positional[0], positional[-1])
-            if len(positional) >= 2 else None
-        )
+        replacement = _render_lang(positional[0], positional[-1]) if len(positional) >= 2 else None
         try:
             if replacement:
                 wikicode.replace(template, replacement)
@@ -333,7 +318,7 @@ def convert_wikidata_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> 
     available here, so we remove them rather than render stale or empty output.
     """
     for template in wikicode.filter_templates():
-        if str(template.name).strip().lower() == 'wikidata':
+        if str(template.name).strip().lower() == "wikidata":
             try:
                 wikicode.remove(template)
             except ValueError:
@@ -360,14 +345,14 @@ def convert_annotated_link_templates(wikicode: mwparserfromhell.wikicode.Wikicod
     Output is wikitext — the link converter picks it up later in the pipeline.
     """
     for template in wikicode.filter_templates():
-        if str(template.name).strip().lower() != 'annotated link':
+        if str(template.name).strip().lower() != "annotated link":
             continue
         params = list(template.params)
         if not params:
             continue
         target = str(params[0].value).strip()
         label = str(params[1].value).strip() if len(params) > 1 else None
-        replacement = f'[[{target}|{label}]]' if label else f'[[{target}]]'
+        replacement = f"[[{target}|{label}]]" if label else f"[[{target}]]"
         try:
             wikicode.replace(template, replacement)
         except ValueError:
@@ -380,14 +365,14 @@ def convert_section_link_templates(wikicode: mwparserfromhell.wikicode.Wikicode)
     Output is wikitext — the link converter picks it up later in the pipeline.
     """
     for template in wikicode.filter_templates():
-        if str(template.name).strip().lower() != 'section link':
+        if str(template.name).strip().lower() != "section link":
             continue
         params = list(template.params)
         if not params:
             continue
         target = str(params[0]).strip()
         label = str(params[1]).strip() if len(params) > 1 else None
-        replacement = f'[[{target}|{label}]]' if label else f'[[{target}]]'
+        replacement = f"[[{target}|{label}]]" if label else f"[[{target}]]"
         try:
             wikicode.replace(template, replacement)
         except ValueError:
@@ -415,49 +400,41 @@ def _first_positional(template) -> str | None:
 def convert_hatnote_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
     """Replace hatnote templates with <div class="hatnote"> elements."""
     PREFIXES = {
-        'main': 'Main article',
-        'see also': 'See also',
-        'further': 'Further information',
-        'see': 'See',
+        "main": "Main article",
+        "see also": "See also",
+        "further": "Further information",
+        "see": "See",
     }
     for template in wikicode.filter_templates(recursive=False):
         name = str(template.name).strip().lower()
 
-        if name == 'about':
-            positional = [
-                str(p.value).strip()
-                for p in template.params
-                if str(p.name).strip().isdigit()
-            ]
+        if name == "about":
+            positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
             if not positional:
                 try:
                     wikicode.remove(template)
                 except ValueError:
                     pass
                 continue
-            parts = [f'This article is about {positional[0]}.'] if positional[0] else []
+            parts = [f"This article is about {positional[0]}."] if positional[0] else []
             for i in range(1, len(positional) - 1, 2):
                 use = positional[i]
-                article = positional[i + 1] if i + 1 < len(positional) else ''
+                article = positional[i + 1] if i + 1 < len(positional) else ""
                 if use and article:
-                    parts.append(f'For {use}, see [[{article}]].')
+                    parts.append(f"For {use}, see [[{article}]].")
                 elif article:
-                    parts.append(f'See [[{article}]].')
-            replacement = f'<div class="hatnote">{" ".join(parts)}</div>' if parts else ''
+                    parts.append(f"See [[{article}]].")
+            replacement = f'<div class="hatnote">{" ".join(parts)}</div>' if parts else ""
 
-        elif name == 'hatnote':
-            content = _first_positional(template) or ''
-            replacement = f'<div class="hatnote">{content}</div>' if content else ''
+        elif name == "hatnote":
+            content = _first_positional(template) or ""
+            replacement = f'<div class="hatnote">{content}</div>' if content else ""
 
         elif name in PREFIXES:
             prefix = PREFIXES[name]
-            articles = [
-                str(p.value).strip()
-                for p in template.params
-                if str(p.name).strip().isdigit()
-            ]
-            links = ', '.join(f'[[{a}]]' for a in articles if a)
-            replacement = f'<div class="hatnote">{prefix}: {links}</div>' if links else ''
+            articles = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+            links = ", ".join(f"[[{a}]]" for a in articles if a)
+            replacement = f'<div class="hatnote">{prefix}: {links}</div>' if links else ""
 
         else:
             continue
@@ -481,50 +458,50 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
 
-        if name == 'small':
+        if name == "small":
             content = _first_positional(template)
             if content is not None:
                 try:
-                    wikicode.replace(template, f'<small>{content}</small>')
+                    wikicode.replace(template, f"<small>{content}</small>")
                 except ValueError:
                     pass
 
-        elif name == 'sup':
+        elif name == "sup":
             content = _first_positional(template)
             if content is not None:
                 try:
-                    wikicode.replace(template, f'<sup>{content}</sup>')
+                    wikicode.replace(template, f"<sup>{content}</sup>")
                 except ValueError:
                     pass
 
-        elif name in ('blockquote', 'quote', 'bq'):
+        elif name in ("blockquote", "quote", "bq"):
             content = _first_positional(template)
             if content is not None:
                 try:
-                    wikicode.replace(template, f'<blockquote>{content}</blockquote>')
+                    wikicode.replace(template, f"<blockquote>{content}</blockquote>")
                 except ValueError:
                     pass
 
-        elif name == 'nbsp':
+        elif name == "nbsp":
             try:
-                wikicode.replace(template, ' ')
+                wikicode.replace(template, " ")
             except ValueError:
                 pass
 
-        elif name in ('circa', 'c.', 'ca', 'ca.'):
-            year = _first_positional(template) or ''
-            replacement = f'c. {year}' if year else 'c.'
+        elif name in ("circa", "c.", "ca", "ca."):
+            year = _first_positional(template) or ""
+            replacement = f"c. {year}" if year else "c."
             try:
                 wikicode.replace(template, replacement)
             except ValueError:
                 pass
 
-        elif name in ('in lang', 'in language'):
-            lang_param = _first_positional(template) or ''
+        elif name in ("in lang", "in language"):
+            lang_param = _first_positional(template) or ""
             if lang_param:
                 lang_name = lang_code_to_name(lang_param)
                 try:
-                    wikicode.replace(template, f'(in {lang_name})')
+                    wikicode.replace(template, f"(in {lang_name})")
                 except ValueError:
                     pass
             else:
@@ -533,15 +510,14 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
-        elif name == 'official website':
-            url = _first_positional(template) or ''
+        elif name == "official website":
+            url = _first_positional(template) or ""
             if url:
                 safe_url = html.escape(url, quote=True)
                 try:
                     wikicode.replace(
                         template,
-                        f'<a href="{safe_url}" rel="noopener noreferrer"'
-                        f' target="_blank">Official website</a>',
+                        f'<a href="{safe_url}" rel="noopener noreferrer" target="_blank">Official website</a>',
                     )
                 except ValueError:
                     pass
@@ -551,7 +527,7 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
-        elif name == 'rn':
+        elif name == "rn":
             content = _first_positional(template)
             if content is not None:
                 try:
@@ -559,7 +535,7 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
-        elif name in ('nowrap', 'nowr', 'nobr', 'no wrap'):
+        elif name in ("nowrap", "nowr", "nobr", "no wrap"):
             content = _first_positional(template)
             if content is not None:
                 try:
@@ -567,7 +543,7 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
-        elif name in ('ipa', 'ipac-en', 'ipa-en', 'ipa-all'):
+        elif name in ("ipa", "ipac-en", "ipa-en", "ipa-all"):
             content = _first_positional(template)
             if content is not None:
                 try:
@@ -575,7 +551,7 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
-        elif name in ('nts', 'ntsh'):
+        elif name in ("nts", "ntsh"):
             content = _first_positional(template)
             if content is not None:
                 try:
@@ -583,7 +559,7 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
-        elif name == 'sort':
+        elif name == "sort":
             positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
             display = positional[1] if len(positional) >= 2 else (positional[0] if positional else None)
             if display is not None:
@@ -592,34 +568,34 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
-        elif name == 'sortname':
+        elif name == "sortname":
             positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
             if positional:
-                display = ' '.join(p for p in positional[:2] if p)
+                display = " ".join(p for p in positional[:2] if p)
                 try:
                     wikicode.replace(template, display)
                 except ValueError:
                     pass
 
-        elif name in ('tooltip', 'abbr'):
+        elif name in ("tooltip", "abbr"):
             positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
             if positional:
                 text_val = positional[0]
-                tip = positional[1] if len(positional) >= 2 else ''
+                tip = positional[1] if len(positional) >= 2 else ""
                 replacement = f'<abbr title="{html.escape(tip)}">{text_val}</abbr>' if tip else text_val
                 try:
                     wikicode.replace(template, replacement)
                 except ValueError:
                     pass
 
-        elif name in ('frac', 'fraction'):
+        elif name in ("frac", "fraction"):
             positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
             if len(positional) == 1:
-                replacement = f'<sup>1</sup>⁄<sub>{positional[0]}</sub>'
+                replacement = f"<sup>1</sup>⁄<sub>{positional[0]}</sub>"
             elif len(positional) == 2:
-                replacement = f'<sup>{positional[0]}</sup>⁄<sub>{positional[1]}</sub>'
+                replacement = f"<sup>{positional[0]}</sup>⁄<sub>{positional[1]}</sub>"
             elif len(positional) >= 3:
-                replacement = f'{positional[0]} <sup>{positional[1]}</sup>⁄<sub>{positional[2]}</sub>'
+                replacement = f"{positional[0]} <sup>{positional[1]}</sup>⁄<sub>{positional[2]}</sub>"
             else:
                 replacement = None
             if replacement is not None:
@@ -639,35 +615,35 @@ def convert_list_body_templates(wikicode: mwparserfromhell.wikicode.Wikicode) ->
     for template in wikicode.filter_templates(recursive=False):
         name = str(template.name).strip().lower()
 
-        if name in ('plainlist', 'flatlist'):
+        if name in ("plainlist", "flatlist"):
             for p in template.params:
                 pname = str(p.name).strip()
-                if pname in ('class', 'style', 'indent'):
+                if pname in ("class", "style", "indent"):
                     continue
                 items = [
-                    f'<li>{line.strip().lstrip("*#:").strip()}</li>'
-                    for line in str(p.value).split('\n')
-                    if line.strip().lstrip('*#:').strip()
+                    f"<li>{line.strip().lstrip('*#:').strip()}</li>"
+                    for line in str(p.value).split("\n")
+                    if line.strip().lstrip("*#:").strip()
                 ]
                 if items:
-                    replacement = '<ul class="plainlist">\n' + '\n'.join(items) + '\n</ul>'
+                    replacement = '<ul class="plainlist">\n' + "\n".join(items) + "\n</ul>"
                     try:
                         wikicode.replace(template, replacement)
                     except ValueError:
                         pass
                 break
 
-        elif name == 'hlist':
+        elif name == "hlist":
             items = [
                 str(p.value).strip()
                 for p in template.params
-                if str(p.name).strip() not in (
-                    'class', 'style', 'ul_style', 'li_style', 'indent', 'item_style', 'first_style'
-                ) and str(p.value).strip()
+                if str(p.name).strip()
+                not in ("class", "style", "ul_style", "li_style", "indent", "item_style", "first_style")
+                and str(p.value).strip()
             ]
             if items:
                 try:
-                    wikicode.replace(template, ' · '.join(items))
+                    wikicode.replace(template, " · ".join(items))
                 except ValueError:
                     pass
             else:
@@ -681,21 +657,17 @@ def convert_list_body_templates(wikicode: mwparserfromhell.wikicode.Wikicode) ->
 # {{convert}} / {{cvt}} — unit conversion display
 # ---------------------------------------------------------------------------
 
-_RANGE_CONNECTORS = frozenset({'to', 'and', '-', '–', 'or', '+'})
+_RANGE_CONNECTORS = frozenset({"to", "and", "-", "–", "or", "+"})
 
 
 def convert_convert_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
     """Replace {{convert|value|unit|...}} with 'value unit' plain text."""
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
-        if name not in ('convert', 'cvt'):
+        if name not in ("convert", "cvt"):
             continue
 
-        positional = [
-            str(p.value).strip()
-            for p in template.params
-            if str(p.name).strip().isdigit()
-        ]
+        positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
 
         if not positional:
             try:
@@ -706,18 +678,18 @@ def convert_convert_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> N
 
         if len(positional) >= 3 and positional[1].lower() in _RANGE_CONNECTORS:
             val1, val2 = positional[0], positional[2]
-            from_unit = positional[3] if len(positional) >= 4 else ''
+            from_unit = positional[3] if len(positional) >= 4 else ""
             unit_display = UNIT_NAMES.get(from_unit, from_unit)
-            replacement = f'{val1}–{val2}'
+            replacement = f"{val1}–{val2}"
             if unit_display:
-                replacement += f' {unit_display}'
+                replacement += f" {unit_display}"
         else:
             val = positional[0]
-            from_unit = positional[1] if len(positional) > 1 else ''
+            from_unit = positional[1] if len(positional) > 1 else ""
             unit_display = UNIT_NAMES.get(from_unit, from_unit)
-            replacement = f'{val}'
+            replacement = f"{val}"
             if unit_display:
-                replacement += f' {unit_display}'
+                replacement += f" {unit_display}"
 
         try:
             wikicode.replace(template, replacement)
@@ -738,17 +710,16 @@ def convert_flag_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None
     """
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
-        if name in ('flag', 'flagu', 'flagcountry', 'country'):
-            country = _first_positional(template) or ''
+        if name in ("flag", "flagu", "flagcountry", "country"):
+            country = _first_positional(template) or ""
             try:
                 if country:
-                    wikicode.replace(template, f'[[{country}]]')
+                    wikicode.replace(template, f"[[{country}]]")
                 else:
                     wikicode.remove(template)
             except ValueError:
                 pass
-        elif name in ('flagicon', 'flag icon', 'flagathlete', 'flagioc',
-                      'flagiocathlete', 'flagnation'):
+        elif name in ("flagicon", "flag icon", "flagathlete", "flagioc", "flagiocathlete", "flagnation"):
             try:
                 wikicode.remove(template)
             except ValueError:
@@ -764,7 +735,7 @@ def convert_date_sorting_templates(wikicode: mwparserfromhell.wikicode.Wikicode)
     """Replace {{dts|year|month|day}} with a formatted date string."""
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
-        if name not in ('dts', 'date table sorting', 'dts2'):
+        if name not in ("dts", "date table sorting", "dts2"):
             continue
         positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
         if not positional:
@@ -781,9 +752,9 @@ def convert_date_sorting_templates(wikicode: mwparserfromhell.wikicode.Wikicode)
             except (ValueError, IndexError):
                 month_name = month_raw
             if len(positional) >= 3:
-                replacement = f'{month_name} {positional[2]}, {year}'
+                replacement = f"{month_name} {positional[2]}, {year}"
             else:
-                replacement = f'{month_name} {year}'
+                replacement = f"{month_name} {year}"
         else:
             replacement = year
         try:
@@ -798,11 +769,11 @@ def convert_date_sorting_templates(wikicode: mwparserfromhell.wikicode.Wikicode)
 
 
 def _is_image_field(field_name: str) -> bool:
-    name = field_name.lower().strip().replace('-', '_')
+    name = field_name.lower().strip().replace("-", "_")
     for prefix in IMAGE_FIELD_PREFIXES:
-        if name == prefix or name.startswith(prefix + '_') or name.endswith('_' + prefix):
+        if name == prefix or name.startswith(prefix + "_") or name.endswith("_" + prefix):
             return True
-    return 'caption' in name or name.startswith('alt_') or name.endswith('_alt')
+    return "caption" in name or name.startswith("alt_") or name.endswith("_alt")
 
 
 def _render_infobox_value_template(template) -> str | None:
@@ -815,48 +786,55 @@ def _render_infobox_value_template(template) -> str | None:
 
     # Date templates: positional 1=year, 2=month, 3=day
     if name in (
-        'birth date', 'birth date and age', 'birth-date and age',
-        'death date', 'death date and age', 'death-date and age',
-        'start date', 'start date and age', 'end date', 'end date and age',
+        "birth date",
+        "birth date and age",
+        "birth-date and age",
+        "death date",
+        "death date and age",
+        "death-date and age",
+        "start date",
+        "start date and age",
+        "end date",
+        "end date and age",
     ):
         indexed: dict[int, str] = {}
         for p in params:
             pname = str(p.name).strip()
             if pname.isdigit():
                 indexed[int(pname)] = str(p.value).strip()
-        year = indexed.get(1, '')
-        month_raw = indexed.get(2, '')
-        day = indexed.get(3, '')
+        year = indexed.get(1, "")
+        month_raw = indexed.get(2, "")
+        day = indexed.get(3, "")
         try:
-            month_name = MONTH_NAMES[int(month_raw)] if month_raw else ''
+            month_name = MONTH_NAMES[int(month_raw)] if month_raw else ""
         except (ValueError, IndexError):
             month_name = month_raw
         if year and month_name and day:
-            return f'{month_name} {day}, {year}'
+            return f"{month_name} {day}, {year}"
         if year and month_name:
-            return f'{month_name} {year}'
+            return f"{month_name} {year}"
         return year or None
 
     # flatlist / plainlist: first positional param holds wiki-list lines
-    if name in ('flatlist', 'plainlist'):
+    if name in ("flatlist", "plainlist"):
         for p in params:
             pname = str(p.name).strip()
-            if pname in ('class', 'style', 'indent'):
+            if pname in ("class", "style", "indent"):
                 continue
             items: list[str] = []
-            for line in str(p.value).split('\n'):
-                item = line.strip().lstrip('*#').strip()
+            for line in str(p.value).split("\n"):
+                item = line.strip().lstrip("*#").strip()
                 if item:
                     item = _render_infobox_value(item)
                 if item:
                     items.append(item)
             if items:
-                lis = ''.join(f'<li>{item}</li>' for item in items)
+                lis = "".join(f"<li>{item}</li>" for item in items)
                 return f'<ul class="infobox-list">{lis}</ul>'
             break
 
     # ubl / unbulleted list / bulleted list: positional params are items
-    if name in ('unbulleted list', 'ubl', 'bulleted list'):
+    if name in ("unbulleted list", "ubl", "bulleted list"):
         items = []
         for p in params:
             pname = str(p.name).strip()
@@ -865,30 +843,30 @@ def _render_infobox_value_template(template) -> str | None:
                 if item:
                     items.append(item)
         if items:
-            lis = ''.join(f'<li>{item}</li>' for item in items)
+            lis = "".join(f"<li>{item}</li>" for item in items)
             return f'<ul class="infobox-list">{lis}</ul>'
 
     # hlist: positional params rendered as "a · b · c"
-    if name == 'hlist':
+    if name == "hlist":
         items = []
         for p in params:
             pname = str(p.name).strip()
-            if pname in ('class', 'style', 'ul_style', 'li_style', 'indent', 'item_style'):
+            if pname in ("class", "style", "ul_style", "li_style", "indent", "item_style"):
                 continue
             v = str(p.value).strip()
             if v:
                 items.append(v)
-        return ' · '.join(items) if items else None
+        return " · ".join(items) if items else None
 
     # Language annotation
-    if name in ('lang', 'langx', 'lang-xx'):
+    if name in ("lang", "langx", "lang-xx"):
         positional = [str(p.value).strip() for p in params if str(p.name).strip().isdigit()]
         if len(positional) >= 2:
             return _render_lang(positional[0], positional[-1])
         return None
 
     # Pass-through wrappers: render the (last) positional param
-    if name in ('nowrap', 'abbr', 'msd', 'nowr'):
+    if name in ("nowrap", "abbr", "msd", "nowr"):
         for p in params:
             pname = str(p.name).strip()
             if not pname.isdigit():
@@ -900,7 +878,7 @@ def _render_infobox_value_template(template) -> str | None:
             return str(params[-1].value).strip() or None
 
     # {{URL|url|label}}
-    if name == 'url':
+    if name == "url":
         if params:
             url = str(params[0].value).strip()
             label = str(params[1].value).strip() if len(params) > 1 else url
@@ -911,7 +889,7 @@ def _render_infobox_value_template(template) -> str | None:
 
     # {{wikidata|...}} fetches live property values from Wikidata; we have no
     # API access, so skip the row rather than show a stale or empty value.
-    if name == 'wikidata':
+    if name == "wikidata":
         return None
 
     return None  # Strip unknown templates entirely.
@@ -935,9 +913,9 @@ def _render_infobox_value(raw_value: str) -> str:
     for tag in wikicode.filter_tags():
         tag_name = str(tag.tag).strip().lower()
         try:
-            if tag_name in ('ref', 'references'):
+            if tag_name in ("ref", "references"):
                 wikicode.remove(tag)
-            elif tag_name in ('small', 'sup', 'sub', 'span', 'div'):
+            elif tag_name in ("small", "sup", "sub", "span", "div"):
                 wikicode.replace(tag, str(tag.contents))
         except ValueError:
             pass
@@ -945,7 +923,7 @@ def _render_infobox_value(raw_value: str) -> str:
     text = str(wikicode).strip()
 
     # Drop bare [[File:...]] / [[Image:...]] (e.g. inside captions).
-    text = re.sub(r'\[\[(File|Image):[^\]]*\]\]', '', text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\[(File|Image):[^\]]*\]\]", "", text, flags=re.IGNORECASE)
 
     text = convert_bold_italic(text)
     text = convert_links(text)
@@ -956,10 +934,10 @@ def convert_infobox_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> N
     """Replace {{Infobox ...}} templates with HTML <table class="infobox">."""
     for template in wikicode.filter_templates():
         name = str(template.name).strip()
-        if not name.lower().startswith('infobox'):
+        if not name.lower().startswith("infobox"):
             continue
 
-        display_type = name[len('infobox'):].strip()
+        display_type = name[len("infobox") :].strip()
         if display_type:
             display_type = display_type[0].upper() + display_type[1:]
 
@@ -968,14 +946,14 @@ def convert_infobox_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> N
             field_name = str(param.name).strip()
             raw_value = str(param.value).strip()
 
-            if not raw_value or raw_value.startswith('<!--'):
+            if not raw_value or raw_value.startswith("<!--"):
                 continue
             if _is_image_field(field_name):
                 continue
             if IMAGE_VALUE_RE.match(raw_value):
                 continue
 
-            label = field_name.replace('_', ' ').strip()
+            label = field_name.replace("_", " ").strip()
             if label:
                 label = label[0].upper() + label[1:]
 
@@ -994,14 +972,14 @@ def convert_infobox_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> N
 
         parts = ['<table class="infobox">']
         if display_type:
-            parts.append(f'<caption>{html.escape(display_type)}</caption>')
-        parts.append('<tbody>')
+            parts.append(f"<caption>{html.escape(display_type)}</caption>")
+        parts.append("<tbody>")
         for label, value in rows:
-            parts.append(f'<tr><th>{label}</th><td>{value}</td></tr>')
-        parts.append('</tbody>')
-        parts.append('</table>')
+            parts.append(f"<tr><th>{label}</th><td>{value}</td></tr>")
+        parts.append("</tbody>")
+        parts.append("</table>")
 
         try:
-            wikicode.replace(template, '\n'.join(parts))
+            wikicode.replace(template, "\n".join(parts))
         except ValueError:
             pass

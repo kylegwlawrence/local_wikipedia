@@ -4,6 +4,7 @@ pytest auto-loads ``conftest.py`` for tests in the same directory and its
 subdirectories, so test modules can request these fixtures by name without
 importing anything from here.
 """
+
 import sqlite3
 from pathlib import Path
 
@@ -18,11 +19,7 @@ FIXTURE_ARTICLES = [
     {
         "page_id": 1,
         "title": "April",
-        "wikitext": (
-            "'''April''' is the fourth [[month]] of the year.\n"
-            "== Events ==\n"
-            "* Spring begins.\n"
-        ),
+        "wikitext": ("'''April''' is the fourth [[month]] of the year.\n== Events ==\n* Spring begins.\n"),
     },
     {
         "page_id": 2,
@@ -93,10 +90,7 @@ def build_fixture_db(path: Path) -> None:
             text_bytes, text_content
         ) VALUES (?, ?, 0, 1, '2026-01-01T00:00:00Z', ?, ?)
         """,
-        [
-            (a["page_id"], a["title"], len(a["wikitext"]), a["wikitext"])
-            for a in FIXTURE_ARTICLES
-        ],
+        [(a["page_id"], a["title"], len(a["wikitext"]), a["wikitext"]) for a in FIXTURE_ARTICLES],
     )
     conn.execute("""
         CREATE VIRTUAL TABLE articles_fts USING fts5(

@@ -1,4 +1,5 @@
 """SQLite connection helper and redirect resolution shared across the app."""
+
 import pathlib
 import re
 import sqlite3
@@ -43,9 +44,7 @@ def redirect_target(text_content: str | None) -> str | None:
     return target or None
 
 
-def resolve_redirect(
-    conn: sqlite3.Connection, title: str, max_hops: int = 5
-) -> str | None:
+def resolve_redirect(conn: sqlite3.Connection, title: str, max_hops: int = 5) -> str | None:
     """Follow ``#REDIRECT`` chains and return the canonical article title.
 
     Returns ``None`` if the title is not found, the chain exceeds ``max_hops``,
@@ -57,9 +56,7 @@ def resolve_redirect(
         if title in seen:
             return None
         seen.add(title)
-        row = conn.execute(
-            "SELECT text_content FROM articles WHERE title = ?", (title,)
-        ).fetchone()
+        row = conn.execute("SELECT text_content FROM articles WHERE title = ?", (title,)).fetchone()
         if row is None:
             return None
         target = redirect_target(row["text_content"])

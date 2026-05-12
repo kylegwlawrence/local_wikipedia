@@ -3,6 +3,7 @@
 Kept separate from ``app/__init__.py`` so route modules can import
 ``templates`` without triggering a circular import on the FastAPI instance.
 """
+
 from fastapi.templating import Jinja2Templates
 
 from paths import BASE_DIR

@@ -1,4 +1,5 @@
 """CRUD helpers for the refresh_jobs table in dumps/jobs.db."""
+
 import pathlib
 import sqlite3
 
@@ -29,10 +30,7 @@ def ensure_jobs_schema(conn: sqlite3.Connection) -> None:
             log_path            TEXT
         )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_refresh_jobs_wiki "
-        "ON refresh_jobs(wiki, status)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_refresh_jobs_wiki ON refresh_jobs(wiki, status)")
     # Per-wiki mutable state. Currently tracks whether the FTS index is known
     # stale (set true before refresh starts; cleared after FTS rebuild succeeds).
     # If a worker dies between those two points, the lifespan hook in app.py
@@ -59,9 +57,14 @@ def create_job(conn: sqlite3.Connection, wiki: str, log_path: str) -> int:
 def update_job(conn: sqlite3.Connection, job_id: int, **kwargs) -> None:
     """Update supplied fields plus updated_at. Commits immediately."""
     valid = {
-        "status", "articles_scanned", "articles_skipped",
-        "articles_updated", "articles_inserted", "articles_archived",
-        "error_message", "log_path",
+        "status",
+        "articles_scanned",
+        "articles_skipped",
+        "articles_updated",
+        "articles_inserted",
+        "articles_archived",
+        "error_message",
+        "log_path",
     }
     fields = {k: v for k, v in kwargs.items() if k in valid and v is not None}
     if not fields:
@@ -130,7 +133,5 @@ def set_fts_dirty(conn: sqlite3.Connection, wiki: str, dirty: bool) -> None:
 
 def get_fts_dirty_wikis(conn: sqlite3.Connection) -> list[str]:
     """Return wiki names whose FTS index needs rebuilding."""
-    rows = conn.execute(
-        "SELECT wiki FROM wiki_state WHERE fts_dirty = 1"
-    ).fetchall()
+    rows = conn.execute("SELECT wiki FROM wiki_state WHERE fts_dirty = 1").fetchall()
     return [r["wiki"] for r in rows]
