@@ -58,7 +58,7 @@
                         targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                 } else {
-                    e.target.scrollIntoView({ behavior: 'instant', block: 'start' });
+                    window.scrollTo({ top: 0, behavior: 'instant' });
                 }
             });
         });
