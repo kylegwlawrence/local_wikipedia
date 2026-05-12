@@ -8,25 +8,17 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.lifespan import lifespan
+from app.routes import (
+    active_embedding,
+    article,
+    embeddings,
+    home,
+    refresh,
+)
 from paths import BASE_DIR
-
 
 app = FastAPI(title="Local Wikipedia", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
-from app.routes import (  # noqa: E402
-    active_embedding as active_embedding_route,
-    article as article_route,
-    embeddings as embeddings_route,
-    home as home_route,
-    refresh as refresh_route,
-)
-
-for module in (
-    home_route,
-    article_route,
-    refresh_route,
-    embeddings_route,
-    active_embedding_route,
-):
-    app.include_router(module.router)
+for _module in (home, article, refresh, embeddings, active_embedding):
+    app.include_router(_module.router)

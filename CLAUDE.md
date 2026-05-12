@@ -10,13 +10,26 @@ Wikipedia dump downloader, parser, browser-based reader, and RAG pipeline that:
 3. Serves a FastAPI + HTMX web UI for searching and reading articles
 4. Chunks and embeds articles for semantic search via a local Ollama model
 
-The web app (`app.py`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `render/`. The `rag/` package handles offline embedding and retrieval; web UI integration for AI queries is not yet built.
+The web app (`app/`) reads from the SQLite database and renders articles via the **wikitext → HTML** pipeline in `render/`. The `rag/` package handles offline embedding and retrieval; web UI integration for AI queries is not yet built.
 
 ## Layout
 
 ```
 local_wikipedia/
-  app.py            FastAPI app (routes + redirect/search/refresh/embed-links helpers)
+  app/              FastAPI web app (package)
+    __init__.py     factory: creates FastAPI instance, mounts /static, registers routers
+    config.py       module-level constants (WIKI_LABELS, SEARCH_LIMIT, …) + Jinja2 templates
+    deps.py         per-request helpers: active_wiki, db_path, connect, rag_connect
+    helpers.py      pure helpers: format_*, escape_fts5, search_titles, fetch_article, spawn_worker, htmx_redirect, wiki_label
+    lifespan.py     recover_from_crash() + FastAPI lifespan hook
+    panels.py       template-data builders for refresh/active-embedding panels
+    routes/         route modules grouped by feature
+      __init__.py
+      home.py            /, /search, /switch-wiki
+      article.py         /article, /wikitext, /chunks
+      refresh.py         POST /refresh, GET /refresh/status
+      embeddings.py      /embed-manager, /embed-status, /embed-article, /embed-links, /embed/{wiki}/{title}, /embed-all, /embed/reembed
+      active_embedding.py /active-embedding (+ /jobs, /panel, /cancel)
   paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, rag_db_path_for
   db.py             connect(), redirect_target(), resolve_redirect() — shared by app + embed pipeline
   jobs/             job-queue CRUD package
@@ -123,7 +136,7 @@ pytest tests/test_download.py::TestHashFile::test_known_content -v
 ```
 Wikimedia → download.py → dumps/*.xml.bz2
                        → parse.py → dumps/*.db (SQLite)
-                                  → app.py → browser
+                                  → app/ → browser
                                   → rag/embed.py → dumps/*_rag.db (chunks + vectors)
 ```
 
@@ -174,22 +187,24 @@ Pipeline order matters — stages are applied in sequence:
 - Results are ordered by BM25 relevance rank rather than alphabetically
 - Queries shorter than 3 characters fall back to an indexed prefix LIKE on `idx_articles_title` (trigram requires ≥3 chars)
 
-### Web app (`app.py`)
+### Web app (`app/` package)
 
-- **Startup crash recovery** (`_recover_from_crash` via FastAPI `lifespan` hook): on every startup, marks orphaned refresh and embed jobs as `failed` so the UI doesn't show perpetual progress; also rebuilds FTS indexes for any wiki whose `fts_dirty` flag was set by a crashed refresh worker (synchronously, before serving requests).
+- **Factory** (`app/__init__.py`): creates the FastAPI instance, mounts `/static`, then imports each `app.routes.*` submodule and calls `app.include_router(module.router)`. Route handlers live in their per-feature submodules, not the package root.
+- **Startup crash recovery** (`app/lifespan.py:recover_from_crash` via FastAPI `lifespan` hook): on every startup, marks orphaned refresh and embed jobs as `failed` so the UI doesn't show perpetual progress; also rebuilds FTS indexes for any wiki whose `fts_dirty` flag was set by a crashed refresh worker (synchronously, before serving requests).
+- **Patchable constants** (`paths.JOBS_DB`, `paths.BASE_DIR`, `paths.db_path_for`, `paths.rag_db_path_for`): all app modules reference these via the `paths` module (e.g. `paths.JOBS_DB`) rather than `from paths import JOBS_DB`, so tests can monkeypatch in one place (`monkeypatch.setattr(paths, "JOBS_DB", …)`) and every consumer sees the patched value.
 - Per-request SQLite connections (avoids cross-thread issues with FastAPI's threadpool)
 - `WIKI_DB` env var overrides the DB path — tests use `monkeypatch.setenv` to point at a fixture DB without restarting the app
-- `DEFAULT_DB` is derived from `paths.db_path_for(DEFAULT_WIKI)` so the default database path is never built inline twice
 - `db_metadata` table (key/value) in each wiki DB caches `article_count` so the home page avoids a full `COUNT(*)` on every request; populated lazily on first home-page load
 - `{title:path}` route converter so titles with slashes round-trip cleanly
 - `|safe` in `article.html` is intentional: the HTML comes from our own converter, not user input
-- `_search_titles` uses FTS5 MATCH via `_escape_fts5` (wraps input in phrase quotes); short queries (<3 chars) fall back to prefix LIKE
-- `_fetch_article()` follows `#REDIRECT [[Target]]` chains up to `REDIRECT_MAX_HOPS` (5) and returns the original title as `redirected_from` so the template can show a "Redirected from X" note. A cycle guard surfaces a 404 rather than hanging.
+- `app.helpers.search_titles` uses FTS5 MATCH via `escape_fts5` (wraps input in phrase quotes); short queries (<3 chars) fall back to prefix LIKE
+- `app.helpers.fetch_article()` follows `#REDIRECT [[Target]]` chains up to `REDIRECT_MAX_HOPS` (5) and returns the original title as `redirected_from` so the template can show a "Redirected from X" note. A cycle guard surfaces a 404 rather than hanging.
 - `GET /wikitext/{title}` returns raw wikitext in a `<pre>` block — toggled from the article view
-- `GET /switch-wiki?to=` sets a `wiki_pref` cookie (1-year max-age) and redirects: `article` param → `/?wiki=&article=` (pre-loads article in new wiki), `return_to` param → that URL (used by embed manager / active-embedding badges), otherwise → `/?wiki=`; `_active_wiki()` reads the cookie on every request
+- `GET /switch-wiki?to=` sets a `wiki_pref` cookie (1-year max-age) and redirects: `article` param → `/?wiki=&article=` (pre-loads article in new wiki), `return_to` param → that URL (used by embed manager / active-embedding badges), otherwise → `/?wiki=`; `app.deps.active_wiki()` reads the cookie on every request
 - Wiki-switching badges appear in all page headers: home page has them in `<div class="wiki-badges">` below the `<h1>`; embed manager and active-embedding have them inline inside the `<h1>`; article and wikitext views have them inline in the article `<h2>`. The active wiki renders as a `<span>` (disabled); the other renders as `<a>` with `wiki-badge--switch` (only if that wiki's DB exists).
 - All full-page templates include `<div class="nav-btn-group">` with Home / Embeddings / Processes links, positioned below the page header. Routes pass `current_page` (`"home"` / `"embeddings"` / `"processes"` / `""`) to control which button renders as active (`nav-btn--active` span) vs a plain link. Chunks passes `""` — no item is highlighted.
-- `index()` gates `other_wiki` on DB existence before passing to template (consistent with `embed_manager` and `_render_active_embedding_panel`)
+- `index()` gates `other_wiki` on DB existence before passing to template (consistent with `embed_manager` and `render_active_embedding_panel`)
+- Common patterns are factored into `app.helpers`: `spawn_worker(module, wiki, job_id, log_suffix)` dedupes the subprocess.Popen boilerplate used by `/refresh`, `/embed-links`, `/embed/reembed`; `htmx_redirect(url, request)` dedupes the "204+HX-Redirect for HTMX, 303 RedirectResponse otherwise" pattern.
 - `POST /refresh/{wiki}` creates a job row (inside `BEGIN IMMEDIATE` to avoid duplicate active jobs), then spawns `python -m workers.refresh` as a detached subprocess (`start_new_session=True`) so it outlives the HTTP connection
 - `GET /refresh/status/{wiki}` returns the latest job row as the `refresh_panel.html` partial — polled by HTMX while a job is active
 - `POST /embed-links/{title}` extracts wikilinks from the article, resolves redirects, and enqueues source + linked articles for batch embedding; spawns `python -m workers.embed` if no job is active, otherwise appends to the running job
@@ -217,7 +232,7 @@ UI-triggered batch embedding: clicking "Embed + links" on an article enqueues th
 - **Job model**: `embed_jobs` table holds one job per wiki; items in `embed_job_items` are deduped by `(job_id, title)` so multiple "Embed + links" clicks on different articles append to the same active job without redundant rows. Job status: `running` → `complete` / `cancelled` / `failed`.
 - **Worker** (`workers/embed.py`): drains the queue serially via `rag.embed.embed_one`; checks `cancel_requested` between items for clean cancellation; writes output to `dumps/{wiki}_embed.log`.
 - **Shared DB**: embed jobs share `dumps/jobs.db` with refresh jobs but use separate tables (`embed_jobs`, `embed_job_items`) — both are created idempotently in `embed_jobs.ensure_embed_schema`.
-- `db.redirect_target()` and `db.resolve_redirect()` were moved from `app.py` into `db.py` so the embed pipeline can use them without importing the FastAPI app.
+- `db.redirect_target()` and `db.resolve_redirect()` live in `db.py` (not `app/`) so the embed pipeline can use them without importing the FastAPI app.
 
 ### RAG pipeline (`rag/`)
 

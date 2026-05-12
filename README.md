@@ -237,7 +237,19 @@ pytest tests/test_download.py::TestDownloadWithVerify
 
 ```
 .
-├── app.py             # FastAPI web app (routes + wiki switcher + refresh + embed-links)
+├── app/               # FastAPI web app (package)
+│   ├── __init__.py    # Factory: creates FastAPI, mounts /static, registers routers
+│   ├── config.py      # Constants + Jinja2 templates instance
+│   ├── deps.py        # Per-request helpers (active_wiki, db_path, connect, rag_connect)
+│   ├── helpers.py     # Pure helpers (format_*, search_titles, fetch_article, spawn_worker, …)
+│   ├── lifespan.py    # Startup crash-recovery + FastAPI lifespan hook
+│   ├── panels.py      # Template-data builders for refresh/active-embedding panels
+│   └── routes/        # APIRouter modules grouped by feature
+│       ├── home.py            # /, /search, /switch-wiki
+│       ├── article.py         # /article, /wikitext, /chunks
+│       ├── refresh.py         # POST /refresh, GET /refresh/status
+│       ├── embeddings.py      # /embed-manager, /embed-status, /embed-article, …
+│       └── active_embedding.py # /active-embedding (+ /jobs, /panel, /cancel)
 ├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR, JOBS_DB, KNOWN_WIKIS)
 ├── db.py              # connect(), redirect_target(), resolve_redirect()
 ├── jobs/              # Job-queue CRUD package
