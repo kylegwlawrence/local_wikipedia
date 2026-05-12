@@ -268,6 +268,15 @@ def count_items_by_status(
     return {r["status"]: r["n"] for r in rows}
 
 
+def delete_all_jobs(conn: sqlite3.Connection) -> int:
+    """Delete all job records and their items. Returns the number of jobs deleted."""
+    count: int = conn.execute("SELECT COUNT(*) FROM embed_jobs").fetchone()[0]
+    conn.execute("DELETE FROM embed_job_items")
+    conn.execute("DELETE FROM embed_jobs")
+    conn.commit()
+    return count
+
+
 def get_item_counts_for_jobs(
     conn: sqlite3.Connection, job_ids: list[int]
 ) -> dict[int, dict[str, int]]:

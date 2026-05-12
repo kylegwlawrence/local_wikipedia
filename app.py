@@ -949,6 +949,19 @@ def active_embedding_jobs(request: Request, q: str = "", page: int = 1) -> HTMLR
     return _render_job_list_panel(request, wiki, q=q, page=page)
 
 
+@app.delete("/active-embedding/jobs")
+def delete_all_jobs(request: Request) -> Response:
+    """Delete all embed job records and their items."""
+    conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        embed_jobs.delete_all_jobs(conn)
+    finally:
+        conn.close()
+    if "HX-Request" in request.headers:
+        return Response(status_code=204, headers={"HX-Redirect": "/active-embedding"})
+    return RedirectResponse("/active-embedding", status_code=303)
+
+
 @app.get("/active-embedding/panel", response_class=HTMLResponse)
 def active_embedding_panel(request: Request) -> HTMLResponse:
     wiki = _active_wiki(request)

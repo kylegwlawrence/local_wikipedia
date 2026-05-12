@@ -8,7 +8,14 @@
      list_q            str        — current search query
 #}
 <div id="job-list-panel" class="embed-recent-jobs">
-  <h3>Job history</h3>
+  <div class="embed-count-row">
+    <h3 style="margin:0">Job history</h3>
+    {% if list_total %}
+    <button class="embed-btn action-delete"
+            hx-delete="/active-embedding/jobs"
+            hx-confirm="Delete all {{ list_total }} job record{{ 's' if list_total != 1 }}? This cannot be undone.">Delete all</button>
+    {% endif %}
+  </div>
   <div class="refresh-status-row">
     <input type="search" name="q" value="{{ list_q }}"
            placeholder="Search by job # or article title…"
