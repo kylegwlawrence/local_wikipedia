@@ -244,6 +244,7 @@ pytest tests/test_download.py::TestDownloadWithVerify
 ├── embed_jobs.py      # CRUD helpers for embed_jobs / embed_job_items tables
 ├── worker.py          # Background subprocess: download → refresh → FTS rebuild
 ├── embed_worker.py    # Background subprocess: drains embed_job_items queue
+├── _runner.py         # Shared harness for background workers (log redirect, exception capture)
 ├── start.sh           # tmux helper — start/stop/attach the uvicorn server
 ├── render/            # Wikitext → HTML converter (package)
 │   ├── __init__.py    # Public API: convert_wikitext_to_html
@@ -272,6 +273,8 @@ pytest tests/test_download.py::TestDownloadWithVerify
 │   ├── embed.py       # `python -m rag.embed` CLI + embed_one() used by embed_worker
 │   ├── links.py       # extract_article_links() — wikilink extraction for embed-links
 │   └── retriever.py   # retrieve() — dense + sparse + RRF hybrid
+├── scripts/
+│   └── calibrate_chunks.py  # Sample articles and measure real nomic-embed-text token counts
 ├── tests/             # Pytest suite
 ├── templates/         # Jinja2 templates (incl. active_embedding*.html)
 ├── static/            # CSS + vendored KaTeX

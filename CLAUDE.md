@@ -23,6 +23,7 @@ local_wikipedia/
   embed_jobs.py     CRUD helpers for embed_jobs / embed_job_items tables in dumps/jobs.db
   worker.py         background subprocess: download → refresh → FTS rebuild
   embed_worker.py   background subprocess: drains embed_job_items queue via rag.embed.embed_one
+  _runner.py        shared harness for background workers (log redirect, exception capture, mark-failed)
   start.sh          tmux helper — start/stop/attach the uvicorn server in a persistent session
   render/           wikitext → HTML converter (package)
     __init__.py     public API: convert_wikitext_to_html
@@ -38,7 +39,7 @@ local_wikipedia/
     __init__.py
     schema.py       connect_rag(), create_rag_schema() — chunks + vec + FTS tables
     chunker.py      chunk_article(), extract_categories(), is_redirect()
-    embedder.py     embed_text() sync/async via Ollama; pack/unpack_embedding()
+    embedder.py     embed_text() sync/async + embed_texts_batch() via Ollama; pack/unpack_embedding()
     embed.py        CLI entry point + embed_one() used by embed_worker
     links.py        extract_article_links() — parse wikilinks from raw wikitext
     retriever.py    retrieve() — dense (sqlite-vec) + sparse (FTS5) + RRF merge
@@ -46,12 +47,14 @@ local_wikipedia/
     download.py         dump downloader + SHA-1 verifier
     download_katex.py   one-time script to fetch vendored KaTeX for offline math rendering
   parse/
-    schema.py       articles + articles_archive + parse_metadata DDL, PRAGMAs
+    schema.py       articles + articles_archive + parse_metadata + db_metadata DDL, PRAGMAs
     xml_reader.py   parse_page_element, MediaWiki namespace constants
     pipeline.py     parse_dump, _batch_insert_articles, _record_metadata
     refresh.py      refresh_dump — incremental update of an existing database
     verify.py       verify_database
     cli.py          argparse main(), _find_latest_dump
+  scripts/
+    calibrate_chunks.py   sample articles and measure real nomic-embed-text token counts; suggests MAX_CHUNK_CHARS
   tests/            pytest suite (mirrors source layout)
   templates/        Jinja2 templates (includes active_embedding.html + active_embedding_panel.html)
   static/
@@ -169,9 +172,11 @@ Pipeline order matters — stages are applied in sequence:
 
 ### Web app (`app.py`)
 
+- **Startup crash recovery** (`_recover_from_crash` via FastAPI `lifespan` hook): on every startup, marks orphaned refresh and embed jobs as `failed` so the UI doesn't show perpetual progress; also rebuilds FTS indexes for any wiki whose `fts_dirty` flag was set by a crashed refresh worker (synchronously, before serving requests).
 - Per-request SQLite connections (avoids cross-thread issues with FastAPI's threadpool)
 - `WIKI_DB` env var overrides the DB path — tests use `monkeypatch.setenv` to point at a fixture DB without restarting the app
 - `DEFAULT_DB` is derived from `paths.db_path_for(DEFAULT_WIKI)` so the default database path is never built inline twice
+- `db_metadata` table (key/value) in each wiki DB caches `article_count` so the home page avoids a full `COUNT(*)` on every request; populated lazily on first home-page load
 - `{title:path}` route converter so titles with slashes round-trip cleanly
 - `|safe` in `article.html` is intentional: the HTML comes from our own converter, not user input
 - `_search_titles` uses FTS5 MATCH via `_escape_fts5` (wraps input in phrase quotes); short queries (<3 chars) fall back to prefix LIKE
@@ -193,10 +198,11 @@ Pipeline order matters — stages are applied in sequence:
 
 - `jobs.db` in `dumps/` stores `refresh_jobs` rows; separate from wiki databases so it's never overwritten by a re-parse
 - Job lifecycle statuses: `pending` → `downloading` → `parsing` → `rebuilding` → `complete` / `failed`
-- `worker.py` runs as a standalone script (`python worker.py --wiki X --job-id N`); redirects stdout/stderr to `dumps/{wiki}_refresh.log` (line-buffered)
+- `worker.py` runs as a standalone script (`python worker.py --wiki X --job-id N`); uses `_runner.py`'s `run_worker` harness for log redirection and exception capture
 - `refresh_dump` (in `parse/refresh.py`) operates in-place on the existing database — it does **not** atomically replace it. For each article in the dump it skips (same `revision_id`), archives-then-updates (changed revision), or inserts (new `page_id`). The archive step writes the old row to `articles_archive` before overwriting so a crash leaves old data intact.
 - Batch size matches `parse/pipeline.py`'s `BATCH_SIZE` (1000). After each batch, `jobs.update_job` writes running totals to `jobs.db` so the status panel can show live progress.
 - FTS rebuild happens in `worker.py` after `refresh_dump` returns — same `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` used by the initial parse.
+- `jobs.py` tracks an `fts_dirty` flag per wiki in the `wiki_state` table. The flag is set before the FTS rebuild begins and cleared after it completes; if the worker crashes mid-rebuild, `_recover_from_crash` picks it up on next app startup. `clear_orphaned_jobs` resets any jobs still in non-terminal status at startup.
 
 ### Embed-links pipeline (`embed_jobs.py`, `embed_worker.py`, `rag/links.py`)
 
@@ -255,4 +261,5 @@ Offline embedding pipeline that chunks articles into sections and embeds them us
 | `tests/test_links.py` | `extract_article_links` — namespace filtering, dedup, redirect stubs |
 | `tests/test_rag_schema.py` | RAG schema creation and idempotence |
 | `tests/test_rag_chunker.py` | Chunker unit tests — no external deps required |
+| `tests/test_rag_embedder.py` | `embed_text`, `embed_texts_batch`, `pack/unpack_embedding` — Ollama calls mocked with respx |
 | `tests/test_rag_retriever.py` | Retrieval tests against fixture RAG DB; Ollama not required |
