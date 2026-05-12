@@ -4,129 +4,14 @@ The tests build a tiny SQLite database that mirrors the schema produced by
 ``parse.pipeline`` and point the app at it via the ``WIKI_DB`` environment
 variable. This keeps the suite hermetic — it does not require a real
 Wikipedia dump to be parsed first.
-"""
-import sqlite3
-from pathlib import Path
 
+Shared fixtures (``client``, ``embed_client``, ``crash_recovery_env``,
+``wiki_db_path``) live in ``tests/conftest.py``.
+"""
 import pytest
 from fastapi.testclient import TestClient
 
-# Importing the module (not just `app`) so we can also exercise its helpers
-# directly if a future test wants to.
 import app as web_app
-
-# A pair of fixture articles. The wikitext is intentionally tiny but uses
-# real wikitext markup so we can verify the full conversion pipeline.
-FIXTURE_ARTICLES = [
-    {
-        "page_id": 1,
-        "title": "April",
-        "wikitext": (
-            "'''April''' is the fourth [[month]] of the year.\n"
-            "== Events ==\n"
-            "* Spring begins.\n"
-        ),
-    },
-    {
-        "page_id": 2,
-        "title": "Apple",
-        "wikitext": "An '''apple''' is a [[fruit]].",
-    },
-    {
-        "page_id": 3,
-        "title": "Python (programming language)",
-        "wikitext": "'''Python''' is a [[programming language]].",
-    },
-    # Single-hop redirect — content is just the redirect stub.
-    {
-        "page_id": 4,
-        "title": "Apples",
-        "wikitext": "#REDIRECT [[Apple]]",
-    },
-    # Two-hop redirect: Pyton -> Python (programming language) -> nothing.
-    # Tests the chain follows past one hop.
-    {
-        "page_id": 5,
-        "title": "Pyton",
-        "wikitext": "#REDIRECT [[Python (programming language)]]",
-    },
-    # Cyclic redirect to test the cycle guard.
-    {
-        "page_id": 6,
-        "title": "LoopA",
-        "wikitext": "#REDIRECT [[LoopB]]",
-    },
-    {
-        "page_id": 7,
-        "title": "LoopB",
-        "wikitext": "#REDIRECT [[LoopA]]",
-    },
-]
-
-
-def _build_fixture_db(path: Path) -> None:
-    """Create a minimal SQLite database matching the parser's schema.
-
-    Only the columns the web app actually reads are populated; the rest
-    are given placeholder values so the NOT NULL constraints are satisfied.
-    """
-    conn = sqlite3.connect(path)
-    conn.execute(
-        """
-        CREATE TABLE articles (
-            page_id INTEGER PRIMARY KEY,
-            title TEXT NOT NULL,
-            namespace INTEGER NOT NULL DEFAULT 0,
-            revision_id INTEGER NOT NULL,
-            parent_revision_id INTEGER,
-            timestamp TEXT NOT NULL,
-            contributor_username TEXT,
-            contributor_id INTEGER,
-            comment TEXT,
-            text_bytes INTEGER,
-            text_content TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    conn.execute("CREATE INDEX idx_articles_title ON articles(title)")
-    conn.executemany(
-        """
-        INSERT INTO articles (
-            page_id, title, namespace, revision_id, timestamp,
-            text_bytes, text_content
-        ) VALUES (?, ?, 0, 1, '2026-01-01T00:00:00Z', ?, ?)
-        """,
-        [
-            (a["page_id"], a["title"], len(a["wikitext"]), a["wikitext"])
-            for a in FIXTURE_ARTICLES
-        ],
-    )
-    conn.execute("""
-        CREATE VIRTUAL TABLE articles_fts USING fts5(
-            title,
-            content=articles,
-            content_rowid=page_id,
-            tokenize='trigram'
-        )
-    """)
-    conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
-    conn.commit()
-    conn.close()
-
-
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    """Yield a ``TestClient`` wired to a fresh fixture database.
-
-    Each test gets its own DB file in ``tmp_path`` so tests cannot leak
-    state between each other.
-    """
-    db_path = tmp_path / "test.db"
-    _build_fixture_db(db_path)
-    monkeypatch.setenv("WIKI_DB", str(db_path))
-    with TestClient(web_app.app) as c:
-        yield c
 
 
 class TestIndex:
@@ -296,48 +181,6 @@ class TestDatabaseMissing:
         with TestClient(web_app.app) as c:
             resp = c.get("/search", params={"q": "April"})
             assert resp.status_code == 503
-
-
-@pytest.fixture
-def embed_client(tmp_path, monkeypatch):
-    """Yield a TestClient with the embed-links route plumbing isolated.
-
-    The fixture DB is the same as the regular client; in addition we point
-    ``app.JOBS_DB`` at a tmp file (so refresh- and embed-job rows don't
-    leak between tests), and we stub ``subprocess.Popen`` to a no-op so the
-    workers.embed subprocess is never actually spawned.
-    """
-    import subprocess
-    import paths
-    from jobs import embed as embed_jobs
-
-    db_path = tmp_path / "test.db"
-    _build_fixture_db(db_path)
-    monkeypatch.setenv("WIKI_DB", str(db_path))
-
-    jobs_db = tmp_path / "jobs.db"
-    monkeypatch.setattr(paths, "JOBS_DB", jobs_db)
-    # The embed-links route uses BASE_DIR to derive the log_path string; the
-    # subprocess.Popen call itself is stubbed below.
-    monkeypatch.setattr(paths, "BASE_DIR", tmp_path)
-
-    spawned: list[list[str]] = []
-
-    def fake_popen(args, **kwargs):
-        spawned.append(args)
-
-        class _P:
-            pass
-
-        return _P()
-
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
-
-    with TestClient(web_app.app) as c:
-        c.spawned = spawned
-        c.jobs_db = jobs_db
-        c.embed_jobs = embed_jobs
-        yield c
 
 
 class TestEmbedLinks:
@@ -527,40 +370,6 @@ class TestActiveEmbedding:
         # Polling attribute should be gone once cancel is requested.
         assert 'hx-trigger="every 3s"' not in resp.text
         assert "cancelling" in resp.text or "cancel" in resp.text.lower()
-
-
-@pytest.fixture
-def crash_recovery_env(tmp_path, monkeypatch):
-    """Yield (jobs_db_path, dumps_dir) with app.py pointed at this tmp dir.
-
-    Used by TestCrashRecovery: lifespan startup hook reads from JOBS_DB and
-    db_path_for(), so both must be redirected before the TestClient enters
-    the lifespan context.
-    """
-    import paths
-    from jobs import refresh as refresh_jobs
-    from jobs import embed as embed_jobs
-
-    dumps = tmp_path / "dumps"
-    dumps.mkdir()
-    jobs_db = dumps / "jobs.db"
-
-    monkeypatch.setattr(paths, "JOBS_DB", jobs_db)
-    monkeypatch.setattr(paths, "db_path_for", lambda wiki: dumps / f"{wiki}.db")
-
-    # Build a fixture wiki DB so the FTS rebuild path has something to operate on.
-    wiki_db_path = dumps / "enwiki.db"
-    _build_fixture_db(wiki_db_path)
-    # WIKI_DB lets non-recovery routes find the same DB if we exercise them.
-    monkeypatch.setenv("WIKI_DB", str(wiki_db_path))
-
-    return {
-        "jobs_db": jobs_db,
-        "dumps": dumps,
-        "wiki_db": wiki_db_path,
-        "jobs": refresh_jobs,
-        "embed_jobs": embed_jobs,
-    }
 
 
 class TestCrashRecovery:
