@@ -242,9 +242,11 @@ pytest tests/test_download.py::TestDownloadWithVerify
 ├── db.py              # connect(), redirect_target(), resolve_redirect()
 ├── jobs.py            # CRUD helpers for refresh_jobs table in dumps/jobs.db
 ├── embed_jobs.py      # CRUD helpers for embed_jobs / embed_job_items tables
-├── worker.py          # Background subprocess: download → refresh → FTS rebuild
-├── embed_worker.py    # Background subprocess: drains embed_job_items queue
-├── _runner.py         # Shared harness for background workers (log redirect, exception capture)
+├── workers/           # Background-subprocess package
+│   ├── __init__.py
+│   ├── runner.py      # Shared harness (log redirect, exception capture)
+│   ├── refresh.py     # Download → refresh → FTS rebuild
+│   └── embed.py       # Drains embed_job_items queue
 ├── start.sh           # tmux helper — start/stop/attach the uvicorn server
 ├── render/            # Wikitext → HTML converter (package)
 │   ├── __init__.py    # Public API: convert_wikitext_to_html

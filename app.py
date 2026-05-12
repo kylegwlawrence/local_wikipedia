@@ -468,7 +468,8 @@ def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
     _refresh_log.parent.mkdir(parents=True, exist_ok=True)
     with open(_refresh_log, "a") as _log:
         subprocess.Popen(
-            [sys.executable, str(BASE_DIR / "worker.py"), "--wiki", wiki, "--job-id", str(job_id)],
+            [sys.executable, "-m", "workers.refresh", "--wiki", wiki, "--job-id", str(job_id)],
+            cwd=BASE_DIR,
             start_new_session=True,
             stdout=_log,
             stderr=_log,
@@ -854,8 +855,9 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
         _embed_log.parent.mkdir(parents=True, exist_ok=True)
         with open(_embed_log, "a") as _log:
             subprocess.Popen(
-                [sys.executable, str(BASE_DIR / "embed_worker.py"),
+                [sys.executable, "-m", "workers.embed",
                  "--wiki", wiki, "--job-id", str(job_id)],
+                cwd=BASE_DIR,
                 start_new_session=True,
                 stdout=_log,
                 stderr=_log,
@@ -944,8 +946,9 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
         _embed_log.parent.mkdir(parents=True, exist_ok=True)
         with open(_embed_log, "a") as _log:
             subprocess.Popen(
-                [sys.executable, str(BASE_DIR / "embed_worker.py"),
+                [sys.executable, "-m", "workers.embed",
                  "--wiki", wiki, "--job-id", str(job_id)],
+                cwd=BASE_DIR,
                 start_new_session=True,
                 stdout=_log,
                 stderr=_log,

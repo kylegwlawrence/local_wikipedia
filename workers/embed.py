@@ -4,23 +4,20 @@ Spawned as a detached subprocess by ``POST /embed-links/{title}``. Loops over
 ``embed_job_items`` rows for the given job, calling ``rag.embed.embed_one`` for
 each one and updating per-item status. Checks the job's ``cancel_requested``
 flag between items so a long-running batch can be stopped cleanly.
+
+Invoke as ``python -m workers.embed --wiki WIKI --job-id N`` from the
+project root.
 """
 import argparse
-import pathlib
 import sys
-
-# Ensure the project root is importable regardless of invocation directory.
-_ROOT = pathlib.Path(__file__).parent.resolve()
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 import db as wiki_db
 import embed_jobs
-from _runner import run_worker
 from paths import JOBS_DB, db_path_for, rag_db_path_for
 from rag import chunker
-from rag.embed import embed_one, delete_article as rag_delete_article
+from rag.embed import embed_one
 from rag.schema import connect_rag
+from workers.runner import run_worker
 
 
 def _process_item(

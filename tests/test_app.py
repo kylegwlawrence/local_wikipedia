@@ -305,7 +305,7 @@ def embed_client(tmp_path, monkeypatch):
     The fixture DB is the same as the regular client; in addition we point
     ``app.JOBS_DB`` at a tmp file (so refresh- and embed-job rows don't
     leak between tests), and we stub ``subprocess.Popen`` to a no-op so the
-    embed_worker.py subprocess is never actually spawned.
+    workers.embed subprocess is never actually spawned.
     """
     import subprocess
     import embed_jobs
@@ -316,7 +316,7 @@ def embed_client(tmp_path, monkeypatch):
 
     jobs_db = tmp_path / "jobs.db"
     monkeypatch.setattr(web_app, "JOBS_DB", jobs_db)
-    # The embed-links route uses BASE_DIR to spawn embed_worker.py; the spawn
+    # The embed-links route uses BASE_DIR to spawn workers.embed; the spawn
     # itself is stubbed, but the log_path string is still derived from BASE_DIR.
     monkeypatch.setattr(web_app, "BASE_DIR", tmp_path)
 
@@ -371,9 +371,9 @@ class TestEmbedLinks:
         finally:
             conn.close()
 
-        # A worker should have been spawned exactly once.
+        # A worker should have been spawned exactly once via `python -m workers.embed`.
         assert len(embed_client.spawned) == 1
-        assert embed_client.spawned[0][1].endswith("embed_worker.py")
+        assert embed_client.spawned[0][1:3] == ["-m", "workers.embed"]
 
     def test_redirect_targets_collapse_to_canonical(self, embed_client):
         # Inject an article whose body links to a redirect stub ('Apples'

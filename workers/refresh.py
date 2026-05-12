@@ -2,23 +2,22 @@
 
 Spawned as a detached subprocess by the FastAPI app so the job survives
 browser disconnects. All output goes to a per-wiki log file in dumps/.
+
+Invoke as ``python -m workers.refresh --wiki WIKI --job-id N`` from the
+project root.
 """
 import argparse
 import pathlib
+import sqlite3
 import sys
 
-# Ensure the project root is on sys.path regardless of invocation directory.
-_ROOT = pathlib.Path(__file__).parent.resolve()
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
 import jobs
-from _runner import run_worker
 from download import download as downloader
 from parse.cli import _find_latest_dump
 from parse.refresh import refresh_dump
 from parse.schema import create_schema
 from paths import DUMPS_DIR, JOBS_DB, db_path_for
+from workers.runner import run_worker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         # --- FTS rebuild -----------------------------------------------------
         jobs.update_job(jobs_conn, job_id, status="rebuilding")
         print("[worker] Rebuilding FTS5 index…", flush=True)
-        wiki_conn = __import__("sqlite3").connect(db_path)
+        wiki_conn = sqlite3.connect(db_path)
         create_schema(wiki_conn)
         wiki_conn.execute("INSERT INTO articles_fts(articles_fts) VALUES('rebuild')")
         wiki_conn.commit()

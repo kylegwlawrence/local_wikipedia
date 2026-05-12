@@ -21,9 +21,11 @@ local_wikipedia/
   db.py             connect(), redirect_target(), resolve_redirect() — shared by app + embed pipeline
   jobs.py           CRUD helpers for refresh_jobs table in dumps/jobs.db
   embed_jobs.py     CRUD helpers for embed_jobs / embed_job_items tables in dumps/jobs.db
-  worker.py         background subprocess: download → refresh → FTS rebuild
-  embed_worker.py   background subprocess: drains embed_job_items queue via rag.embed.embed_one
-  _runner.py        shared harness for background workers (log redirect, exception capture, mark-failed)
+  workers/          background-subprocess package
+    __init__.py
+    runner.py       shared harness (log redirect, exception capture, mark-failed)
+    refresh.py      download → refresh → FTS rebuild
+    embed.py        drains embed_job_items queue via rag.embed.embed_one
   start.sh          tmux helper — start/stop/attach the uvicorn server in a persistent session
   render/           wikitext → HTML converter (package)
     __init__.py     public API: convert_wikitext_to_html
@@ -186,32 +188,32 @@ Pipeline order matters — stages are applied in sequence:
 - Wiki-switching badges appear in all page headers: home page has them in `<div class="wiki-badges">` below the `<h1>`; embed manager and active-embedding have them inline inside the `<h1>`; article and wikitext views have them inline in the article `<h2>`. The active wiki renders as a `<span>` (disabled); the other renders as `<a>` with `wiki-badge--switch` (only if that wiki's DB exists).
 - All full-page templates include `<div class="nav-btn-group">` with Home / Embeddings / Processes links, positioned below the page header. Routes pass `current_page` (`"home"` / `"embeddings"` / `"processes"` / `""`) to control which button renders as active (`nav-btn--active` span) vs a plain link. Chunks passes `""` — no item is highlighted.
 - `index()` gates `other_wiki` on DB existence before passing to template (consistent with `embed_manager` and `_render_active_embedding_panel`)
-- `POST /refresh/{wiki}` creates a job row (inside `BEGIN IMMEDIATE` to avoid duplicate active jobs), then spawns `worker.py` as a detached subprocess (`start_new_session=True`) so it outlives the HTTP connection
+- `POST /refresh/{wiki}` creates a job row (inside `BEGIN IMMEDIATE` to avoid duplicate active jobs), then spawns `python -m workers.refresh` as a detached subprocess (`start_new_session=True`) so it outlives the HTTP connection
 - `GET /refresh/status/{wiki}` returns the latest job row as the `refresh_panel.html` partial — polled by HTMX while a job is active
-- `POST /embed-links/{title}` extracts wikilinks from the article, resolves redirects, and enqueues source + linked articles for batch embedding; spawns `embed_worker.py` if no job is active, otherwise appends to the running job
+- `POST /embed-links/{title}` extracts wikilinks from the article, resolves redirects, and enqueues source + linked articles for batch embedding; spawns `python -m workers.embed` if no job is active, otherwise appends to the running job
 - `GET /active-embedding` and `GET /active-embedding/panel` render the batch embedding status page; the panel is polled by HTMX every 3s while a job is running
 - `POST /active-embedding/cancel/{job_id}` sets `cancel_requested` on the job; the worker checks this flag between items
 - `GET /article/{title}` and `GET /wikitext/{title}` return embed-status context including `links_embedded` (bool) — the article header shows a "links embedded" badge when the article has been processed through the embed-links pipeline
 - After every HTMX article swap, `base.html`'s inline JS scrolls to the top of the page (or to the anchor section if the link included a `#fragment`)
 
-### Refresh job system (`jobs.py`, `worker.py`, `parse/refresh.py`)
+### Refresh job system (`jobs.py`, `workers/refresh.py`, `parse/refresh.py`)
 
 - `jobs.db` in `dumps/` stores `refresh_jobs` rows; separate from wiki databases so it's never overwritten by a re-parse
 - Job lifecycle statuses: `pending` → `downloading` → `parsing` → `rebuilding` → `complete` / `failed`
-- `worker.py` runs as a standalone script (`python worker.py --wiki X --job-id N`); uses `_runner.py`'s `run_worker` harness for log redirection and exception capture
+- `workers/refresh.py` runs as a module entry point (`python -m workers.refresh --wiki X --job-id N`); uses `workers/runner.py`'s `run_worker` harness for log redirection and exception capture
 - `refresh_dump` (in `parse/refresh.py`) operates in-place on the existing database — it does **not** atomically replace it. For each article in the dump it skips (same `revision_id`), archives-then-updates (changed revision), or inserts (new `page_id`). The archive step writes the old row to `articles_archive` before overwriting so a crash leaves old data intact.
 - Batch size matches `parse/pipeline.py`'s `BATCH_SIZE` (1000). After each batch, `jobs.update_job` writes running totals to `jobs.db` so the status panel can show live progress.
-- FTS rebuild happens in `worker.py` after `refresh_dump` returns — same `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` used by the initial parse.
+- FTS rebuild happens in `workers/refresh.py` after `refresh_dump` returns — same `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` used by the initial parse.
 - `jobs.py` tracks an `fts_dirty` flag per wiki in the `wiki_state` table. The flag is set before the FTS rebuild begins and cleared after it completes; if the worker crashes mid-rebuild, `_recover_from_crash` picks it up on next app startup. `clear_orphaned_jobs` resets any jobs still in non-terminal status at startup.
 
-### Embed-links pipeline (`embed_jobs.py`, `embed_worker.py`, `rag/links.py`)
+### Embed-links pipeline (`embed_jobs.py`, `workers/embed.py`, `rag/links.py`)
 
 UI-triggered batch embedding: clicking "Embed + links" on an article enqueues the article and all its wikilink targets for embedding via `POST /embed-links/{title}`.
 
 - **Link extraction** (`rag/links.py`): `extract_article_links(wikitext, source_title)` parses raw wikitext with a regex (not mwparserfromhell) to extract `[[Target]]` wikilinks, filters out non-article namespaces (File:, Category:, etc.), capitalises first letters, and deduplicates. Source article always leads the queue.
 - **Redirect resolution**: each link target is resolved through the wiki DB's `#REDIRECT` chains (via `db.resolve_redirect`) before enqueueing so the queue stores canonical titles. Unresolvable targets are kept and surface as `not_found` items.
 - **Job model**: `embed_jobs` table holds one job per wiki; items in `embed_job_items` are deduped by `(job_id, title)` so multiple "Embed + links" clicks on different articles append to the same active job without redundant rows. Job status: `running` → `complete` / `cancelled` / `failed`.
-- **Worker** (`embed_worker.py`): drains the queue serially via `rag.embed.embed_one`; checks `cancel_requested` between items for clean cancellation; writes output to `dumps/{wiki}_embed.log`.
+- **Worker** (`workers/embed.py`): drains the queue serially via `rag.embed.embed_one`; checks `cancel_requested` between items for clean cancellation; writes output to `dumps/{wiki}_embed.log`.
 - **Shared DB**: embed jobs share `dumps/jobs.db` with refresh jobs but use separate tables (`embed_jobs`, `embed_job_items`) — both are created idempotently in `embed_jobs.ensure_embed_schema`.
 - `db.redirect_target()` and `db.resolve_redirect()` were moved from `app.py` into `db.py` so the embed pipeline can use them without importing the FastAPI app.
 
