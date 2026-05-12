@@ -13,6 +13,7 @@ overridden with the ``WIKI_DB`` environment variable, which is what the tests
 use to point at a temporary fixture database.
 """
 import json
+import math
 import os
 import pathlib
 import sqlite3
@@ -580,10 +581,12 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
 
     rag_path = rag_db_path_for(wiki)
     rag_conn = connect_rag(rag_path)
+    chunk_count = 0
     error = False
+    embed_error: str | None = None
     links_embedded = False
     try:
-        rag_embed_one(
+        chunk_count = rag_embed_one(
             rag_conn,
             row["page_id"],
             row["title"],
@@ -595,10 +598,17 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
             (row["page_id"],),
         ).fetchone()
         links_embedded = bool(links_row and links_row["links_embedded"])
-    except Exception:
+    except Exception as exc:
         error = True
+        embed_error = str(exc)
     finally:
         rag_conn.close()
+
+    jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        embed_jobs.record_sync_embed(jobs_conn, wiki, title, chunk_count, embed_error)
+    finally:
+        jobs_conn.close()
 
     return templates.TemplateResponse(request, "embed_status_widget.html", {
         "title": title,
@@ -647,20 +657,24 @@ def _render_active_embedding_panel(
     wiki: str,
     *,
     fragment_only: bool,
+    job_id: int | None = None,
 ) -> HTMLResponse:
     """Render the active embedding panel (HTMX-polled inner content).
 
     If ``fragment_only`` is True returns just the panel fragment for HTMX
     polling; otherwise returns the full ``active_embedding.html`` page.
+    If ``job_id`` is given, show that specific job instead of the most recent.
     """
     conn = embed_jobs.connect_embed_jobs(JOBS_DB)
     try:
-        active = embed_jobs.get_active_job(conn, wiki)
-        if active is None:
-            latest = embed_jobs.get_latest_jobs(conn, wiki, limit=1)
-            active = latest[0] if latest else None
+        if job_id is not None:
+            active = embed_jobs.get_job(conn, job_id)
+        else:
+            active = embed_jobs.get_active_job(conn, wiki)
+            if active is None:
+                latest = embed_jobs.get_latest_jobs(conn, wiki, limit=1)
+                active = latest[0] if latest else None
 
-        recent = embed_jobs.get_latest_jobs(conn, wiki, limit=6)
         items_by_job: dict[int, list[dict]] = {}
         counts_by_job: dict[int, dict[str, int]] = {}
         if active is not None:
@@ -670,12 +684,15 @@ def _render_active_embedding_panel(
             counts_by_job[active["id"]] = embed_jobs.count_items_by_status(
                 conn, active["id"]
             )
-        recent_dicts = []
-        for job in recent:
-            if active is not None and job["id"] == active["id"]:
-                continue
-            counts = embed_jobs.count_items_by_status(conn, job["id"])
-            recent_dicts.append({"job": dict(job), "counts": counts})
+
+        list_jobs: list[sqlite3.Row] = []
+        list_total = 0
+        list_counts: dict[int, dict[str, int]] = {}
+        if not fragment_only:
+            list_jobs, list_total = embed_jobs.get_jobs_page(conn)
+            list_counts = embed_jobs.get_item_counts_for_jobs(
+                conn, [j["id"] for j in list_jobs]
+            )
     finally:
         conn.close()
 
@@ -713,8 +730,36 @@ def _render_active_embedding_panel(
         "counts": counts,
         "elapsed": elapsed,
         "started_at_display": started_at_display,
-        "recent_jobs": recent_dicts,
         "current_page": "processes",
+        "list_jobs": [dict(j) for j in list_jobs],
+        "list_total": list_total,
+        "list_counts": list_counts,
+        "list_page": 1,
+        "list_total_pages": math.ceil(list_total / 5) if list_total else 0,
+        "list_q": "",
+    })
+
+
+def _render_job_list_panel(
+    request: Request,
+    wiki: str,
+    q: str = "",
+    page: int = 1,
+) -> HTMLResponse:
+    """Render the paginated job list fragment for HTMX search/pagination."""
+    conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    try:
+        jobs, total = embed_jobs.get_jobs_page(conn, q=q, page=page)
+        counts = embed_jobs.get_item_counts_for_jobs(conn, [j["id"] for j in jobs])
+    finally:
+        conn.close()
+    return templates.TemplateResponse(request, "job_list_panel.html", {
+        "list_jobs": [dict(j) for j in jobs],
+        "list_total": total,
+        "list_counts": counts,
+        "list_page": page,
+        "list_total_pages": math.ceil(total / 5) if total else 0,
+        "list_q": q,
     })
 
 
@@ -880,10 +925,22 @@ def active_embedding(request: Request) -> HTMLResponse:
     return _render_active_embedding_panel(request, wiki, fragment_only=False)
 
 
+@app.get("/active-embedding/jobs", response_class=HTMLResponse)
+def active_embedding_jobs(request: Request, q: str = "", page: int = 1) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    return _render_job_list_panel(request, wiki, q=q, page=page)
+
+
 @app.get("/active-embedding/panel", response_class=HTMLResponse)
 def active_embedding_panel(request: Request) -> HTMLResponse:
     wiki = _active_wiki(request)
     return _render_active_embedding_panel(request, wiki, fragment_only=True)
+
+
+@app.get("/active-embedding/panel/{job_id}", response_class=HTMLResponse)
+def active_embedding_panel_for_job(request: Request, job_id: int) -> HTMLResponse:
+    wiki = _active_wiki(request)
+    return _render_active_embedding_panel(request, wiki, fragment_only=True, job_id=job_id)
 
 
 @app.post("/active-embedding/cancel/{job_id}", response_class=HTMLResponse)

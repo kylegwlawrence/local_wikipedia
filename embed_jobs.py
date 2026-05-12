@@ -266,3 +266,87 @@ def count_items_by_status(
         (job_id,),
     ).fetchall()
     return {r["status"]: r["n"] for r in rows}
+
+
+def get_item_counts_for_jobs(
+    conn: sqlite3.Connection, job_ids: list[int]
+) -> dict[int, dict[str, int]]:
+    """Return ``{job_id: {status: count}}`` for all jobs in ``job_ids``."""
+    if not job_ids:
+        return {}
+    placeholders = ",".join("?" * len(job_ids))
+    rows = conn.execute(
+        f"SELECT job_id, status, COUNT(*) AS n FROM embed_job_items "
+        f"WHERE job_id IN ({placeholders}) GROUP BY job_id, status",
+        job_ids,
+    ).fetchall()
+    result: dict[int, dict[str, int]] = {}
+    for r in rows:
+        result.setdefault(r["job_id"], {})[r["status"]] = r["n"]
+    return result
+
+
+def get_jobs_page(
+    conn: sqlite3.Connection,
+    q: str = "",
+    page: int = 1,
+    per_page: int = 5,
+) -> tuple[list[sqlite3.Row], int]:
+    """Return ``(rows, total)`` across all wikis with pagination and optional search.
+
+    If ``q`` is a digit string (optionally prefixed with ``#``) the search
+    filters by job id.  Otherwise it filters by ``triggered_by_title LIKE``.
+    """
+    where_clauses: list[str] = []
+    params: list = []
+    q = q.strip()
+    if q:
+        stripped = q.lstrip("#")
+        if stripped.isdigit():
+            where_clauses.append("id = ?")
+            params.append(int(stripped))
+        else:
+            where_clauses.append("triggered_by_title LIKE ?")
+            params.append(f"%{q}%")
+    where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    total: int = conn.execute(
+        f"SELECT COUNT(*) FROM embed_jobs {where}", params
+    ).fetchone()[0]
+    offset = (page - 1) * per_page
+    rows = conn.execute(
+        f"SELECT * FROM embed_jobs {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+        params + [per_page, offset],
+    ).fetchall()
+    return rows, total
+
+
+def record_sync_embed(
+    conn: sqlite3.Connection,
+    wiki: str,
+    title: str,
+    chunk_count: int = 0,
+    error_message: str | None = None,
+) -> int:
+    """Record a completed synchronous single-article embed as a finished job.
+
+    Creates both the ``embed_jobs`` row (already in a terminal status) and a
+    single ``embed_job_items`` row so the job detail view shows what was done.
+    Returns the new job id.
+    """
+    job_status = "failed" if error_message else "complete"
+    item_status = "failed" if error_message else "completed"
+    cur = conn.execute(
+        "INSERT INTO embed_jobs "
+        "(wiki, status, triggered_by_title, include_links, finished_at, updated_at) "
+        "VALUES (?, ?, ?, 0, datetime('now'), datetime('now'))",
+        (wiki, job_status, title),
+    )
+    job_id = cur.lastrowid
+    conn.execute(
+        "INSERT INTO embed_job_items "
+        "(job_id, title, source_title, status, chunk_count, error_message, finished_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+        (job_id, title, title, item_status, chunk_count, error_message),
+    )
+    conn.commit()
+    return job_id

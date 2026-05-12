@@ -15,5 +15,7 @@
     {%- if current_page == 'processes' %}<span class="nav-btn nav-btn--active">Processes</span>{% else %}<a class="nav-btn" href="/active-embedding">Processes</a>{% endif %}
 </div>
 
+{% include "job_list_panel.html" %}
+
 {% include "active_embedding_panel.html" %}
 {% endblock %}

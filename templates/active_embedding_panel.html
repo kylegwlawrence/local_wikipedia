@@ -83,21 +83,4 @@
     {% endfor %}
   {% endif %}
 
-  {% if recent_jobs %}
-  <section class="embed-recent-jobs">
-    <h3>Recent jobs</h3>
-    <ul>
-      {% for entry in recent_jobs %}
-      <li>
-        <span class="refresh-badge refresh-badge--{{ entry.job.status }}">{{ entry.job.status }}</span>
-        job #{{ entry.job.id }} — started {{ entry.job.started_at }}
-        {% if entry.job.triggered_by_title %} — from <a href="/?article={{ entry.job.triggered_by_title|urlencode }}">{{ entry.job.triggered_by_title }}</a>{% endif %}
-        {% if entry.counts %}
-        ({% for status, n in entry.counts.items() %}{{ n }} {{ status.replace('_', ' ') }}{% if not loop.last %}, {% endif %}{% endfor %})
-        {% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </section>
-  {% endif %}
 </div>
