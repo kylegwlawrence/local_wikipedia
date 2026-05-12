@@ -46,6 +46,10 @@ def ensure_embed_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE embed_jobs ADD COLUMN triggered_by_title TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists (existing database)
+    try:
+        conn.execute("ALTER TABLE embed_jobs ADD COLUMN include_links INTEGER NOT NULL DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass  # column already exists (existing database)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS embed_job_items (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,11 +78,13 @@ def create_job(
     wiki: str,
     log_path: str,
     triggered_by_title: str | None = None,
+    include_links: int = 1,
 ) -> int:
     """Insert a new running job and return its id."""
     cur = conn.execute(
-        "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title) VALUES (?, ?, ?)",
-        (wiki, log_path, triggered_by_title),
+        "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title, include_links) "
+        "VALUES (?, ?, ?, ?)",
+        (wiki, log_path, triggered_by_title, include_links),
     )
     conn.commit()
     return cur.lastrowid

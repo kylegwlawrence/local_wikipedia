@@ -7,6 +7,7 @@ Usage:
 """
 import argparse
 import sys
+from datetime import datetime, timezone
 
 import httpx
 from tqdm import tqdm
@@ -43,7 +44,7 @@ def _load_embedded(rag_conn) -> dict[int, int]:
     return {r["page_id"]: r["revision_id"] for r in rows}
 
 
-def _delete_article(rag_conn, page_id: int) -> None:
+def delete_article(rag_conn, page_id: int) -> None:
     """Remove all chunks, vectors, FTS entries, and meta for one article.
 
     Args:
@@ -113,7 +114,8 @@ def _insert_chunk(
 
 
 def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
-                   wikitext: str, ollama_url: str) -> int:
+                   wikitext: str, ollama_url: str,
+                   links_embedded: int = 0) -> int:
     """Chunk and embed one article, writing results to the RAG database.
 
     Uses ``fts_incremental=False`` because the CLI does a bulk FTS rebuild after
@@ -126,6 +128,8 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
         revision_id: Current revision ID for incremental tracking.
         wikitext: Raw wikitext content of the article.
         ollama_url: Ollama server base URL.
+        links_embedded: Preserved value from the previous articles_meta row;
+            caller must capture this before calling delete_article().
 
     Returns:
         Number of chunks successfully inserted.
@@ -137,9 +141,13 @@ def _embed_article(rag_conn, page_id: int, title: str, revision_id: int,
     chunks = chunker.chunk_article(title, wikitext)
 
     rag_conn.execute(
-        "INSERT OR REPLACE INTO articles_meta (page_id, title, revision_id, categories) "
-        "VALUES (?, ?, ?, ?)",
-        (page_id, title, revision_id, "|".join(categories)),
+        "INSERT OR REPLACE INTO articles_meta "
+        "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (page_id, title, revision_id, "|".join(categories),
+         datetime.now(timezone.utc).isoformat(),
+         len(wikitext.encode("utf-8")),
+         links_embedded),
     )
 
     if not chunks:
@@ -186,15 +194,24 @@ def embed_one(
     if chunker.is_redirect(wikitext):
         return 0
 
-    _delete_article(rag_conn, page_id)
+    existing = rag_conn.execute(
+        "SELECT links_embedded FROM articles_meta WHERE page_id = ?", (page_id,)
+    ).fetchone()
+    preserved_links_embedded = existing["links_embedded"] if existing else 0
+
+    delete_article(rag_conn, page_id)
 
     categories = chunker.extract_categories(wikitext)
     chunks_data = chunker.chunk_article(title, wikitext)
 
     rag_conn.execute(
-        "INSERT OR REPLACE INTO articles_meta (page_id, title, revision_id, categories) "
-        "VALUES (?, ?, ?, ?)",
-        (page_id, title, revision_id, "|".join(categories)),
+        "INSERT INTO articles_meta "
+        "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (page_id, title, revision_id, "|".join(categories),
+         datetime.now(timezone.utc).isoformat(),
+         len(wikitext.encode("utf-8")),
+         preserved_links_embedded),
     )
 
     if not chunks_data:
@@ -258,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         affected = [r["page_id"] for r in rows]
         print(f"Found {len(affected)} articles with image-noise chunks. Deleting...")
         for page_id in tqdm(affected, desc="Clearing stale chunks", unit="art"):
-            _delete_article(rag_conn, page_id)
+            delete_article(rag_conn, page_id)
         rag_conn.commit()
         rag_conn.close()
         print(f"Done. Run 'python -m rag.embed --wiki {args.wiki}' to re-embed affected articles.")
@@ -300,15 +317,21 @@ def main(argv: list[str] | None = None) -> int:
                 if embedded[page_id] == revision_id:
                     stats["skipped"] += 1
                     continue
-                _delete_article(rag_conn, page_id)
+                existing = rag_conn.execute(
+                    "SELECT links_embedded FROM articles_meta WHERE page_id = ?", (page_id,)
+                ).fetchone()
+                preserved_links_embedded = existing["links_embedded"] if existing else 0
+                delete_article(rag_conn, page_id)
                 stats["updated"] += 1
             else:
+                preserved_links_embedded = 0
                 stats["embedded"] += 1
 
             try:
                 _embed_article(
                     rag_conn, page_id, row["title"], revision_id,
                     row["text_content"], args.ollama_url,
+                    links_embedded=preserved_links_embedded,
                 )
             except Exception as exc:
                 print(f"\nFailed {row['title']!r}: {exc}", file=sys.stderr)

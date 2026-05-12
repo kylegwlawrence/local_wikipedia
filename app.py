@@ -31,7 +31,7 @@ import db as wiki_db
 import embed_jobs
 import jobs as refresh_jobs
 from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
-from rag.embed import embed_one as rag_embed_one
+from rag.embed import delete_article as rag_delete_article, embed_one as rag_embed_one
 from rag.links import extract_article_links
 from rag.schema import connect_rag
 from render import convert_wikitext_to_html
@@ -392,6 +392,16 @@ def _format_started_at(started_at: str) -> str:
         return started_at
 
 
+def _format_embedded_at(ts: str | None) -> str:
+    if not ts:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(ts)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ts
+
+
 def _render_status_panel(
     request: Request, wiki: str, job: sqlite3.Row | None
 ) -> HTMLResponse:
@@ -499,7 +509,9 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
         page = max(1, min(page, total_pages))
         offset = (page - 1) * EMBED_PAGE_SIZE
         rows = rag_conn.execute(
-            """SELECT m.page_id, m.title, m.categories, COUNT(c.chunk_id) AS chunk_count
+            """SELECT m.page_id, m.title, m.categories,
+                      m.article_size_bytes, m.embedded_at, m.links_embedded,
+                      COUNT(c.chunk_id) AS chunk_count
                FROM articles_meta m
                LEFT JOIN chunks c ON c.page_id = m.page_id
                GROUP BY m.page_id
@@ -508,6 +520,8 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
             (EMBED_PAGE_SIZE, offset),
         ).fetchall()
         articles = [dict(r) for r in rows]
+        for a in articles:
+            a["embedded_at_display"] = _format_embedded_at(a.get("embedded_at"))
     finally:
         rag_conn.close()
 
@@ -529,25 +543,16 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
     rag_conn = _rag_connect(wiki)
 
     embedded = False
+    links_embedded = False
     if rag_conn is not None:
         try:
             row = rag_conn.execute(
-                "SELECT 1 FROM articles_meta WHERE title = ?", (title,)
+                "SELECT links_embedded FROM articles_meta WHERE title = ?", (title,)
             ).fetchone()
             embedded = row is not None
+            links_embedded = bool(row and row["links_embedded"])
         finally:
             rag_conn.close()
-
-    jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
-    try:
-        links_row = jobs_conn.execute(
-            "SELECT 1 FROM embed_jobs WHERE wiki = ? AND triggered_by_title = ? "
-            "AND status = 'complete' LIMIT 1",
-            (wiki, title),
-        ).fetchone()
-        links_embedded = links_row is not None
-    finally:
-        jobs_conn.close()
 
     return templates.TemplateResponse(request, "embed_status_widget.html", {
         "title": title,
@@ -576,6 +581,7 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
     rag_path = rag_db_path_for(wiki)
     rag_conn = connect_rag(rag_path)
     error = False
+    links_embedded = False
     try:
         rag_embed_one(
             rag_conn,
@@ -584,21 +590,15 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
             row["revision_id"],
             row["text_content"],
         )
+        links_row = rag_conn.execute(
+            "SELECT links_embedded FROM articles_meta WHERE page_id = ?",
+            (row["page_id"],),
+        ).fetchone()
+        links_embedded = bool(links_row and links_row["links_embedded"])
     except Exception:
         error = True
     finally:
         rag_conn.close()
-
-    jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
-    try:
-        links_row = jobs_conn.execute(
-            "SELECT 1 FROM embed_jobs WHERE wiki = ? AND triggered_by_title = ? "
-            "AND status = 'complete' LIMIT 1",
-            (wiki, title),
-        ).fetchone()
-        links_embedded = links_row is not None
-    finally:
-        jobs_conn.close()
 
     return templates.TemplateResponse(request, "embed_status_widget.html", {
         "title": title,
@@ -769,22 +769,19 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
         active = embed_jobs.get_active_job(jobs_conn, wiki)
         if active is None:
             log_path = str(BASE_DIR / "dumps" / f"{wiki}_embed.log")
-            cur = jobs_conn.execute(
-                "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title) VALUES (?, ?, ?)",
-                (wiki, log_path, source_title),
+            job_id = embed_jobs.create_job(
+                jobs_conn, wiki, log_path,
+                triggered_by_title=source_title,
+                include_links=1,
             )
-            job_id = cur.lastrowid
             spawn_worker = True
         else:
             job_id = active["id"]
 
         if items:
-            jobs_conn.executemany(
-                "INSERT OR IGNORE INTO embed_job_items (job_id, title, source_title) "
-                "VALUES (?, ?, ?)",
-                [(job_id, t, s) for t, s in items],
-            )
-        jobs_conn.commit()
+            embed_jobs.append_items(jobs_conn, job_id, items)
+        else:
+            jobs_conn.commit()
     finally:
         jobs_conn.close()
 
@@ -802,6 +799,76 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
 
     # HTMX requests: send the browser to /active-embedding. Non-HTMX callers
     # (curl, tests) get a 303 to the same place so behaviour is consistent.
+    if request.headers.get("hx-request"):
+        return Response(status_code=204, headers={"HX-Redirect": "/active-embedding"})
+    return RedirectResponse("/active-embedding", status_code=303)
+
+
+@app.delete("/embed/{wiki}/{title:path}")
+def delete_embed(request: Request, wiki: str, title: str) -> Response:
+    """Remove all chunks, vectors, and metadata for one embedded article."""
+    if wiki not in KNOWN_WIKIS:
+        raise HTTPException(status_code=400, detail=f"Unknown wiki: {wiki}")
+    rag_conn = _rag_connect(wiki)
+    if rag_conn is None:
+        raise HTTPException(status_code=404, detail="No RAG database for this wiki")
+    try:
+        meta = rag_conn.execute(
+            "SELECT page_id FROM articles_meta WHERE title = ?", (title,)
+        ).fetchone()
+        if meta is None:
+            raise HTTPException(status_code=404, detail=f"Article not embedded: {title}")
+        rag_delete_article(rag_conn, meta["page_id"])
+        rag_conn.commit()
+    finally:
+        rag_conn.close()
+    return Response(content="", status_code=200)
+
+
+@app.post("/embed/reembed/{wiki}/{title:path}")
+def reembed_article(request: Request, wiki: str, title: str) -> Response:
+    """Enqueue a single article for re-embedding without following its links."""
+    if wiki not in KNOWN_WIKIS:
+        raise HTTPException(status_code=400, detail=f"Unknown wiki: {wiki}")
+
+    wiki_conn = wiki_db.connect(db_path_for(wiki))
+    try:
+        row = wiki_conn.execute(
+            "SELECT title FROM articles WHERE title = ?", (title,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Article not found: {title}")
+        canonical_title = row["title"]
+    finally:
+        wiki_conn.close()
+
+    jobs_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
+    spawn_worker = False
+    try:
+        jobs_conn.execute("BEGIN IMMEDIATE")
+        log_path = str(BASE_DIR / "dumps" / f"{wiki}_embed.log")
+        job_id = embed_jobs.create_job(
+            jobs_conn, wiki, log_path,
+            triggered_by_title=canonical_title,
+            include_links=0,
+        )
+        embed_jobs.append_items(jobs_conn, job_id, [(canonical_title, canonical_title)])
+        spawn_worker = True
+    finally:
+        jobs_conn.close()
+
+    if spawn_worker:
+        _embed_log = BASE_DIR / "dumps" / f"{wiki}_embed.log"
+        _embed_log.parent.mkdir(parents=True, exist_ok=True)
+        with open(_embed_log, "a") as _log:
+            subprocess.Popen(
+                [sys.executable, str(BASE_DIR / "embed_worker.py"),
+                 "--wiki", wiki, "--job-id", str(job_id)],
+                start_new_session=True,
+                stdout=_log,
+                stderr=_log,
+            )
+
     if request.headers.get("hx-request"):
         return Response(status_code=204, headers={"HX-Redirect": "/active-embedding"})
     return RedirectResponse("/active-embedding", status_code=303)

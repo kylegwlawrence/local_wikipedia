@@ -48,10 +48,13 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS articles_meta (
-            page_id      INTEGER PRIMARY KEY,
-            title        TEXT    NOT NULL,
-            revision_id  INTEGER NOT NULL,
-            categories   TEXT    NOT NULL DEFAULT ''
+            page_id            INTEGER PRIMARY KEY,
+            title              TEXT    NOT NULL,
+            revision_id        INTEGER NOT NULL,
+            categories         TEXT    NOT NULL DEFAULT '',
+            embedded_at        TEXT,
+            article_size_bytes INTEGER,
+            links_embedded     INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS chunks (
@@ -77,6 +80,21 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
             embedding FLOAT[768]
         );
     """)
+    conn.commit()
+
+    # Migrate existing databases: add new columns if absent.
+    _col_migrations = [
+        ("embedded_at",        "ALTER TABLE articles_meta ADD COLUMN embedded_at TEXT"),
+        ("article_size_bytes", "ALTER TABLE articles_meta ADD COLUMN article_size_bytes INTEGER"),
+        ("links_embedded",     "ALTER TABLE articles_meta ADD COLUMN links_embedded INTEGER NOT NULL DEFAULT 0"),
+    ]
+    for col_name, sql in _col_migrations:
+        try:
+            conn.execute(sql)
+            if col_name == "links_embedded":
+                conn.execute("UPDATE articles_meta SET links_embedded = 0 WHERE links_embedded IS NULL")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
 
 

@@ -19,7 +19,7 @@ import embed_jobs
 from _runner import run_worker
 from paths import JOBS_DB, db_path_for, rag_db_path_for
 from rag import chunker
-from rag.embed import embed_one
+from rag.embed import embed_one, delete_article as rag_delete_article
 from rag.schema import connect_rag
 
 
@@ -123,6 +123,18 @@ def main(argv: list[str] | None = None) -> int:
 
                 item = embed_jobs.get_next_queued(jobs_conn, job_id)
                 if item is None:
+                    if job["include_links"]:
+                        source_titles = jobs_conn.execute(
+                            "SELECT DISTINCT source_title FROM embed_job_items "
+                            "WHERE job_id = ? AND status = 'complete'",
+                            (job_id,),
+                        ).fetchall()
+                        for st_row in source_titles:
+                            rag_conn.execute(
+                                "UPDATE articles_meta SET links_embedded = 1 WHERE title = ?",
+                                (st_row["source_title"],),
+                            )
+                        rag_conn.commit()
                     embed_jobs.mark_job(jobs_conn, job_id, "complete")
                     print(f"[embed_worker] job {job_id} complete", flush=True)
                     return 0

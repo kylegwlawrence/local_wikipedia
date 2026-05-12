@@ -451,16 +451,24 @@ class TestEmbedStatusWidget:
         assert "Embed + links" in resp.text
         assert "links embedded" not in resp.text
 
-    def test_shows_links_embedded_badge_after_complete_job(self, embed_client):
-        # Create a complete job triggered by April.
-        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
-        try:
-            job_id = embed_client.embed_jobs.create_job(
-                conn, "enwiki", "/tmp/x.log", "April"
-            )
-            embed_client.embed_jobs.mark_job(conn, job_id, "complete")
-        finally:
-            conn.close()
+    def test_shows_links_embedded_badge_after_complete_job(
+        self, embed_client, tmp_path, monkeypatch
+    ):
+        from rag.schema import connect_rag
+
+        # Create a RAG DB with April marked as links_embedded=1.
+        rag_path = tmp_path / "dumps" / "enwiki_rag.db"
+        rag_path.parent.mkdir(exist_ok=True)
+        rag_conn = connect_rag(rag_path)
+        rag_conn.execute(
+            "INSERT INTO articles_meta "
+            "(page_id, title, revision_id, categories, links_embedded) "
+            "VALUES (1, 'April', 1, '', 1)"
+        )
+        rag_conn.commit()
+        rag_conn.close()
+
+        monkeypatch.setattr(web_app, "rag_db_path_for", lambda wiki: rag_path)
 
         resp = embed_client.get("/embed-status/April")
         assert resp.status_code == 200

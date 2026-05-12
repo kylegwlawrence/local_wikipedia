@@ -835,6 +835,10 @@ a.wiki-badge--switch:hover {
     margin: 0 0 1rem;
 }
 
+.embed-table-wrapper {
+    overflow-x: auto;
+}
+
 .embed-table {
     width: 100%;
     border-collapse: collapse;
@@ -850,6 +854,7 @@ a.wiki-badge--switch:hover {
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    white-space: nowrap;
 }
 
 .embed-table td {
@@ -862,10 +867,125 @@ a.wiki-badge--switch:hover {
     border-bottom: none;
 }
 
+/* --- Action menu ----------------------------------------------------- */
+
+.th-actions {
+    width: 2rem;
+}
+
+.embed-actions-col {
+    width: 2rem;
+    text-align: center;
+}
+
+.action-menu {
+    position: relative;
+    display: inline-block;
+}
+
+.action-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0.15rem 0.4rem;
+    font-size: 1rem;
+    line-height: 1;
+    color: var(--muted);
+}
+
+.action-btn:hover {
+    border-color: var(--border);
+    color: var(--fg);
+    background: var(--bg-soft);
+}
+
+.action-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 200;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    min-width: 160px;
+    overflow: hidden;
+}
+
+.action-dropdown.open {
+    display: block;
+}
+
+.action-dropdown button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.4rem 0.75rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.88rem;
+    color: var(--fg);
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.action-dropdown button:hover {
+    background: var(--bg-soft);
+    color: var(--link);
+}
+
+.action-delete {
+    color: #b71c1c !important;
+}
+
+.action-delete:hover {
+    background: #fff0f0 !important;
+    color: #b71c1c !important;
+}
+
+/* --- Embed table cell styles ----------------------------------------- */
+
 .embed-categories {
     color: var(--muted);
     font-size: 0.8em;
 }
+
+.embed-chunks a {
+    color: var(--fg);
+    text-decoration: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.embed-chunks a:hover {
+    color: var(--link);
+    text-decoration: underline;
+}
+
+.embed-size,
+.embed-timestamp {
+    color: var(--muted);
+    font-size: 0.82em;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.embed-links-col {
+    text-align: center;
+}
+
+.links-badge {
+    display: inline-block;
+    padding: 0.1rem 0.35rem;
+    background: #d4edda;
+    color: #155724;
+    border-radius: 3px;
+    font-size: 0.78em;
+}
+
+/* --- Embed pagination ------------------------------------------------ */
 
 .embed-pagination {
     display: flex;

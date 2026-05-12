@@ -1,5 +1,5 @@
 {# Full page: paginated list of articles embedded in the RAG DB for the
-   active wiki. Read-only — embed buttons live on individual article pages. #}
+   active wiki, with per-row action menus. #}
 {% extends "base.html" %}
 {% block title %}Embed Manager · Local Wikipedia{% endblock %}
 
@@ -21,12 +21,17 @@
 {% else %}
 <p class="embed-count">{{ "{:,}".format(total_count) }} article{{ "s" if total_count != 1 }} embedded</p>
 
+<div class="embed-table-wrapper">
 <table class="embed-table">
     <thead>
         <tr>
             <th>Title</th>
             <th>Chunks</th>
+            <th>Size</th>
+            <th>Embedded</th>
+            <th>Links</th>
             <th>Categories</th>
+            <th class="th-actions"></th>
         </tr>
     </thead>
     <tbody>
@@ -38,13 +43,38 @@
             <td class="embed-chunks">
                 <a href="/chunks/{{ a.title|urlencode }}">{{ a.chunk_count }}</a>
             </td>
+            <td class="embed-size">
+                {% if a.article_size_bytes is not none %}{{ "{:,}".format(a.article_size_bytes) }} bytes{% else %}—{% endif %}
+            </td>
+            <td class="embed-timestamp">{{ a.embedded_at_display }}</td>
+            <td class="embed-links-col">
+                {% if a.links_embedded %}<span class="links-badge">&#10003;</span>{% else %}—{% endif %}
+            </td>
             <td class="embed-categories">
                 {% if a.categories %}{{ a.categories.replace("|", " · ") }}{% endif %}
+            </td>
+            <td class="embed-actions-col">
+                <div class="action-menu">
+                    <button type="button" class="action-btn" data-toggle="action-{{ loop.index }}" title="Actions">&#8942;</button>
+                    <div class="action-dropdown" id="action-{{ loop.index }}">
+                        <button type="button"
+                                hx-delete="/embed/{{ wiki }}/{{ a.title|urlencode }}"
+                                hx-target="closest tr"
+                                hx-swap="outerHTML"
+                                hx-confirm="Delete '{{ a.title }}' from the RAG index?"
+                                class="action-delete">Delete</button>
+                        <button type="button"
+                                hx-post="/embed/reembed/{{ wiki }}/{{ a.title|urlencode }}">Re-embed</button>
+                        <button type="button"
+                                hx-post="/embed-links/{{ a.title|urlencode }}">Re-embed + Links</button>
+                    </div>
+                </div>
             </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 
 {% if total_pages > 1 %}
 <nav class="embed-pagination">
@@ -58,4 +88,27 @@
 </nav>
 {% endif %}
 {% endif %}
+
+<script>
+(function () {
+    function closeAll(except) {
+        document.querySelectorAll('.action-dropdown').forEach(function (d) {
+            if (d !== except) d.classList.remove('open');
+        });
+    }
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-toggle]');
+        if (btn) {
+            var el = document.getElementById(btn.getAttribute('data-toggle'));
+            if (!el) return;
+            var opening = !el.classList.contains('open');
+            closeAll(el);
+            if (opening) el.classList.add('open');
+            e.stopPropagation();
+            return;
+        }
+        closeAll();
+    });
+})();
+</script>
 {% endblock %}
