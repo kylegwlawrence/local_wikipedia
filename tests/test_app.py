@@ -316,11 +316,9 @@ def embed_client(tmp_path, monkeypatch):
     monkeypatch.setenv("WIKI_DB", str(db_path))
 
     jobs_db = tmp_path / "jobs.db"
-    monkeypatch.setattr(web_app, "JOBS_DB", jobs_db)
     monkeypatch.setattr(paths, "JOBS_DB", jobs_db)
-    # The embed-links route uses BASE_DIR to spawn workers.embed; the spawn
-    # itself is stubbed, but the log_path string is still derived from BASE_DIR.
-    monkeypatch.setattr(web_app, "BASE_DIR", tmp_path)
+    # The embed-links route uses BASE_DIR to derive the log_path string; the
+    # subprocess.Popen call itself is stubbed below.
     monkeypatch.setattr(paths, "BASE_DIR", tmp_path)
 
     spawned: list[list[str]] = []
