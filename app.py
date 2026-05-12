@@ -352,11 +352,13 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
 
 
 @app.get("/switch-wiki")
-def switch_wiki(to: str, article: str = "") -> RedirectResponse:
+def switch_wiki(to: str, article: str = "", return_to: str = "") -> RedirectResponse:
     if to not in KNOWN_WIKIS:
         raise HTTPException(status_code=400, detail=f"Unknown wiki: {to}")
     if article:
         redirect_url = f"/?wiki={to}&article={quote(article)}"
+    elif return_to and return_to.startswith("/") and not return_to.startswith("//"):
+        redirect_url = return_to
     else:
         redirect_url = f"/?wiki={to}"
     response = RedirectResponse(redirect_url, status_code=302)
@@ -468,11 +470,14 @@ EMBED_PAGE_SIZE = 50
 @app.get("/embed-manager", response_class=HTMLResponse)
 def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
     wiki = _active_wiki(request)
+    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
+    other_wiki_for_template = other_wiki if db_path_for(other_wiki).exists() else None
     rag_conn = _rag_connect(wiki)
 
     if rag_conn is None:
         return templates.TemplateResponse(request, "embed_manager.html", {
             "wiki": wiki,
+            "other_wiki": other_wiki_for_template,
             "articles": [],
             "page": 1,
             "total_pages": 0,
@@ -502,6 +507,7 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
 
     return templates.TemplateResponse(request, "embed_manager.html", {
         "wiki": wiki,
+        "other_wiki": other_wiki_for_template,
         "articles": articles,
         "page": page,
         "total_pages": total_pages,
@@ -687,9 +693,13 @@ def _render_active_embedding_panel(
             "" if is_running else _format_started_at(active_dict["started_at"])
         )
 
+    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
+    other_wiki_for_template = other_wiki if db_path_for(other_wiki).exists() else None
+
     template = "active_embedding_panel.html" if fragment_only else "active_embedding.html"
     return templates.TemplateResponse(request, template, {
         "wiki": wiki,
+        "other_wiki": other_wiki_for_template,
         "job": active_dict,
         "grouped_items": grouped_items,
         "counts": counts,

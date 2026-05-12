@@ -4,7 +4,10 @@
 
 {% block content %}
 <header class="site-header">
-    <h1>Active Embedding · {{ wiki }}</h1>
+    <h1>Active Embedding
+        {%- if wiki == "enwiki" %}<span class="wiki-badge wiki-badge--enwiki">enwiki</span>{% elif other_wiki == "enwiki" %}<a class="wiki-badge wiki-badge--enwiki wiki-badge--switch" href="/switch-wiki?to=enwiki&return_to=/active-embedding">enwiki</a>{% endif %}
+        {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki&return_to=/active-embedding">simplewiki</a>{% endif %}
+    </h1>
 </header>
 
 <div class="nav-links">
