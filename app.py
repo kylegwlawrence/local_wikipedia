@@ -835,6 +835,16 @@ def article(request: Request, title: str) -> HTMLResponse:
     html = convert_wikitext_to_html(row["text_content"])
 
     wiki = _active_wiki(request)
+    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
+    other_wiki_for_template = None
+    other_wiki_db = db_path_for(other_wiki)
+    if other_wiki_db.exists():
+        with wiki_db.connect(other_wiki_db) as ow_conn:
+            hit = ow_conn.execute(
+                "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
+            ).fetchone()
+            if hit:
+                other_wiki_for_template = other_wiki
     response = templates.TemplateResponse(
         request,
         "article.html",
@@ -845,6 +855,7 @@ def article(request: Request, title: str) -> HTMLResponse:
             "timestamp": row["timestamp"],
             "redirected_from": redirected_from,
             "wiki": wiki,
+            "other_wiki": other_wiki_for_template,
         },
     )
     if request.headers.get("HX-Request") == "true":

@@ -703,6 +703,17 @@ main {
     color: #0d4d8a;
 }
 
+a.wiki-badge--switch {
+    opacity: 0.4;
+    text-decoration: none;
+    transition: opacity 0.15s;
+    cursor: pointer;
+}
+
+a.wiki-badge--switch:hover {
+    opacity: 1;
+}
+
 .not-found-banner {
     position: fixed;
     top: 50%;

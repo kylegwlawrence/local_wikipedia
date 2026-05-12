@@ -3,7 +3,10 @@
    wikitext -> Markdown -> HTML pipeline, so we mark it |safe. The source
    is our own converter, not user input, so this is not an XSS vector. #}
 <header class="article-header">
-    <h2>{{ title }}<span class="wiki-badge wiki-badge--{{ wiki }}">{{ wiki }}</span></h2>
+    <h2>{{ title }}
+        {%- if wiki == "enwiki" %}<span class="wiki-badge wiki-badge--enwiki">enwiki</span>{% elif other_wiki == "enwiki" %}<a class="wiki-badge wiki-badge--enwiki wiki-badge--switch" href="/switch-wiki?to=enwiki&article={{ title|urlencode }}">enwiki</a>{% endif %}
+        {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki&article={{ title|urlencode }}">simplewiki</a>{% endif %}
+    </h2>
     {% if redirected_from %}
     <p class="article-redirect">Redirected from <em>{{ redirected_from }}</em></p>
     {% endif %}
