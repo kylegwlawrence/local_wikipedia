@@ -308,6 +308,7 @@ def embed_client(tmp_path, monkeypatch):
     workers.embed subprocess is never actually spawned.
     """
     import subprocess
+    import paths
     from jobs import embed as embed_jobs
 
     db_path = tmp_path / "test.db"
@@ -316,9 +317,11 @@ def embed_client(tmp_path, monkeypatch):
 
     jobs_db = tmp_path / "jobs.db"
     monkeypatch.setattr(web_app, "JOBS_DB", jobs_db)
+    monkeypatch.setattr(paths, "JOBS_DB", jobs_db)
     # The embed-links route uses BASE_DIR to spawn workers.embed; the spawn
     # itself is stubbed, but the log_path string is still derived from BASE_DIR.
     monkeypatch.setattr(web_app, "BASE_DIR", tmp_path)
+    monkeypatch.setattr(paths, "BASE_DIR", tmp_path)
 
     spawned: list[list[str]] = []
 
@@ -536,6 +539,7 @@ def crash_recovery_env(tmp_path, monkeypatch):
     db_path_for(), so both must be redirected before the TestClient enters
     the lifespan context.
     """
+    import paths
     from jobs import refresh as refresh_jobs
     from jobs import embed as embed_jobs
 
@@ -543,8 +547,8 @@ def crash_recovery_env(tmp_path, monkeypatch):
     dumps.mkdir()
     jobs_db = dumps / "jobs.db"
 
-    monkeypatch.setattr(web_app, "JOBS_DB", jobs_db)
-    monkeypatch.setattr(web_app, "db_path_for", lambda wiki: dumps / f"{wiki}.db")
+    monkeypatch.setattr(paths, "JOBS_DB", jobs_db)
+    monkeypatch.setattr(paths, "db_path_for", lambda wiki: dumps / f"{wiki}.db")
 
     # Build a fixture wiki DB so the FTS rebuild path has something to operate on.
     wiki_db_path = dumps / "enwiki.db"

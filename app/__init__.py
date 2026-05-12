@@ -13,13 +13,9 @@ overridden with the ``WIKI_DB`` environment variable, which is what the tests
 use to point at a temporary fixture database.
 """
 import json
-import math
 import os
 import pathlib
 import sqlite3
-import sys
-from contextlib import asynccontextmanager
-from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -30,13 +26,17 @@ from app.config import EMBED_PAGE_SIZE, REDIRECT_MAX_HOPS, WIKI_LABELS, template
 from app.deps import active_wiki, connect, rag_connect
 from app.helpers import (
     fetch_article,
-    format_elapsed,
     format_embedded_at,
-    format_started_at,
     htmx_redirect,
     search_titles,
     spawn_worker,
     wiki_label,
+)
+from app.lifespan import lifespan
+from app.panels import (
+    render_active_embedding_panel,
+    render_job_list_panel,
+    render_status_panel,
 )
 from jobs import embed as embed_jobs, refresh as refresh_jobs
 from paths import BASE_DIR, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
@@ -44,79 +44,6 @@ from rag.embed import delete_all_articles as rag_delete_all_articles, delete_art
 from rag.links import extract_article_links
 from rag.schema import connect_rag
 from render import convert_wikitext_to_html
-
-
-def _recover_from_crash() -> None:
-    """Clean up state left behind by a worker that died mid-flight.
-
-    Runs once at app startup (via the lifespan hook). Two responsibilities:
-      1. Mark any jobs stuck in non-terminal status as 'failed' so the UI
-         stops showing perpetual progress and new requests aren't blocked
-         by the zombie row in get_active_job().
-      2. For any wiki whose FTS index was marked dirty by a crashed refresh,
-         rebuild the FTS index synchronously before serving requests so
-         search results don't silently return stale titles.
-    """
-    conn = refresh_jobs.connect_jobs(JOBS_DB)
-    try:
-        n_refresh = refresh_jobs.clear_orphaned_jobs(conn)
-        if n_refresh:
-            print(
-                f"[startup] cleared {n_refresh} orphaned refresh job(s)",
-                file=sys.stderr, flush=True,
-            )
-        dirty_wikis = refresh_jobs.get_fts_dirty_wikis(conn)
-    finally:
-        conn.close()
-
-    embed_conn = embed_jobs.connect_embed_jobs(JOBS_DB)
-    try:
-        n_embed = embed_jobs.clear_orphaned_jobs(embed_conn)
-        if n_embed:
-            print(
-                f"[startup] cleared {n_embed} orphaned embed job(s)",
-                file=sys.stderr, flush=True,
-            )
-    finally:
-        embed_conn.close()
-
-    for wiki in dirty_wikis:
-        db_path = db_path_for(wiki)
-        if not db_path.exists():
-            # The wiki DB was deleted while the flag was set. Clear the flag
-            # so we don't try to rebuild on every startup.
-            conn = refresh_jobs.connect_jobs(JOBS_DB)
-            try:
-                refresh_jobs.set_fts_dirty(conn, wiki, False)
-            finally:
-                conn.close()
-            continue
-
-        print(
-            f"[startup] FTS index for {wiki} is dirty — rebuilding…",
-            file=sys.stderr, flush=True,
-        )
-        wiki_conn = sqlite3.connect(db_path)
-        try:
-            wiki_conn.execute(
-                "INSERT INTO articles_fts(articles_fts) VALUES('rebuild')"
-            )
-            wiki_conn.commit()
-        finally:
-            wiki_conn.close()
-
-        conn = refresh_jobs.connect_jobs(JOBS_DB)
-        try:
-            refresh_jobs.set_fts_dirty(conn, wiki, False)
-        finally:
-            conn.close()
-        print(f"[startup] FTS rebuild complete for {wiki}", file=sys.stderr, flush=True)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    _recover_from_crash()
-    yield
 
 
 app = FastAPI(title="Local Wikipedia", lifespan=lifespan)
@@ -264,28 +191,6 @@ def switch_wiki(to: str, article: str = "", return_to: str = "") -> RedirectResp
     return response
 
 
-def _render_status_panel(
-    request: Request, wiki: str, job: sqlite3.Row | None
-) -> HTMLResponse:
-    if not job:
-        return templates.TemplateResponse(
-            request, "refresh_panel.html", {"wiki": wiki, "job": None, "elapsed": "", "started_at_display": ""}
-        )
-    active = job["status"] in ("pending", "downloading", "parsing", "rebuilding")
-    elapsed = format_elapsed(job["started_at"]) if active else ""
-    started_at_display = "" if active else format_started_at(job["started_at"])
-    return templates.TemplateResponse(
-        request,
-        "refresh_panel.html",
-        {
-            "wiki": wiki,
-            "job": dict(job),
-            "elapsed": elapsed,
-            "started_at_display": started_at_display,
-        },
-    )
-
-
 @app.post("/refresh/{wiki}", response_class=HTMLResponse)
 def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
     if wiki not in KNOWN_WIKIS:
@@ -297,7 +202,7 @@ def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
         active = refresh_jobs.get_active_job(conn, wiki)
         if active:
             conn.rollback()
-            return _render_status_panel(request, wiki, active)
+            return render_status_panel(request, wiki, active)
 
         log_path = str(BASE_DIR / "dumps" / f"{wiki}_refresh.log")
         job_id = refresh_jobs.create_job(conn, wiki, log_path)
@@ -308,7 +213,7 @@ def refresh_wiki(request: Request, wiki: str) -> HTMLResponse:
 
     spawn_worker("workers.refresh", wiki, job_id, "refresh")
 
-    return _render_status_panel(request, wiki, job)
+    return render_status_panel(request, wiki, job)
 
 
 @app.get("/refresh/status/{wiki}", response_class=HTMLResponse)
@@ -322,7 +227,7 @@ def refresh_status(request: Request, wiki: str) -> HTMLResponse:
     finally:
         conn.close()
 
-    return _render_status_panel(request, wiki, job)
+    return render_status_panel(request, wiki, job)
 
 
 @app.get("/embed-manager", response_class=HTMLResponse)
@@ -492,119 +397,6 @@ def chunks(request: Request, title: str) -> HTMLResponse:
     })
 
 
-# --- Active embedding (batch: source + linked articles) ---------------------
-
-def _render_active_embedding_panel(
-    request: Request,
-    wiki: str,
-    *,
-    fragment_only: bool,
-    job_id: int | None = None,
-) -> HTMLResponse:
-    """Render the active embedding panel (HTMX-polled inner content).
-
-    If ``fragment_only`` is True returns just the panel fragment for HTMX
-    polling; otherwise returns the full ``active_embedding.html`` page.
-    If ``job_id`` is given, show that specific job instead of the most recent.
-    """
-    conn = embed_jobs.connect_embed_jobs(JOBS_DB)
-    try:
-        if job_id is not None:
-            active = embed_jobs.get_job(conn, job_id)
-        else:
-            active = embed_jobs.get_active_job(conn, wiki)
-            if active is None:
-                latest = embed_jobs.get_latest_jobs(conn, wiki, limit=1)
-                active = latest[0] if latest else None
-
-        items_by_job: dict[int, list[dict]] = {}
-        counts_by_job: dict[int, dict[str, int]] = {}
-        if active is not None:
-            items_by_job[active["id"]] = [
-                dict(r) for r in embed_jobs.get_items(conn, active["id"])
-            ]
-            counts_by_job[active["id"]] = embed_jobs.count_items_by_status(
-                conn, active["id"]
-            )
-
-        list_jobs: list[sqlite3.Row] = []
-        list_total = 0
-        list_counts: dict[int, dict[str, int]] = {}
-        if not fragment_only:
-            list_jobs, list_total = embed_jobs.get_jobs_page(conn)
-            list_counts = embed_jobs.get_item_counts_for_jobs(
-                conn, [j["id"] for j in list_jobs]
-            )
-    finally:
-        conn.close()
-
-    active_dict: dict | None = None
-    grouped_items: list[tuple[str, list[dict]]] = []
-    counts: dict[str, int] = {}
-    elapsed = ""
-    started_at_display = ""
-    if active is not None:
-        active_dict = dict(active)
-        items = items_by_job.get(active["id"], [])
-        counts = counts_by_job.get(active["id"], {})
-        groups: dict[str, list[dict]] = {}
-        for item in items:
-            groups.setdefault(item["source_title"], []).append(item)
-        grouped_items = list(groups.items())
-        is_running = (
-            active_dict["status"] == "running"
-            and not active_dict["cancel_requested"]
-        )
-        elapsed = format_elapsed(active_dict["started_at"]) if is_running else ""
-        started_at_display = (
-            "" if is_running else format_started_at(active_dict["started_at"])
-        )
-
-    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
-    other_wiki_for_template = other_wiki if db_path_for(other_wiki).exists() else None
-
-    template = "active_embedding_panel.html" if fragment_only else "active_embedding.html"
-    return templates.TemplateResponse(request, template, {
-        "wiki": wiki,
-        "other_wiki": other_wiki_for_template,
-        "job": active_dict,
-        "grouped_items": grouped_items,
-        "counts": counts,
-        "elapsed": elapsed,
-        "started_at_display": started_at_display,
-        "current_page": "processes",
-        "list_jobs": [dict(j) for j in list_jobs],
-        "list_total": list_total,
-        "list_counts": list_counts,
-        "list_page": 1,
-        "list_total_pages": math.ceil(list_total / 5) if list_total else 0,
-        "list_q": "",
-    })
-
-
-def _render_job_list_panel(
-    request: Request,
-    wiki: str,
-    q: str = "",
-    page: int = 1,
-) -> HTMLResponse:
-    """Render the paginated job list fragment for HTMX search/pagination."""
-    conn = embed_jobs.connect_embed_jobs(JOBS_DB)
-    try:
-        jobs, total = embed_jobs.get_jobs_page(conn, q=q, page=page)
-        counts = embed_jobs.get_item_counts_for_jobs(conn, [j["id"] for j in jobs])
-    finally:
-        conn.close()
-    return templates.TemplateResponse(request, "job_list_panel.html", {
-        "list_jobs": [dict(j) for j in jobs],
-        "list_total": total,
-        "list_counts": counts,
-        "list_page": page,
-        "list_total_pages": math.ceil(total / 5) if total else 0,
-        "list_q": q,
-    })
-
-
 @app.post("/embed-links/{title:path}", response_class=HTMLResponse)
 def embed_links(request: Request, title: str) -> HTMLResponse:
     """Extract wikilinks from ``title`` and enqueue them for batch embedding.
@@ -756,13 +548,13 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
 @app.get("/active-embedding", response_class=HTMLResponse)
 def active_embedding(request: Request) -> HTMLResponse:
     wiki = active_wiki(request)
-    return _render_active_embedding_panel(request, wiki, fragment_only=False)
+    return render_active_embedding_panel(request, wiki, fragment_only=False)
 
 
 @app.get("/active-embedding/jobs", response_class=HTMLResponse)
 def active_embedding_jobs(request: Request, q: str = "", page: int = 1) -> HTMLResponse:
     wiki = active_wiki(request)
-    return _render_job_list_panel(request, wiki, q=q, page=page)
+    return render_job_list_panel(request, wiki, q=q, page=page)
 
 
 @app.delete("/active-embedding/jobs")
@@ -779,13 +571,13 @@ def delete_all_jobs(request: Request) -> Response:
 @app.get("/active-embedding/panel", response_class=HTMLResponse)
 def active_embedding_panel(request: Request) -> HTMLResponse:
     wiki = active_wiki(request)
-    return _render_active_embedding_panel(request, wiki, fragment_only=True)
+    return render_active_embedding_panel(request, wiki, fragment_only=True)
 
 
 @app.get("/active-embedding/panel/{job_id}", response_class=HTMLResponse)
 def active_embedding_panel_for_job(request: Request, job_id: int) -> HTMLResponse:
     wiki = active_wiki(request)
-    return _render_active_embedding_panel(request, wiki, fragment_only=True, job_id=job_id)
+    return render_active_embedding_panel(request, wiki, fragment_only=True, job_id=job_id)
 
 
 @app.post("/active-embedding/cancel/{job_id}", response_class=HTMLResponse)
@@ -796,7 +588,7 @@ def active_embedding_cancel(request: Request, job_id: int) -> HTMLResponse:
         embed_jobs.request_cancel(conn, job_id)
     finally:
         conn.close()
-    return _render_active_embedding_panel(request, wiki, fragment_only=True)
+    return render_active_embedding_panel(request, wiki, fragment_only=True)
 
 
 @app.get("/article/{title:path}", response_class=HTMLResponse)
