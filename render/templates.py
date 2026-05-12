@@ -19,6 +19,7 @@ from render.data import (
     INDICATORS,
     MATH_TEMPLATE_NAMES,
     MONTH_NAMES,
+    UNIT_NAMES,
     lang_code_to_name,
 )
 from render.inline import convert_bold_italic, convert_links
@@ -388,6 +389,260 @@ def convert_section_link_templates(wikicode: mwparserfromhell.wikicode.Wikicode)
         target = str(params[0]).strip()
         label = str(params[1]).strip() if len(params) > 1 else None
         replacement = f'[[{target}|{label}]]' if label else f'[[{target}]]'
+        try:
+            wikicode.replace(template, replacement)
+        except ValueError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Shared helper
+# ---------------------------------------------------------------------------
+
+
+def _first_positional(template) -> str | None:
+    """Return the value of the first positional parameter, or None."""
+    for p in template.params:
+        if str(p.name).strip().isdigit():
+            return str(p.value).strip()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Hatnote templates ({{main}}, {{see also}}, {{further}}, {{about}})
+# ---------------------------------------------------------------------------
+
+
+def convert_hatnote_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Replace hatnote templates with <div class="hatnote"> elements."""
+    PREFIXES = {
+        'main': 'Main article',
+        'see also': 'See also',
+        'further': 'Further information',
+        'see': 'See',
+    }
+    for template in wikicode.filter_templates(recursive=False):
+        name = str(template.name).strip().lower()
+
+        if name == 'about':
+            positional = [
+                str(p.value).strip()
+                for p in template.params
+                if str(p.name).strip().isdigit()
+            ]
+            if not positional:
+                try:
+                    wikicode.remove(template)
+                except ValueError:
+                    pass
+                continue
+            parts = [f'This article is about {positional[0]}.'] if positional[0] else []
+            for i in range(1, len(positional) - 1, 2):
+                use = positional[i]
+                article = positional[i + 1] if i + 1 < len(positional) else ''
+                if use and article:
+                    parts.append(f'For {use}, see [[{article}]].')
+                elif article:
+                    parts.append(f'See [[{article}]].')
+            replacement = f'<div class="hatnote">{" ".join(parts)}</div>' if parts else ''
+
+        elif name == 'hatnote':
+            content = _first_positional(template) or ''
+            replacement = f'<div class="hatnote">{content}</div>' if content else ''
+
+        elif name in PREFIXES:
+            prefix = PREFIXES[name]
+            articles = [
+                str(p.value).strip()
+                for p in template.params
+                if str(p.name).strip().isdigit()
+            ]
+            links = ', '.join(f'[[{a}]]' for a in articles if a)
+            replacement = f'<div class="hatnote">{prefix}: {links}</div>' if links else ''
+
+        else:
+            continue
+
+        try:
+            if replacement:
+                wikicode.replace(template, replacement)
+            else:
+                wikicode.remove(template)
+        except ValueError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Simple inline templates → HTML equivalents
+# ---------------------------------------------------------------------------
+
+
+def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert simple wrapping/annotation templates to HTML."""
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+
+        if name == 'small':
+            content = _first_positional(template)
+            if content is not None:
+                try:
+                    wikicode.replace(template, f'<small>{content}</small>')
+                except ValueError:
+                    pass
+
+        elif name == 'sup':
+            content = _first_positional(template)
+            if content is not None:
+                try:
+                    wikicode.replace(template, f'<sup>{content}</sup>')
+                except ValueError:
+                    pass
+
+        elif name in ('blockquote', 'quote', 'bq'):
+            content = _first_positional(template)
+            if content is not None:
+                try:
+                    wikicode.replace(template, f'<blockquote>{content}</blockquote>')
+                except ValueError:
+                    pass
+
+        elif name == 'nbsp':
+            try:
+                wikicode.replace(template, ' ')
+            except ValueError:
+                pass
+
+        elif name in ('circa', 'c.', 'ca', 'ca.'):
+            year = _first_positional(template) or ''
+            replacement = f'c. {year}' if year else 'c.'
+            try:
+                wikicode.replace(template, replacement)
+            except ValueError:
+                pass
+
+        elif name in ('in lang', 'in language'):
+            lang_param = _first_positional(template) or ''
+            if lang_param:
+                lang_name = lang_code_to_name(lang_param)
+                try:
+                    wikicode.replace(template, f'(in {lang_name})')
+                except ValueError:
+                    pass
+            else:
+                try:
+                    wikicode.remove(template)
+                except ValueError:
+                    pass
+
+        elif name == 'official website':
+            url = _first_positional(template) or ''
+            if url:
+                safe_url = html.escape(url, quote=True)
+                try:
+                    wikicode.replace(
+                        template,
+                        f'<a href="{safe_url}" rel="noopener noreferrer"'
+                        f' target="_blank">Official website</a>',
+                    )
+                except ValueError:
+                    pass
+            else:
+                try:
+                    wikicode.remove(template)
+                except ValueError:
+                    pass
+
+
+# ---------------------------------------------------------------------------
+# List templates in body text ({{plainlist}}, {{hlist}})
+# ---------------------------------------------------------------------------
+
+
+def convert_list_body_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Convert {{plainlist}} and {{hlist}} in body text to HTML list markup."""
+    for template in wikicode.filter_templates(recursive=False):
+        name = str(template.name).strip().lower()
+
+        if name in ('plainlist', 'flatlist'):
+            for p in template.params:
+                pname = str(p.name).strip()
+                if pname in ('class', 'style', 'indent'):
+                    continue
+                items = [
+                    f'<li>{line.strip().lstrip("*#:").strip()}</li>'
+                    for line in str(p.value).split('\n')
+                    if line.strip().lstrip('*#:').strip()
+                ]
+                if items:
+                    replacement = '<ul class="plainlist">\n' + '\n'.join(items) + '\n</ul>'
+                    try:
+                        wikicode.replace(template, replacement)
+                    except ValueError:
+                        pass
+                break
+
+        elif name == 'hlist':
+            items = [
+                str(p.value).strip()
+                for p in template.params
+                if str(p.name).strip() not in (
+                    'class', 'style', 'ul_style', 'li_style', 'indent', 'item_style', 'first_style'
+                ) and str(p.value).strip()
+            ]
+            if items:
+                try:
+                    wikicode.replace(template, ' · '.join(items))
+                except ValueError:
+                    pass
+            else:
+                try:
+                    wikicode.remove(template)
+                except ValueError:
+                    pass
+
+
+# ---------------------------------------------------------------------------
+# {{convert}} / {{cvt}} — unit conversion display
+# ---------------------------------------------------------------------------
+
+_RANGE_CONNECTORS = frozenset({'to', 'and', '-', '–', 'or', '+'})
+
+
+def convert_convert_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Replace {{convert|value|unit|...}} with 'value unit' plain text."""
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name not in ('convert', 'cvt'):
+            continue
+
+        positional = [
+            str(p.value).strip()
+            for p in template.params
+            if str(p.name).strip().isdigit()
+        ]
+
+        if not positional:
+            try:
+                wikicode.remove(template)
+            except ValueError:
+                pass
+            continue
+
+        if len(positional) >= 3 and positional[1].lower() in _RANGE_CONNECTORS:
+            val1, val2 = positional[0], positional[2]
+            from_unit = positional[3] if len(positional) >= 4 else ''
+            unit_display = UNIT_NAMES.get(from_unit, from_unit)
+            replacement = f'{val1}–{val2}'
+            if unit_display:
+                replacement += f' {unit_display}'
+        else:
+            val = positional[0]
+            from_unit = positional[1] if len(positional) > 1 else ''
+            unit_display = UNIT_NAMES.get(from_unit, from_unit)
+            replacement = f'{val}'
+            if unit_display:
+                replacement += f' {unit_display}'
+
         try:
             wikicode.replace(template, replacement)
         except ValueError:

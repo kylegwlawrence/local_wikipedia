@@ -21,7 +21,7 @@ import mwparserfromhell
 _MEDIA_LINK_PREFIXES = ("file:", "image:", "media:")
 
 from render import strip
-from render.strip import strip_external_links_section
+from render.strip import convert_gallery, strip_external_links_section, strip_nowiki
 from render.blocks import convert_headings, convert_lists, wrap_paragraphs
 from render.inline import convert_bold_italic, convert_links
 from render.protect import (
@@ -36,12 +36,16 @@ from render.templates import (
     convert_annotated_link_templates,
     convert_citation_templates,
     convert_code_templates,
+    convert_convert_templates,
+    convert_hatnote_templates,
     convert_indicator_templates,
     convert_infobox_templates,
     convert_lang_templates,
+    convert_list_body_templates,
     convert_math_templates,
     convert_reflist_template,
     convert_section_link_templates,
+    convert_simple_inline_templates,
     convert_wikidata_templates,
 )
 
@@ -68,6 +72,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # 1. Wikicode-level templates that produce output (must run before strip).
         convert_wikidata_templates(wikicode)
         convert_annotated_link_templates(wikicode)
+        convert_hatnote_templates(wikicode)
         convert_infobox_templates(wikicode)
         convert_math_templates(wikicode)
         convert_code_templates(wikicode)
@@ -75,6 +80,9 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         convert_indicator_templates(wikicode)
         convert_section_link_templates(wikicode)
         convert_citation_templates(wikicode)
+        convert_simple_inline_templates(wikicode)
+        convert_list_body_templates(wikicode)
+        convert_convert_templates(wikicode)
         collected_refs = collect_inline_refs(wikicode)
         convert_reflist_template(wikicode, collected_refs)
 
@@ -94,6 +102,10 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         text = strip.strip_templates(text)
         text = strip.strip_categories(text)
         text = strip_external_links_section(text)
+
+        # 4b. Handle MediaWiki-specific HTML tags that survive the strip pass.
+        text = strip_nowiki(text)
+        text = convert_gallery(text)
 
         # 5. Protect code/math from later string-level passes.
         text, code_blocks = extract_syntaxhighlight(text)

@@ -41,6 +41,11 @@ INDICATORS: dict[str, tuple[str, str]] = {
     'included': ('Included', 'indicator-yes'),
     'dropped': ('Dropped', 'indicator-no'),
     'pending': ('Pending', 'indicator-partial'),
+    'increase': ('▲', 'indicator-increase'),
+    'decrease': ('▼', 'indicator-decrease'),
+    'steady': ('→', 'indicator-steady'),
+    'positive': ('▲', 'indicator-increase'),
+    'negative': ('▼', 'indicator-decrease'),
 }
 
 LANG_NAMES: dict[str, str] = {
@@ -73,6 +78,45 @@ LANG_NAMES: dict[str, str] = {
     'uk': 'Ukrainian', 'ur': 'Urdu', 'uz': 'Uzbek',
     'vi': 'Vietnamese', 'yi': 'Yiddish', 'zh': 'Chinese',
     'zu': 'Zulu',
+}
+
+
+UNIT_NAMES: dict[str, str] = {
+    # Length
+    'm': 'm', 'km': 'km', 'mi': 'mi', 'ft': 'ft', 'in': 'in', 'cm': 'cm',
+    'mm': 'mm', 'nm': 'nm', 'um': 'µm', 'yd': 'yd', 'nmi': 'nmi',
+    'ly': 'ly', 'au': 'AU', 'pc': 'pc',
+    # Area
+    'sqmi': 'sq mi', 'sqkm': 'sq km', 'km2': 'km²', 'm2': 'm²',
+    'ft2': 'sq ft', 'sqft': 'sq ft', 'sqin': 'sq in',
+    'sqyd': 'sq yd', 'ha': 'ha', 'acre': 'acres', 'sqm': 'm²',
+    'sqnmi': 'sq nmi',
+    # Mass
+    'kg': 'kg', 'lb': 'lb', 'lbs': 'lb', 'oz': 'oz', 'g': 'g', 'mg': 'mg',
+    't': 't', 'st': 'st', 'ton': 'tons', 'LT': 'long tons',
+    'ST': 'short tons', 'MT': 'Mt',
+    # Speed
+    'mph': 'mph', 'kph': 'km/h', 'km/h': 'km/h', 'kn': 'kn', 'knot': 'kn',
+    'knots': 'kn', 'mps': 'm/s', 'm/s': 'm/s', 'fps': 'ft/s',
+    # Temperature
+    'C': '°C', 'F': '°F', 'K': 'K',
+    # Volume
+    'l': 'L', 'L': 'L', 'ml': 'mL', 'mL': 'mL', 'cl': 'cL', 'dl': 'dL',
+    'gal': 'gal', 'impgal': 'imp gal', 'usgal': 'US gal', 'floz': 'fl oz',
+    'cuft': 'cu ft', 'cuin': 'cu in', 'cum': 'm³',
+    'km3': 'km³', 'm3': 'm³', 'ft3': 'cu ft',
+    # Power / Energy
+    'W': 'W', 'kW': 'kW', 'MW': 'MW', 'GW': 'GW', 'hp': 'hp',
+    'J': 'J', 'kJ': 'kJ', 'MJ': 'MJ', 'GJ': 'GJ', 'cal': 'cal', 'kcal': 'kcal',
+    'Wh': 'Wh', 'kWh': 'kWh', 'MWh': 'MWh',
+    # Force / Pressure
+    'N': 'N', 'kN': 'kN', 'Pa': 'Pa', 'kPa': 'kPa', 'MPa': 'MPa',
+    'atm': 'atm', 'bar': 'bar', 'psi': 'psi',
+    # Population density (special compound units)
+    '/sqmi': '/sq mi', 'PD/sqmi': '/sq mi', '/mi2': '/sq mi',
+    '/sqkm': '/km²', '/km2': '/km²',
+    # Time
+    's': 's', 'ms': 'ms', 'min': 'min', 'h': 'h',
 }
 
 
