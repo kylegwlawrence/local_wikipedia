@@ -12,7 +12,7 @@ import argparse
 import sys
 
 import db as wiki_db
-import embed_jobs
+from jobs import embed as embed_jobs
 from paths import JOBS_DB, db_path_for, rag_db_path_for
 from rag import chunker
 from rag.embed import embed_one

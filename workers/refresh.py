@@ -11,8 +11,8 @@ import pathlib
 import sqlite3
 import sys
 
-import jobs
 from download import download as downloader
+from jobs import refresh as refresh_jobs
 from parse.cli import _find_latest_dump
 from parse.refresh import refresh_dump
 from parse.schema import create_schema
@@ -31,16 +31,16 @@ def main(argv: list[str] | None = None) -> int:
     job_id: int = args.job_id
     db_path = db_path_for(wiki)
 
-    jobs_conn = jobs.connect_jobs(JOBS_DB)
+    jobs_conn = refresh_jobs.connect_jobs(JOBS_DB)
 
     def mark_failed(error_message: str) -> None:
-        jobs.update_job(jobs_conn, job_id, status="failed", error_message=error_message)
+        refresh_jobs.update_job(jobs_conn, job_id, status="failed", error_message=error_message)
 
     def body() -> int:
-        jobs.update_job(jobs_conn, job_id, log_path=str(DUMPS_DIR / f"{wiki}_refresh.log"))
+        refresh_jobs.update_job(jobs_conn, job_id, log_path=str(DUMPS_DIR / f"{wiki}_refresh.log"))
 
         # --- Download --------------------------------------------------------
-        jobs.update_job(jobs_conn, job_id, status="downloading")
+        refresh_jobs.update_job(jobs_conn, job_id, status="downloading")
         print(f"[worker] Downloading {wiki} dump…", flush=True)
         try:
             rc = downloader.main(["--wiki", wiki])
@@ -58,13 +58,13 @@ def main(argv: list[str] | None = None) -> int:
         # Mark FTS dirty before any row mutations. If the worker dies between
         # the article updates and the FTS rebuild, the lifespan hook in app.py
         # will detect this flag on next startup and rebuild.
-        jobs.set_fts_dirty(jobs_conn, wiki, True)
-        jobs.update_job(jobs_conn, job_id, status="parsing")
+        refresh_jobs.set_fts_dirty(jobs_conn, wiki, True)
+        refresh_jobs.update_job(jobs_conn, job_id, status="parsing")
         print(f"[worker] Refreshing {wiki} database…", flush=True)
         result = refresh_dump(dump_path, db_path, job_id, JOBS_DB)
 
         # --- FTS rebuild -----------------------------------------------------
-        jobs.update_job(jobs_conn, job_id, status="rebuilding")
+        refresh_jobs.update_job(jobs_conn, job_id, status="rebuilding")
         print("[worker] Rebuilding FTS5 index…", flush=True)
         wiki_conn = sqlite3.connect(db_path)
         create_schema(wiki_conn)
@@ -77,10 +77,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         wiki_conn.commit()
         wiki_conn.close()
-        jobs.set_fts_dirty(jobs_conn, wiki, False)
+        refresh_jobs.set_fts_dirty(jobs_conn, wiki, False)
 
         # --- Done ------------------------------------------------------------
-        jobs.update_job(
+        refresh_jobs.update_job(
             jobs_conn,
             job_id,
             status="complete",

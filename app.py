@@ -29,8 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import db as wiki_db
-import embed_jobs
-import jobs as refresh_jobs
+from jobs import embed as embed_jobs, refresh as refresh_jobs
 from paths import BASE_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, db_path_for, rag_db_path_for
 from rag.embed import delete_all_articles as rag_delete_all_articles, delete_article as rag_delete_article, embed_one as rag_embed_one
 from rag.links import extract_article_links

@@ -1,5 +1,5 @@
 """Tests for the embed_jobs schema and CRUD helpers."""
-import embed_jobs
+from jobs import embed as embed_jobs
 
 
 def _conn(tmp_path):

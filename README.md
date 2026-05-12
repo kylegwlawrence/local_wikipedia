@@ -240,8 +240,10 @@ pytest tests/test_download.py::TestDownloadWithVerify
 ├── app.py             # FastAPI web app (routes + wiki switcher + refresh + embed-links)
 ├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR, JOBS_DB, KNOWN_WIKIS)
 ├── db.py              # connect(), redirect_target(), resolve_redirect()
-├── jobs.py            # CRUD helpers for refresh_jobs table in dumps/jobs.db
-├── embed_jobs.py      # CRUD helpers for embed_jobs / embed_job_items tables
+├── jobs/              # Job-queue CRUD package
+│   ├── __init__.py
+│   ├── refresh.py     # CRUD helpers for refresh_jobs table in dumps/jobs.db
+│   └── embed.py       # CRUD helpers for embed_jobs / embed_job_items tables
 ├── workers/           # Background-subprocess package
 │   ├── __init__.py
 │   ├── runner.py      # Shared harness (log redirect, exception capture)

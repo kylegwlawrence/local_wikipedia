@@ -308,7 +308,7 @@ def embed_client(tmp_path, monkeypatch):
     workers.embed subprocess is never actually spawned.
     """
     import subprocess
-    import embed_jobs
+    from jobs import embed as embed_jobs
 
     db_path = tmp_path / "test.db"
     _build_fixture_db(db_path)
@@ -535,8 +535,8 @@ def crash_recovery_env(tmp_path, monkeypatch):
     db_path_for(), so both must be redirected before the TestClient enters
     the lifespan context.
     """
-    import jobs
-    import embed_jobs
+    from jobs import refresh as refresh_jobs
+    from jobs import embed as embed_jobs
 
     dumps = tmp_path / "dumps"
     dumps.mkdir()
@@ -555,7 +555,7 @@ def crash_recovery_env(tmp_path, monkeypatch):
         "jobs_db": jobs_db,
         "dumps": dumps,
         "wiki_db": wiki_db_path,
-        "jobs": jobs,
+        "jobs": refresh_jobs,
         "embed_jobs": embed_jobs,
     }
 

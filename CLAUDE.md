@@ -19,8 +19,10 @@ local_wikipedia/
   app.py            FastAPI app (routes + redirect/search/refresh/embed-links helpers)
   paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, rag_db_path_for
   db.py             connect(), redirect_target(), resolve_redirect() — shared by app + embed pipeline
-  jobs.py           CRUD helpers for refresh_jobs table in dumps/jobs.db
-  embed_jobs.py     CRUD helpers for embed_jobs / embed_job_items tables in dumps/jobs.db
+  jobs/             job-queue CRUD package
+    __init__.py
+    refresh.py      CRUD helpers for refresh_jobs table in dumps/jobs.db
+    embed.py        CRUD helpers for embed_jobs / embed_job_items tables in dumps/jobs.db
   workers/          background-subprocess package
     __init__.py
     runner.py       shared harness (log redirect, exception capture, mark-failed)
@@ -196,7 +198,7 @@ Pipeline order matters — stages are applied in sequence:
 - `GET /article/{title}` and `GET /wikitext/{title}` return embed-status context including `links_embedded` (bool) — the article header shows a "links embedded" badge when the article has been processed through the embed-links pipeline
 - After every HTMX article swap, `base.html`'s inline JS scrolls to the top of the page (or to the anchor section if the link included a `#fragment`)
 
-### Refresh job system (`jobs.py`, `workers/refresh.py`, `parse/refresh.py`)
+### Refresh job system (`jobs/refresh.py`, `workers/refresh.py`, `parse/refresh.py`)
 
 - `jobs.db` in `dumps/` stores `refresh_jobs` rows; separate from wiki databases so it's never overwritten by a re-parse
 - Job lifecycle statuses: `pending` → `downloading` → `parsing` → `rebuilding` → `complete` / `failed`
@@ -204,9 +206,9 @@ Pipeline order matters — stages are applied in sequence:
 - `refresh_dump` (in `parse/refresh.py`) operates in-place on the existing database — it does **not** atomically replace it. For each article in the dump it skips (same `revision_id`), archives-then-updates (changed revision), or inserts (new `page_id`). The archive step writes the old row to `articles_archive` before overwriting so a crash leaves old data intact.
 - Batch size matches `parse/pipeline.py`'s `BATCH_SIZE` (1000). After each batch, `jobs.update_job` writes running totals to `jobs.db` so the status panel can show live progress.
 - FTS rebuild happens in `workers/refresh.py` after `refresh_dump` returns — same `INSERT INTO articles_fts(articles_fts) VALUES('rebuild')` used by the initial parse.
-- `jobs.py` tracks an `fts_dirty` flag per wiki in the `wiki_state` table. The flag is set before the FTS rebuild begins and cleared after it completes; if the worker crashes mid-rebuild, `_recover_from_crash` picks it up on next app startup. `clear_orphaned_jobs` resets any jobs still in non-terminal status at startup.
+- `jobs/refresh.py` tracks an `fts_dirty` flag per wiki in the `wiki_state` table. The flag is set before the FTS rebuild begins and cleared after it completes; if the worker crashes mid-rebuild, `_recover_from_crash` picks it up on next app startup. `clear_orphaned_jobs` resets any jobs still in non-terminal status at startup.
 
-### Embed-links pipeline (`embed_jobs.py`, `workers/embed.py`, `rag/links.py`)
+### Embed-links pipeline (`jobs/embed.py`, `workers/embed.py`, `rag/links.py`)
 
 UI-triggered batch embedding: clicking "Embed + links" on an article enqueues the article and all its wikilink targets for embedding via `POST /embed-links/{title}`.
 

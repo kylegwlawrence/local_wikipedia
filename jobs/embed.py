@@ -20,7 +20,7 @@ def connect_embed_jobs(path: pathlib.Path) -> sqlite3.Connection:
 def ensure_embed_schema(conn: sqlite3.Connection) -> None:
     """Create the embed_jobs and embed_job_items tables idempotently.
 
-    Shares the database with ``refresh_jobs`` (see jobs.py) but uses separate
+    Shares the database with ``refresh_jobs`` (see jobs/refresh.py) but uses separate
     tables — adding them here keeps the refresh-side schema untouched.
     """
     conn.execute("PRAGMA journal_mode=WAL")

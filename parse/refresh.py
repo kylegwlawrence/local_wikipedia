@@ -69,7 +69,7 @@ def refresh_dump(
     Returns a summary dict with keys:
         scanned, skipped, updated, inserted, archived
     """
-    import jobs  # imported here to avoid circular import at module level
+    from jobs import refresh as refresh_jobs  # imported here to avoid circular import at module level
 
     if not dump_path.exists():
         raise RuntimeError(f"Dump file not found: {dump_path}")
@@ -79,7 +79,7 @@ def refresh_dump(
         )
 
     wiki_conn = sqlite3.connect(db_path)
-    jobs_conn = jobs.connect_jobs(jobs_db_path)
+    jobs_conn = refresh_jobs.connect_jobs(jobs_db_path)
 
     stats: dict[str, int] = {
         "scanned": 0,
@@ -139,7 +139,7 @@ def refresh_dump(
             wiki_conn.commit()
             staging.clear()
 
-            jobs.update_job(
+            refresh_jobs.update_job(
                 jobs_conn,
                 job_id,
                 articles_scanned=stats["scanned"],
