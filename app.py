@@ -325,6 +325,18 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
+    wiki = _active_wiki(request)
+    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
+    other_wiki_for_template = None
+    other_wiki_db = db_path_for(other_wiki)
+    if other_wiki_db.exists():
+        with wiki_db.connect(other_wiki_db) as ow_conn:
+            hit = ow_conn.execute(
+                "SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)
+            ).fetchone()
+            if hit:
+                other_wiki_for_template = other_wiki
+
     return templates.TemplateResponse(
         request,
         "wikitext.html",
@@ -333,6 +345,8 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
             "wikitext": row["text_content"],
             "text_bytes": row["text_bytes"],
             "timestamp": row["timestamp"],
+            "wiki": wiki,
+            "other_wiki": other_wiki_for_template,
         },
     )
 

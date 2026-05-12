@@ -2,11 +2,19 @@
    stored in the database, before the Markdown conversion pipeline runs.
    Swapped into #article by the "View wikitext" toggle in article.html. #}
 <header class="article-header">
-    <h2>{{ title }}</h2>
+    <h2>{{ title }}
+        {%- if wiki == "enwiki" %}<span class="wiki-badge wiki-badge--enwiki">enwiki</span>{% elif other_wiki == "enwiki" %}<a class="wiki-badge wiki-badge--enwiki wiki-badge--switch" href="/switch-wiki?to=enwiki&article={{ title|urlencode }}">enwiki</a>{% endif %}
+        {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki&article={{ title|urlencode }}">simplewiki</a>{% endif %}
+    </h2>
     <p class="article-meta">
         {{ "{:,}".format(text_bytes) }} bytes &middot; last edited {{ timestamp }}
     </p>
     <div class="article-controls">
+        <span id="embed-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
+        <span id="embed-widget"
+              hx-get="/embed-status/{{ title|urlencode }}"
+              hx-trigger="load"
+              hx-swap="outerHTML"></span>
         <button class="view-toggle"
                 hx-get="/article/{{ title|urlencode }}"
                 hx-target="#article"
