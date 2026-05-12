@@ -33,10 +33,12 @@ A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps.
 - Search bar with debounced as-you-type title lookup via FTS5 (instant even on enwiki's 6M+ articles)
 - Articles rendered server-side: wikitext → HTML, with a toggle to view raw wikitext
 - Follows `#REDIRECT` chains up to 5 hops
-- Wiki switcher: cookie-based toggle between enwiki and simplewiki without restarting the app
+- Wiki-switching badges in every page header: click the inactive wiki's badge to switch; active wiki is shown as a disabled span. Cookie-persisted — no app restart needed.
+- Site-wide navigation bar (Home / Embeddings / Processes) on all full pages, with the current page highlighted
 - One-click incremental refresh: downloads a new dump and updates only changed articles in-place (no full re-parse)
-- "Embed + links" button: enqueues an article and all its wikilink targets for batch embedding in one click
+- "Embed + links" button: enqueues an article and all its wikilink targets for batch embedding in one click; article header shows a "links embedded" badge once complete
 - Active embedding page (`/active-embedding`): live progress panel showing per-article status, with cancel support
+- Chunks viewer (`/chunks/{title}`): inspect the text chunks and section boundaries stored in the RAG index for any embedded article
 - No JavaScript build step; all logic stays in Python
 
 ### RAG Pipeline
@@ -146,7 +148,7 @@ Or, on a remote server where you need the process to outlive your SSH session:
 ./start.sh stop        # stop the server
 ```
 
-Then open `http://127.0.0.1:8000`. Type into the search box; matching titles appear below as you type, and clicking one renders the article as HTML. Use the wiki switcher button in the header to toggle between enwiki and simplewiki, or click **Refresh** to incrementally update the database from the latest dump without a full re-parse. Click **Embed + links** on any article to enqueue it and all its linked articles for batch embedding; progress is visible at `/active-embedding`.
+Then open `http://127.0.0.1:8000`. Type into the search box; matching titles appear below as you type, and clicking one renders the article as HTML. Click the enwiki or simplewiki badge in the header to switch between wikis (cookie-persisted). Use the **Home / Embeddings / Processes** nav buttons to move between the main pages. Click **Refresh** on the home page to incrementally update the database from the latest dump without a full re-parse. Click **Embed + links** on any article to enqueue it and all its linked articles for batch embedding; progress is visible at `/active-embedding`.
 
 To point the app at a specific database file, set `WIKI_DB`:
 

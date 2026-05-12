@@ -120,7 +120,7 @@ Wikimedia → download.py → dumps/*.xml.bz2
                                   → rag/embed.py → dumps/*_rag.db (chunks + vectors)
 ```
 
-The web app is a single-page UI: `GET /` serves the shell, HTMX drives `GET /search?q=` and `GET /article/{title:path}` as fragment swaps into `#results` and `#article` — no JS build step.
+The web app is a single-page UI: `GET /` serves the shell, HTMX drives `GET /search?q=` and `GET /article/{title:path}` as fragment swaps into `#results` and `#article` — no JS build step. Secondary pages (`/embed-manager`, `/active-embedding`, `/chunks/{title}`) are full page-loads that extend `base.html`.
 
 ### Wikitext converter (`render/`)
 
@@ -177,12 +177,17 @@ Pipeline order matters — stages are applied in sequence:
 - `_search_titles` uses FTS5 MATCH via `_escape_fts5` (wraps input in phrase quotes); short queries (<3 chars) fall back to prefix LIKE
 - `_fetch_article()` follows `#REDIRECT [[Target]]` chains up to `REDIRECT_MAX_HOPS` (5) and returns the original title as `redirected_from` so the template can show a "Redirected from X" note. A cycle guard surfaces a 404 rather than hanging.
 - `GET /wikitext/{title}` returns raw wikitext in a `<pre>` block — toggled from the article view
-- `GET /switch-wiki?to=` sets a `wiki_pref` cookie (1-year max-age) and redirects to `/`; `_active_wiki()` reads it on every request
+- `GET /switch-wiki?to=` sets a `wiki_pref` cookie (1-year max-age) and redirects: `article` param → `/?wiki=&article=` (pre-loads article in new wiki), `return_to` param → that URL (used by embed manager / active-embedding badges), otherwise → `/?wiki=`; `_active_wiki()` reads the cookie on every request
+- Wiki-switching badges appear in all page headers: home page has them in `<div class="wiki-badges">` below the `<h1>`; embed manager and active-embedding have them inline inside the `<h1>`; article and wikitext views have them inline in the article `<h2>`. The active wiki renders as a `<span>` (disabled); the other renders as `<a>` with `wiki-badge--switch` (only if that wiki's DB exists).
+- All full-page templates include `<div class="nav-btn-group">` with Home / Embeddings / Processes links, positioned below the page header. Routes pass `current_page` (`"home"` / `"embeddings"` / `"processes"` / `""`) to control which button renders as active (`nav-btn--active` span) vs a plain link. Chunks passes `""` — no item is highlighted.
+- `index()` gates `other_wiki` on DB existence before passing to template (consistent with `embed_manager` and `_render_active_embedding_panel`)
 - `POST /refresh/{wiki}` creates a job row (inside `BEGIN IMMEDIATE` to avoid duplicate active jobs), then spawns `worker.py` as a detached subprocess (`start_new_session=True`) so it outlives the HTTP connection
 - `GET /refresh/status/{wiki}` returns the latest job row as the `refresh_panel.html` partial — polled by HTMX while a job is active
 - `POST /embed-links/{title}` extracts wikilinks from the article, resolves redirects, and enqueues source + linked articles for batch embedding; spawns `embed_worker.py` if no job is active, otherwise appends to the running job
 - `GET /active-embedding` and `GET /active-embedding/panel` render the batch embedding status page; the panel is polled by HTMX every 3s while a job is running
 - `POST /active-embedding/cancel/{job_id}` sets `cancel_requested` on the job; the worker checks this flag between items
+- `GET /article/{title}` and `GET /wikitext/{title}` return embed-status context including `links_embedded` (bool) — the article header shows a "links embedded" badge when the article has been processed through the embed-links pipeline
+- After every HTMX article swap, `base.html`'s inline JS scrolls to the top of the page (or to the anchor section if the link included a `#fragment`)
 
 ### Refresh job system (`jobs.py`, `worker.py`, `parse/refresh.py`)
 
