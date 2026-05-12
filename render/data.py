@@ -46,6 +46,8 @@ INDICATORS: dict[str, tuple[str, str]] = {
     'steady': ('→', 'indicator-steady'),
     'positive': ('▲', 'indicator-increase'),
     'negative': ('▼', 'indicator-decrease'),
+    'increasenegative': ('▲', 'indicator-increase-negative'),
+    'decreasepositive': ('▼', 'indicator-decrease-positive'),
 }
 
 LANG_NAMES: dict[str, str] = {

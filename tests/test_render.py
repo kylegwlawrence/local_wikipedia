@@ -903,3 +903,138 @@ class TestStripExternalLinksSection:
         result = convert_wikitext_to_html(wikitext)
         assert 'History' in result
         assert 'history text' in result
+
+
+class TestTableTemplateHandlers:
+    """Templates commonly used inside table cells that were previously stripped."""
+
+    def test_rn_template_standalone(self) -> None:
+        result = convert_wikitext_to_html("{{rn|VII}}")
+        assert 'font-variant:small-caps' in result
+        assert 'VII' in result
+
+    def test_rn_template_in_table_cell(self) -> None:
+        wikitext = """{| class="wikitable"
+! Number !! Roman
+|-
+| 1 || {{rn|I}}
+|-
+| 4 || {{rn|IV}}
+|}"""
+        result = convert_wikitext_to_html(wikitext)
+        assert 'font-variant:small-caps' in result
+        assert '>I<' in result
+        assert '>IV<' in result
+
+    def test_rn_individual_decimal_places_table(self) -> None:
+        wikitext = """{| class="wikitable"
+|+ Individual decimal places
+|-
+! !! Thousands !! Hundreds !! Tens !! Units
+|-
+| 1 || {{rn|M}} || {{rn|C}} || {{rn|X}} || {{rn|I}}
+|-
+| 2 || {{rn|MM}} || {{rn|CC}} || {{rn|XX}} || {{rn|II}}
+|}"""
+        result = convert_wikitext_to_html(wikitext)
+        assert '>M<' in result
+        assert '>C<' in result
+        assert '>X<' in result
+        assert '>I<' in result
+        assert '>MM<' in result
+
+    def test_nowrap_template(self) -> None:
+        result = convert_wikitext_to_html("{{nowrap|hello world}}")
+        assert 'white-space:nowrap' in result
+        assert 'hello world' in result
+
+    def test_ipa_template(self) -> None:
+        result = convert_wikitext_to_html("{{ipa|/ˈɪŋɡlɪʃ/}}")
+        assert '/ˈɪŋɡlɪʃ/' in result
+
+    def test_ipac_en_template(self) -> None:
+        result = convert_wikitext_to_html("{{ipac-en|ˈɪŋɡlɪʃ}}")
+        assert 'ˈɪŋɡlɪʃ' in result
+
+    def test_nts_template(self) -> None:
+        result = convert_wikitext_to_html("{{nts|42}}")
+        assert '42' in result
+
+    def test_sort_template_shows_display(self) -> None:
+        result = convert_wikitext_to_html("{{sort|000123|123 km}}")
+        assert '123 km' in result
+
+    def test_sort_template_single_arg(self) -> None:
+        result = convert_wikitext_to_html("{{sort|abc}}")
+        assert 'abc' in result
+
+    def test_sortname_template(self) -> None:
+        result = convert_wikitext_to_html("{{sortname|John|Smith}}")
+        assert 'John Smith' in result
+
+    def test_tooltip_template(self) -> None:
+        result = convert_wikitext_to_html("{{tooltip|NATO|North Atlantic Treaty Organization}}")
+        assert '<abbr' in result
+        assert 'North Atlantic Treaty Organization' in result
+        assert 'NATO' in result
+
+    def test_flag_template_shows_country(self) -> None:
+        result = convert_wikitext_to_html("{{flag|France}}")
+        assert 'France' in result
+
+    def test_flagicon_template_removed(self) -> None:
+        result = convert_wikitext_to_html("Gold {{flagicon|USA}} {{sortname|Michael|Phelps}}")
+        assert 'flagicon' not in result
+        assert 'Michael Phelps' in result
+
+    def test_dts_year_month_day(self) -> None:
+        result = convert_wikitext_to_html("{{dts|2023|1|15}}")
+        assert 'January 15, 2023' in result
+
+    def test_dts_year_month(self) -> None:
+        result = convert_wikitext_to_html("{{dts|2023|3}}")
+        assert 'March 2023' in result
+
+    def test_dts_year_only(self) -> None:
+        result = convert_wikitext_to_html("{{dts|2023}}")
+        assert '2023' in result
+
+    def test_increasenegative_indicator(self) -> None:
+        result = convert_wikitext_to_html("{{increasenegative}}")
+        assert '▲' in result
+        assert 'indicator-increase-negative' in result
+
+    def test_decreasepositive_indicator(self) -> None:
+        result = convert_wikitext_to_html("{{decreasepositive}}")
+        assert '▼' in result
+        assert 'indicator-decrease-positive' in result
+
+    def test_frac_two_args(self) -> None:
+        result = convert_wikitext_to_html("{{frac|1|1728}}")
+        assert '1' in result
+        assert '1728' in result
+        assert '⁄' in result
+
+    def test_frac_one_arg(self) -> None:
+        result = convert_wikitext_to_html("{{frac|4}}")
+        assert '4' in result
+        assert '⁄' in result
+
+    def test_frac_mixed_number(self) -> None:
+        result = convert_wikitext_to_html("{{frac|1|1|2}}")
+        assert '1' in result
+        assert '2' in result
+        assert '⁄' in result
+
+    def test_frac_in_table_cell(self) -> None:
+        wikitext = """{| class="wikitable"
+! Fraction !! Name
+|-
+| {{frac|1|288}} || Scripulum
+|-
+| {{frac|1|72}} || Sextula
+|}"""
+        result = convert_wikitext_to_html(wikitext)
+        assert '288' in result
+        assert '72' in result
+        assert '⁄' in result

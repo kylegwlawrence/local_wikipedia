@@ -37,6 +37,8 @@ from render.templates import (
     convert_citation_templates,
     convert_code_templates,
     convert_convert_templates,
+    convert_date_sorting_templates,
+    convert_flag_templates,
     convert_hatnote_templates,
     convert_indicator_templates,
     convert_infobox_templates,
@@ -83,6 +85,8 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         convert_simple_inline_templates(wikicode)
         convert_list_body_templates(wikicode)
         convert_convert_templates(wikicode)
+        convert_flag_templates(wikicode)
+        convert_date_sorting_templates(wikicode)
         collected_refs = collect_inline_refs(wikicode)
         convert_reflist_template(wikicode, collected_refs)
 

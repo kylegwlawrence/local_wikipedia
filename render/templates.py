@@ -552,6 +552,83 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
                 except ValueError:
                     pass
 
+        elif name == 'rn':
+            content = _first_positional(template)
+            if content is not None:
+                try:
+                    wikicode.replace(template, f'<span style="font-variant:small-caps">{content}</span>')
+                except ValueError:
+                    pass
+
+        elif name in ('nowrap', 'nowr', 'nobr', 'no wrap'):
+            content = _first_positional(template)
+            if content is not None:
+                try:
+                    wikicode.replace(template, f'<span style="white-space:nowrap">{content}</span>')
+                except ValueError:
+                    pass
+
+        elif name in ('ipa', 'ipac-en', 'ipa-en', 'ipa-all'):
+            content = _first_positional(template)
+            if content is not None:
+                try:
+                    wikicode.replace(template, content)
+                except ValueError:
+                    pass
+
+        elif name in ('nts', 'ntsh'):
+            content = _first_positional(template)
+            if content is not None:
+                try:
+                    wikicode.replace(template, content)
+                except ValueError:
+                    pass
+
+        elif name == 'sort':
+            positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+            display = positional[1] if len(positional) >= 2 else (positional[0] if positional else None)
+            if display is not None:
+                try:
+                    wikicode.replace(template, display)
+                except ValueError:
+                    pass
+
+        elif name == 'sortname':
+            positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+            if positional:
+                display = ' '.join(p for p in positional[:2] if p)
+                try:
+                    wikicode.replace(template, display)
+                except ValueError:
+                    pass
+
+        elif name in ('tooltip', 'abbr'):
+            positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+            if positional:
+                text_val = positional[0]
+                tip = positional[1] if len(positional) >= 2 else ''
+                replacement = f'<abbr title="{html.escape(tip)}">{text_val}</abbr>' if tip else text_val
+                try:
+                    wikicode.replace(template, replacement)
+                except ValueError:
+                    pass
+
+        elif name in ('frac', 'fraction'):
+            positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+            if len(positional) == 1:
+                replacement = f'<sup>1</sup>⁄<sub>{positional[0]}</sub>'
+            elif len(positional) == 2:
+                replacement = f'<sup>{positional[0]}</sup>⁄<sub>{positional[1]}</sub>'
+            elif len(positional) >= 3:
+                replacement = f'{positional[0]} <sup>{positional[1]}</sup>⁄<sub>{positional[2]}</sub>'
+            else:
+                replacement = None
+            if replacement is not None:
+                try:
+                    wikicode.replace(template, replacement)
+                except ValueError:
+                    pass
+
 
 # ---------------------------------------------------------------------------
 # List templates in body text ({{plainlist}}, {{hlist}})
@@ -643,6 +720,73 @@ def convert_convert_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> N
             if unit_display:
                 replacement += f' {unit_display}'
 
+        try:
+            wikicode.replace(template, replacement)
+        except ValueError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Flag / country templates
+# ---------------------------------------------------------------------------
+
+
+def convert_flag_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Replace flag/country templates with a plain wikilink to the country.
+
+    {{flag|France}} → [[France]]
+    {{flagicon|France}} → removed (image-only, no text value)
+    """
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name in ('flag', 'flagu', 'flagcountry', 'country'):
+            country = _first_positional(template) or ''
+            try:
+                if country:
+                    wikicode.replace(template, f'[[{country}]]')
+                else:
+                    wikicode.remove(template)
+            except ValueError:
+                pass
+        elif name in ('flagicon', 'flag icon', 'flagathlete', 'flagioc',
+                      'flagiocathlete', 'flagnation'):
+            try:
+                wikicode.remove(template)
+            except ValueError:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Date table sorting ({{dts}}, {{date table sorting}})
+# ---------------------------------------------------------------------------
+
+
+def convert_date_sorting_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Replace {{dts|year|month|day}} with a formatted date string."""
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name not in ('dts', 'date table sorting', 'dts2'):
+            continue
+        positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+        if not positional:
+            try:
+                wikicode.remove(template)
+            except ValueError:
+                pass
+            continue
+        year = positional[0]
+        if len(positional) >= 2:
+            month_raw = positional[1]
+            try:
+                month_name = MONTH_NAMES[int(month_raw)]
+            except (ValueError, IndexError):
+                month_name = month_raw
+            if len(positional) >= 3:
+                replacement = f'{month_name} {positional[2]}, {year}'
+            else:
+                replacement = f'{month_name} {year}'
+        else:
+            replacement = year
         try:
             wikicode.replace(template, replacement)
         except ValueError:
