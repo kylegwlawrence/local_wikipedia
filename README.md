@@ -65,6 +65,12 @@ A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps.
    ```bash
    python download/download_katex.py
    ```
+5. (Optional) Install `ruff` for linting/formatting; config lives in `pyproject.toml`:
+   ```bash
+   pip install ruff
+   ruff check .
+   ruff format .
+   ```
 
 ## Usage
 
@@ -223,15 +229,19 @@ pytest tests/test_download.py::TestDownloadWithVerify
 
 ## Dependencies
 
+Pinned in `requirements.txt` (and mirrored in `pyproject.toml`):
+
 - **httpx** (0.28.1) - Async HTTP client for downloads
 - **tqdm** (4.67.3) - Terminal progress bars
 - **pytest** (9.0.3) - Testing framework
 - **respx** (0.23.1) - HTTP mocking for tests
-- **mwparserfromhell** (0.6+) - MediaWiki wikitext parser
-- **fastapi** (0.115+) - Web framework for the browser UI
-- **uvicorn** (0.32+) - ASGI server for FastAPI
-- **jinja2** (3.1+) - HTML templating
-- **sqlite-vec** (0.1.6+) - Vector similarity search extension for SQLite (RAG pipeline)
+- **mwparserfromhell** (0.7.2) - MediaWiki wikitext parser
+- **fastapi** (0.136.1) - Web framework for the browser UI
+- **uvicorn[standard]** (0.46.0) - ASGI server for FastAPI
+- **jinja2** (3.1.6) - HTML templating
+- **sqlite-vec** (0.1.9) - Vector similarity search extension for SQLite (RAG pipeline)
+
+Dev tooling (not pinned): `ruff` for linting and formatting — config under `[tool.ruff]` in `pyproject.toml`.
 
 ## Project Structure
 
@@ -292,10 +302,15 @@ pytest tests/test_download.py::TestDownloadWithVerify
 ├── scripts/
 │   └── calibrate_chunks.py  # Sample articles and measure real nomic-embed-text token counts
 ├── tests/             # Pytest suite
-├── templates/         # Jinja2 templates (incl. active_embedding*.html)
+│   └── conftest.py    # Shared fixtures (fixture DB builder, TestClient wiring)
+├── templates/         # Jinja2 templates
+│   ├── _nav.html              # Shared nav-btn-group partial
+│   ├── active_embedding*.html # Active-embedding page + polled panel
+│   └── ...                    # base, index, article, wikitext, embed_manager, chunks, …
 ├── static/            # CSS + vendored KaTeX
 ├── dumps/             # Downloaded files + parsed databases + jobs.db
 │                      # also: {wiki}_rag.db (RAG chunks + vectors, gitignored)
+├── pyproject.toml     # Project metadata + ruff config
 ├── requirements.txt
 └── README.md
 ```

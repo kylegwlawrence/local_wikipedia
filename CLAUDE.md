@@ -73,7 +73,8 @@ local_wikipedia/
   scripts/
     calibrate_chunks.py   sample articles and measure real nomic-embed-text token counts; suggests MAX_CHUNK_CHARS
   tests/            pytest suite (mirrors source layout)
-  templates/        Jinja2 templates (includes active_embedding.html + active_embedding_panel.html)
+    conftest.py     shared fixtures: build_fixture_db, wiki_db_path, client, embed_client, crash_recovery_env
+  templates/        Jinja2 templates (incl. _nav.html partial + active_embedding{,_panel}.html)
   static/
   dumps/            (gitignored) downloaded .xml.bz2 + parsed .db + jobs.db
                     also stores {wiki}_rag.db (RAG chunks + vectors)
@@ -204,7 +205,7 @@ Pipeline order matters — stages are applied in sequence:
 - `GET /wikitext/{title}` returns raw wikitext in a `<pre>` block — toggled from the article view
 - `GET /switch-wiki?to=` sets a `wiki_pref` cookie (1-year max-age) and redirects: `article` param → `/?wiki=&article=` (pre-loads article in new wiki), `return_to` param → that URL (used by embed manager / active-embedding badges), otherwise → `/?wiki=`; `app.deps.active_wiki()` reads the cookie on every request
 - Wiki-switching badges appear in all page headers: home page has them in `<div class="wiki-badges">` below the `<h1>`; embed manager and active-embedding have them inline inside the `<h1>`; article and wikitext views have them inline in the article `<h2>`. The active wiki renders as a `<span>` (disabled); the other renders as `<a>` with `wiki-badge--switch` (only if that wiki's DB exists).
-- All full-page templates include `<div class="nav-btn-group">` with Home / Embeddings / Processes links, positioned below the page header. Routes pass `current_page` (`"home"` / `"embeddings"` / `"processes"` / `""`) to control which button renders as active (`nav-btn--active` span) vs a plain link. Chunks passes `""` — no item is highlighted.
+- All full-page templates include the shared `templates/_nav.html` partial (`{% include "_nav.html" %}`) which renders `<div class="nav-btn-group">` with Home / Embeddings / Processes links, positioned below the page header. Routes pass `current_page` (`"home"` / `"embeddings"` / `"processes"` / `""`) to control which button renders as active (`nav-btn--active` span) vs a plain link. Chunks passes `""` — no item is highlighted.
 - `index()` gates `other_wiki` on DB existence before passing to template (consistent with `embed_manager` and `render_active_embedding_panel`)
 - Common patterns are factored into `app.helpers`: `spawn_worker(module, wiki, job_id, log_suffix)` dedupes the subprocess.Popen boilerplate used by `/refresh`, `/embed-links`, `/embed/reembed`; `htmx_redirect(url, request)` dedupes the "204+HX-Redirect for HTMX, 303 RedirectResponse otherwise" pattern.
 - `POST /refresh/{wiki}` creates a job row (inside `BEGIN IMMEDIATE` to avoid duplicate active jobs), then spawns `python -m workers.refresh` as a detached subprocess (`start_new_session=True`) so it outlives the HTTP connection
@@ -271,6 +272,8 @@ Offline embedding pipeline that chunks articles into sections and embeds them us
 - Sparse search quotes each word individually (`"word1" "word2"`) so FTS5 applies AND-of-terms, not phrase-match — phrase quoting would require verbatim adjacent sequences
 
 ### Test organisation
+
+Shared fixtures live in `tests/conftest.py` and are auto-discovered by pytest. The key ones are `build_fixture_db(path)` (creates a hermetic articles + FTS5 DB matching the parser schema), `wiki_db_path` (fresh per-test DB), `client` (`TestClient` with `WIKI_DB` pointing at the fixture), `embed_client` (adds `paths.JOBS_DB` / `paths.BASE_DIR` redirection plus a `subprocess.Popen` stub), and `crash_recovery_env` (dirs + monkeypatches for the lifespan startup-recovery tests).
 
 | File | Scope |
 |---|---|
