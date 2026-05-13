@@ -2,8 +2,11 @@
 
 The pipeline is a fixed sequence of stages whose order is load-bearing:
 
-  1. wikicode-level template handlers (templates.py): infobox, math, code,
-     lang, indicator, section-link, citation, ref collection, reflist
+  0. string-level pre-pass: rewrite {{math|...}} / {{tmath|...}} / {{mvar|...}}
+     to <math>...</math> before mwparserfromhell sees them, working around its
+     greedy double-brace matcher (templates.replace_math_templates)
+  1. wikicode-level template handlers (templates.py): infobox, code, lang,
+     indicator, section-link, citation, ref collection, reflist
   2. wikicode-level stripping (strip.py): templates, refs, comments, categories
   3. flatten to string
   4. extract code/math blocks behind placeholders (protect.py)
@@ -45,11 +48,11 @@ from render.templates import (
     convert_infobox_templates,
     convert_lang_templates,
     convert_list_body_templates,
-    convert_math_templates,
     convert_reflist_template,
     convert_section_link_templates,
     convert_simple_inline_templates,
     convert_wikidata_templates,
+    replace_math_templates,
 )
 
 
@@ -70,6 +73,11 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         return ""
 
     try:
+        # 0. Pre-parse: convert {{math|...}} family templates to <math>...</math>
+        # at the string level so mwparserfromhell's greedy double-brace matcher
+        # can't truncate LaTeX bodies that end with `}` adjacent to `}}`.
+        wikitext = replace_math_templates(wikitext)
+
         wikicode = mwparserfromhell.parse(wikitext)
 
         # 1. Wikicode-level templates that produce output (must run before strip).
@@ -77,7 +85,6 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         convert_annotated_link_templates(wikicode)
         convert_hatnote_templates(wikicode)
         convert_infobox_templates(wikicode)
-        convert_math_templates(wikicode)
         convert_code_templates(wikicode)
         convert_lang_templates(wikicode)
         convert_indicator_templates(wikicode)

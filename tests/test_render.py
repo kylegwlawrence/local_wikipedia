@@ -585,6 +585,60 @@ class TestMathRendering:
         result = convert_wikitext_to_html("The variable {{mvar|\\sigma}} represents standard deviation.")
         assert "\\(\\sigma\\)" in result
 
+    def test_tmath_template_converted(self) -> None:
+        # {{tmath|...}} is Wikipedia's LaTeX-inline variant of {{math|...}};
+        # like {{math}} it must wrap into a <math> tag (and then \(...\)) so
+        # KaTeX renders it, not leak through as raw template syntax.
+        result = convert_wikitext_to_html("Let {{tmath|x^2 + y^2 = z^2}}.")
+        assert "{{tmath" not in result
+        assert "\\(x^2 + y^2 = z^2\\)" in result
+
+    def test_tmath_template_with_nested_braces(self) -> None:
+        # The Calculus article writes {{tmath|\tfrac{\sin x}{x} }} with a trailing
+        # space — required so mwparserfromhell doesn't fuse the LaTeX closing
+        # brace with the template's closing `}}`. Both this canonical form and
+        # bare `{{tmath|...}}` (no space) appear in real wikitext.
+        result = convert_wikitext_to_html("Ratio {{tmath|\\tfrac{\\sin x}{x} }} of two functions.")
+        assert "{{tmath" not in result
+        assert "\\tfrac{\\sin x}{x}" in result
+
+    def test_tmath_no_trailing_space_brace_balanced(self) -> None:
+        # Bare `{{tmath|\tfrac{...}{...}}}` (no padding space before the closing
+        # `}}`) must still parse: the string-level pre-pass balances inner braces
+        # so the LaTeX body's final `}` isn't fused into the template close.
+        result = convert_wikitext_to_html("Ratio {{tmath|\\tfrac{\\sin x}{x}}} approaches 1.")
+        assert "{{tmath" not in result
+        assert "\\(\\tfrac{\\sin x}{x}\\)" in result
+        # And no stray `}` leaks out beside the rendered math.
+        assert "\\(\\tfrac{\\sin x}{x}\\)}" not in result
+
+    def test_math_no_trailing_space_brace_balanced(self) -> None:
+        # Same brace-balancing fix must apply to {{math|...}}, since the bug
+        # lived in mwparserfromhell, not the template name.
+        result = convert_wikitext_to_html("Let {{math|\\frac{a}{b}}}.")
+        assert "{{math" not in result
+        assert "\\(\\frac{a}{b}\\)" in result
+        assert "\\(\\frac{a}{b}\\)}" not in result
+
+    def test_tmath_with_display_block_param_ignored(self) -> None:
+        # `{{tmath|x|display=block}}` — the named `display=block` param is
+        # extremely rare and mwparserfromhell's behavior took only the first
+        # positional. The pre-pass preserves that: emit <math>x</math>, drop
+        # the rest. (Real wikitext almost never uses this form.)
+        result = convert_wikitext_to_html("Value {{tmath|x+1|display=block}} done.")
+        assert "{{tmath" not in result
+        assert "\\(x+1\\)" in result
+        assert "display=block" not in result
+
+    def test_tmath_with_top_level_pipe_in_latex_brace(self) -> None:
+        # A `|` *inside* nested braces is NOT a param separator — the LaTeX
+        # `\left|x\right|` form has bare pipes but they're inside `{...}` here.
+        result = convert_wikitext_to_html("{{math|\\{a|b\\}}}")
+        # The `|` is at single-brace depth 1 (inside `\{...\}`) so it's not a
+        # top-level param separator; full body survives.
+        assert "{{math" not in result
+        assert "\\{a|b\\}" in result
+
     def test_multiple_inline_formulas(self) -> None:
         result = convert_wikitext_to_html("When <math>\\mu = 0</math> and <math>\\sigma = 1</math>.")
         assert result.count("\\(") == 2
@@ -608,6 +662,56 @@ class TestMathRendering:
         # Empty math tags should not crash
         result = convert_wikitext_to_html("<math></math>")
         assert result is not None
+
+    def test_bare_math_with_align_promoted_to_display(self) -> None:
+        # Bare <math> (no display="block") containing \begin{align} must render as
+        # display math — KaTeX rejects align in inline mode.
+        wikitext = "<math>\n\\begin{align}\ny&=x^2 \\\\\n\\frac{dy}{dx}&=2x.\n\\end{align}\n</math>"
+        result = convert_wikitext_to_html(wikitext)
+        assert 'class="math-display"' in result
+        assert "$$" in result
+        assert "\\(" not in result
+        assert "\\begin{align}" in result
+
+    def test_bare_math_with_indented_align_promoted(self) -> None:
+        # The Calculus article's Leibniz-notation form: leading ':' indent + bare
+        # <math> + align. Must wrap in <dl><dd> and use display delimiters.
+        wikitext = ":<math>\\begin{align}a&=b\\\\c&=d\\end{align}</math>"
+        result = convert_wikitext_to_html(wikitext)
+        assert "<dl>" in result
+        assert "<dd>" in result
+        assert 'class="math-display"' in result
+        assert "$$" in result
+
+    def test_bare_math_with_equation_env_promoted(self) -> None:
+        result = convert_wikitext_to_html("<math>\\begin{equation}E=mc^2\\end{equation}</math>")
+        assert 'class="math-display"' in result
+        assert "\\(" not in result
+
+    def test_bare_math_with_gather_env_promoted(self) -> None:
+        result = convert_wikitext_to_html("<math>\\begin{gather}a\\\\b\\end{gather}</math>")
+        assert 'class="math-display"' in result
+
+    def test_bare_math_with_align_star_promoted(self) -> None:
+        # The starred form (\begin{align*}) is also display-only.
+        result = convert_wikitext_to_html("<math>\\begin{align*}x&=y\\end{align*}</math>")
+        assert 'class="math-display"' in result
+
+    def test_bare_math_with_aligned_stays_inline(self) -> None:
+        # \begin{aligned} is a wrapping env — valid in inline math; do not promote.
+        result = convert_wikitext_to_html("<math>\\begin{aligned}x&=y\\end{aligned}</math>")
+        assert "\\(" in result
+        assert 'class="math-display"' not in result
+
+    def test_bare_math_with_cases_stays_inline(self) -> None:
+        result = convert_wikitext_to_html("<math>f(x) = \\begin{cases}1 & x>0 \\\\ 0 & x\\le 0\\end{cases}</math>")
+        assert "\\(" in result
+        assert 'class="math-display"' not in result
+
+    def test_bare_math_with_pmatrix_stays_inline(self) -> None:
+        result = convert_wikitext_to_html("<math>\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}</math>")
+        assert "\\(" in result
+        assert 'class="math-display"' not in result
 
     def test_yes_indicator_template(self) -> None:
         result = convert_wikitext_to_html("{{yes}}")

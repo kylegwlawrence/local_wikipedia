@@ -46,7 +46,7 @@ MONTH_NAMES = (
 
 CITE_TEMPLATE_PREFIXES = ("cite ", "citation")
 
-MATH_TEMPLATE_NAMES = {"math", "mvar", "math block", "bigmath"}
+MATH_TEMPLATE_NAMES = {"math", "mvar", "math block", "bigmath", "tmath", "tmath block"}
 
 # Map of indicator template -> (display text, css class)
 INDICATORS: dict[str, tuple[str, str]] = {

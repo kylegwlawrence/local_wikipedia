@@ -246,20 +246,102 @@ def convert_reflist_template(
 # ---------------------------------------------------------------------------
 
 
-def convert_math_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
-    """Replace {{math|...}} / {{mvar|...}} with <math> tags so the math
-    extractor sees them as raw LaTeX content.
+_MATH_TEMPLATE_OPEN_RE = re.compile(
+    r"\{\{\s*(" + "|".join(re.escape(n) for n in MATH_TEMPLATE_NAMES) + r")\s*([|}])",
+    re.IGNORECASE,
+)
+
+
+def _find_template_close(text: str, content_start: int) -> int | None:
+    """Find the matching ``}}`` for a template whose body starts at ``content_start``.
+
+    Tracks the count of unmatched inner single braces so that LaTeX bodies like
+    ``\\frac{a}{b}}}`` close on the *outer* ``}}`` rather than gobbling the
+    body's last ``}`` — the failure mode in mwparserfromhell that this pre-pass
+    exists to work around. Returns the index of the first ``}`` of the closing
+    pair, or ``None`` if unbalanced.
     """
-    for template in wikicode.filter_templates():
-        if str(template.name).strip().lower() not in MATH_TEMPLATE_NAMES:
+    n = len(text)
+    inner = 0
+    i = content_start
+    while i < n - 1:
+        c = text[i]
+        if c == "{":
+            inner += 1
+            i += 1
+        elif c == "}":
+            if inner == 0 and text[i + 1] == "}":
+                return i
+            if inner > 0:
+                inner -= 1
+            i += 1
+        else:
+            i += 1
+    return None
+
+
+def _math_first_positional(params: str) -> str:
+    """Return the substring before the first top-level ``|`` in a template body.
+
+    Brace-nested ``|`` characters (e.g., inside a nested ``{{val|5}}``) are
+    skipped so they don't terminate the positional. If there is no top-level
+    ``|``, the entire body is returned — this preserves ``=`` characters inside
+    math expressions like ``{{math|a = b}}``.
+    """
+    inner = 0
+    for i, c in enumerate(params):
+        if c == "{":
+            inner += 1
+        elif c == "}":
+            if inner > 0:
+                inner -= 1
+        elif c == "|" and inner == 0:
+            return params[:i]
+    return params
+
+
+def replace_math_templates(wikitext: str) -> str:
+    """Replace ``{{math|...}}`` / ``{{tmath|...}}`` / ``{{mvar|...}}`` family
+    templates with ``<math>...</math>`` tags **before** mwparserfromhell sees
+    the input.
+
+    mwparserfromhell uses greedy double-brace matching, so a body like
+    ``\\frac{a}{b}}}`` gets the LaTeX body's final ``}`` fused into the
+    template's closing ``}}`` — truncating ``template.params[0]`` and leaving
+    a stray ``}`` as a sibling text node. By running this at the string level
+    with inner-brace balancing, we sidestep the bug entirely.
+    """
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = _MATH_TEMPLATE_OPEN_RE.search(wikitext, pos)
+        if not m:
+            out.append(wikitext[pos:])
+            break
+        out.append(wikitext[pos : m.start()])
+        if m.group(2) == "}":
+            # ``{{name}}`` with no params — emit empty <math> and resume after ``}}``.
+            close = m.end() - 1
+            if close + 1 < len(wikitext) and wikitext[close + 1] == "}":
+                out.append("<math></math>")
+                pos = close + 2
+                continue
+            # Malformed — single trailing ``}``; leave the source untouched.
+            out.append(wikitext[m.start() : m.end()])
+            pos = m.end()
             continue
-        # str(param) (not param.value) so a literal '=' inside the math expression
-        # isn't lost — mwparserfromhell parses {{math|a = b}} as a named param.
-        content = str(template.params[0]) if template.params else ""
-        try:
-            wikicode.replace(template, f"<math>{content}</math>")
-        except ValueError:
-            pass
+        # group(2) == "|": content starts after the `|`
+        content_start = m.end()
+        close = _find_template_close(wikitext, content_start)
+        if close is None:
+            # Unbalanced; leave source untouched so the user sees the error.
+            out.append(wikitext[m.start() : m.end()])
+            pos = m.end()
+            continue
+        content = _math_first_positional(wikitext[content_start:close])
+        out.append(f"<math>{content}</math>")
+        pos = close + 2
+    return "".join(out)
 
 
 def convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:

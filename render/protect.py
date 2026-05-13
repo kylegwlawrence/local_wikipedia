@@ -22,6 +22,14 @@ _MATH_INLINE_RE = re.compile(
     r"<math(?:\s[^>]*)?>(.*?)</math>",
     re.DOTALL | re.IGNORECASE,
 )
+# LaTeX environments that KaTeX requires be in display mode. Bare <math>...</math>
+# (no display="block") whose body uses one of these must be promoted to a
+# block-math placeholder; rendering them inline produces "can be used only in
+# display mode" errors. Inline-safe environments (aligned, cases, pmatrix, ...)
+# are intentionally absent.
+_DISPLAY_ENV_RE = re.compile(
+    r"\\begin\{(?:align|alignat|gather|multline|equation|eqnarray|CD)\*?\}",
+)
 
 
 def extract_syntaxhighlight(text: str) -> tuple[str, dict[str, str]]:
@@ -49,21 +57,30 @@ def restore_code_blocks(text: str, blocks: dict[str, str]) -> str:
 def extract_math_tags(text: str) -> tuple[str, dict[str, str]]:
     """Replace <math> tags with placeholders pointing at KaTeX delimiters.
 
-    Block math (display="block") yields a <div> placeholder; inline math yields
-    a <span> placeholder.
+    Block math (display="block", or body containing a display-only LaTeX
+    environment like \\begin{align}) yields a <div> placeholder; inline math
+    yields a <span> placeholder.
     """
     blocks: dict[str, str] = {}
 
-    def replace_block(m: re.Match) -> str:
+    def _emit_block(content: str) -> str:
         idx = len(blocks)
         placeholder = f'<div data-mathblock="{idx}"></div>'
-        blocks[placeholder] = f'<div class="math-display">$$\n{m.group(1).strip()}\n$$</div>'
+        blocks[placeholder] = f'<div class="math-display">$$\n{content}\n$$</div>'
         return placeholder
 
+    def replace_block(m: re.Match) -> str:
+        return _emit_block(m.group(1).strip())
+
     def replace_inline(m: re.Match) -> str:
+        content = m.group(1).strip()
+        # Promote to display math when the body uses a display-only environment
+        # — KaTeX refuses to render these in inline mode.
+        if _DISPLAY_ENV_RE.search(content):
+            return _emit_block(content)
         idx = len(blocks)
         placeholder = f'<span data-mathinline="{idx}"></span>'
-        blocks[placeholder] = f"\\({m.group(1).strip()}\\)"
+        blocks[placeholder] = f"\\({content}\\)"
         return placeholder
 
     text = _MATH_BLOCK_RE.sub(replace_block, text)
