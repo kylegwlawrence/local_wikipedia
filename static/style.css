@@ -1145,3 +1145,9 @@ a.wiki-badge--switch:hover {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+/* HTML-rendered math from {{math|…}}, {{mvar|…}}, {{bigmath|…}}: serif font
+   matches MediaWiki's visual distinction between formulas and prose. */
+.texhtml {
+    font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", serif;
+}

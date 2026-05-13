@@ -46,7 +46,15 @@ MONTH_NAMES = (
 
 CITE_TEMPLATE_PREFIXES = ("cite ", "citation")
 
-MATH_TEMPLATE_NAMES = {"math", "mvar", "math block", "bigmath", "tmath", "tmath block"}
+# HTML-rendered math: bodies are wikitext (apostrophe-italics, <sup>, {{=}} …)
+# that MediaWiki wraps in <span class="texhtml">. NOT LaTeX.
+HTML_MATH_TEMPLATE_NAMES = {"math", "math block", "bigmath"}
+# Math-variable shorthand: body is always italic (single variable name).
+MVAR_TEMPLATE_NAMES = {"mvar"}
+# LaTeX-rendered math: body is raw LaTeX, suitable for KaTeX via <math>…</math>.
+LATEX_MATH_TEMPLATE_NAMES = {"tmath", "tmath block"}
+# Union used by the pre-pass regex in render.templates.
+MATH_TEMPLATE_NAMES = HTML_MATH_TEMPLATE_NAMES | MVAR_TEMPLATE_NAMES | LATEX_MATH_TEMPLATE_NAMES
 
 # Map of indicator template -> (display text, css class)
 INDICATORS: dict[str, tuple[str, str]] = {

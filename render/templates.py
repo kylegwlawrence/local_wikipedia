@@ -18,8 +18,10 @@ from render.data import (
     IMAGE_FIELD_PREFIXES,
     IMAGE_VALUE_RE,
     INDICATORS,
+    LATEX_MATH_TEMPLATE_NAMES,
     MATH_TEMPLATE_NAMES,
     MONTH_NAMES,
+    MVAR_TEMPLATE_NAMES,
     UNIT_NAMES,
     lang_code_to_name,
 )
@@ -300,16 +302,52 @@ def _math_first_positional(params: str) -> str:
     return params
 
 
+def _substitute_escape_templates(content: str) -> str:
+    """Inline MediaWiki magic-word escape templates inside an HTML-math body.
+
+    ``{{=}}`` → ``=``, ``{{!}}`` → ``|``, ``{{!-}}`` → ``|-``, ``{{!!}}`` → ``||``.
+    Longer forms run first so ``{{!}}`` doesn't shadow ``{{!-}}`` / ``{{!!}}``.
+    Only meaningful for HTML-math bodies; LaTeX bodies should not contain these.
+    """
+    return content.replace("{{=}}", "=").replace("{{!-}}", "|-").replace("{{!!}}", "||").replace("{{!}}", "|")
+
+
+def _emit_math_template(name: str, content: str) -> str:
+    """Render the extracted body of a math-family template as HTML.
+
+    Three rendering modes, chosen by ``name``:
+
+    * **LaTeX-math** (``tmath``, ``tmath block``) — body is raw LaTeX; emit
+      ``<math>…</math>`` so the existing math-tag protector wraps it in KaTeX
+      delimiters.
+    * **mvar** — body is always italic (single math variable); emit
+      ``<span class="texhtml"><i>…</i></span>``.
+    * **HTML-math** (``math``, ``math block``, ``bigmath``) — body is wikitext
+      (apostrophe-italics, ``<sup>``, escape templates); emit
+      ``<span class="texhtml">…</span>`` and let the downstream pipeline handle
+      its formatting markup.
+    """
+    if name in LATEX_MATH_TEMPLATE_NAMES:
+        return f"<math>{content}</math>"
+    content = _substitute_escape_templates(content)
+    if name in MVAR_TEMPLATE_NAMES:
+        return f'<span class="texhtml"><i>{content}</i></span>'
+    return f'<span class="texhtml">{content}</span>'
+
+
 def replace_math_templates(wikitext: str) -> str:
-    """Replace ``{{math|...}}`` / ``{{tmath|...}}`` / ``{{mvar|...}}`` family
-    templates with ``<math>...</math>`` tags **before** mwparserfromhell sees
+    """Replace the ``{{math|…}}`` / ``{{tmath|…}}`` / ``{{mvar|…}}`` template
+    family with their respective HTML wrappers **before** mwparserfromhell sees
     the input.
 
-    mwparserfromhell uses greedy double-brace matching, so a body like
-    ``\\frac{a}{b}}}`` gets the LaTeX body's final ``}`` fused into the
-    template's closing ``}}`` — truncating ``template.params[0]`` and leaving
-    a stray ``}`` as a sibling text node. By running this at the string level
-    with inner-brace balancing, we sidestep the bug entirely.
+    Two reasons for the string-level pre-pass:
+
+    1. mwparserfromhell uses greedy double-brace matching, so a body like
+       ``\\frac{a}{b}}}`` fuses the LaTeX body's final ``}`` into the
+       template's closing ``}}``, truncating ``template.params[0]``.
+    2. We need to distinguish HTML-rendered math (wikitext body, ``texhtml``
+       span) from LaTeX-rendered math (KaTeX-bound ``<math>`` tag) — see
+       :func:`_emit_math_template`.
     """
     out: list[str] = []
     pos = 0
@@ -319,11 +357,12 @@ def replace_math_templates(wikitext: str) -> str:
             out.append(wikitext[pos:])
             break
         out.append(wikitext[pos : m.start()])
+        name = m.group(1).lower()
         if m.group(2) == "}":
-            # ``{{name}}`` with no params — emit empty <math> and resume after ``}}``.
+            # ``{{name}}`` with no body — emit an empty wrapper and resume after ``}}``.
             close = m.end() - 1
             if close + 1 < len(wikitext) and wikitext[close + 1] == "}":
-                out.append("<math></math>")
+                out.append(_emit_math_template(name, ""))
                 pos = close + 2
                 continue
             # Malformed — single trailing ``}``; leave the source untouched.
@@ -339,7 +378,7 @@ def replace_math_templates(wikitext: str) -> str:
             pos = m.end()
             continue
         content = _math_first_positional(wikitext[content_start:close])
-        out.append(f"<math>{content}</math>")
+        out.append(_emit_math_template(name, content))
         pos = close + 2
     return "".join(out)
 

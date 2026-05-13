@@ -578,12 +578,58 @@ class TestMathRendering:
         assert r"\text{if } x > 0" in result
 
     def test_math_template_converted(self) -> None:
-        result = convert_wikitext_to_html("Let {{math|x^2 + y^2 = z^2}}.")
-        assert "\\(x^2 + y^2 = z^2\\)" in result
+        # {{math|...}} is HTML-rendered: body is wikitext, wrapped in
+        # <span class="texhtml"> (NOT KaTeX). Caret/asterisk are literal — the
+        # author would use <sup> for superscript inside {{math}}.
+        result = convert_wikitext_to_html("Let {{math|x + y = z}}.")
+        assert '<span class="texhtml">x + y = z</span>' in result
 
     def test_mvar_template_converted(self) -> None:
-        result = convert_wikitext_to_html("The variable {{mvar|\\sigma}} represents standard deviation.")
-        assert "\\(\\sigma\\)" in result
+        # {{mvar|x}} is always italic — single math variable.
+        result = convert_wikitext_to_html("The variable {{mvar|x}} is real.")
+        assert '<span class="texhtml"><i>x</i></span>' in result
+
+    def test_math_with_apostrophe_italics(self) -> None:
+        # The Calculus article's actual pattern: ''f''(''x'') inside {{math|...}}.
+        # The wikitext italics must be converted to <em> by the downstream pass,
+        # not left as literal apostrophes inside KaTeX delimiters.
+        result = convert_wikitext_to_html("Then {{math|''f''(''x'')}}.")
+        assert '<span class="texhtml"><em>f</em>(<em>x</em>)</span>' in result
+        assert "\\(" not in result
+
+    def test_math_with_equals_escape(self) -> None:
+        # {{=}} expands to a literal `=` — needed because bare `=` in a template
+        # param is interpreted as a named-param separator. Must be substituted,
+        # not stripped (the prior behavior was a silent drop, leaving "y  mx").
+        result = convert_wikitext_to_html("Then {{math|y {{=}} mx + b}}.")
+        assert '<span class="texhtml">y = mx + b</span>' in result
+        assert "{{=}}" not in result
+        assert "y  mx" not in result  # double-space from old strip-and-drop behavior
+
+    def test_math_with_pipe_escape(self) -> None:
+        result = convert_wikitext_to_html("Set {{math|a {{!}} b}}.")
+        assert '<span class="texhtml">a | b</span>' in result
+
+    def test_math_with_sup_and_italics(self) -> None:
+        # The Calculus article: {{math|''f''(''x'') {{=}} ''x''<sup>2</sup>}}.
+        # HTML <sup> is passed through; wikitext italics convert to <em>;
+        # {{=}} expands to =.
+        result = convert_wikitext_to_html("If {{math|''f''(''x'') {{=}} ''x''<sup>2</sup>}}.")
+        assert '<span class="texhtml">' in result
+        assert "<em>f</em>(<em>x</em>) = <em>x</em><sup>2</sup>" in result
+
+    def test_math_with_sub_tag(self) -> None:
+        result = convert_wikitext_to_html("{{math|''x''<sub>0</sub>}}")
+        assert '<span class="texhtml"><em>x</em><sub>0</sub></span>' in result
+
+    def test_bigmath_renders_as_html_span(self) -> None:
+        # {{bigmath|...}} is the larger HTML-rendered cousin — same wrapper.
+        result = convert_wikitext_to_html("See {{bigmath|''y'' + 1}}.")
+        assert '<span class="texhtml"><em>y</em> + 1</span>' in result
+
+    def test_mvar_with_subscript_in_content(self) -> None:
+        result = convert_wikitext_to_html("Index {{mvar|x<sub>0</sub>}}.")
+        assert '<span class="texhtml"><i>x<sub>0</sub></i></span>' in result
 
     def test_tmath_template_converted(self) -> None:
         # {{tmath|...}} is Wikipedia's LaTeX-inline variant of {{math|...}};
@@ -613,12 +659,15 @@ class TestMathRendering:
         assert "\\(\\tfrac{\\sin x}{x}\\)}" not in result
 
     def test_math_no_trailing_space_brace_balanced(self) -> None:
-        # Same brace-balancing fix must apply to {{math|...}}, since the bug
-        # lived in mwparserfromhell, not the template name.
+        # Brace-balancing must still work for {{math|...}} even though the
+        # template is now HTML-rendered: the body's literal `\frac{a}{b}` is
+        # preserved (it won't render as a fraction — HTML-math is not LaTeX —
+        # but at minimum the template wrapper closes correctly with no stray }.
         result = convert_wikitext_to_html("Let {{math|\\frac{a}{b}}}.")
         assert "{{math" not in result
-        assert "\\(\\frac{a}{b}\\)" in result
-        assert "\\(\\frac{a}{b}\\)}" not in result
+        assert '<span class="texhtml">\\frac{a}{b}</span>' in result
+        # No stray closing brace leaked outside the span.
+        assert "</span>}" not in result
 
     def test_tmath_with_display_block_param_ignored(self) -> None:
         # `{{tmath|x|display=block}}` — the named `display=block` param is
@@ -630,14 +679,13 @@ class TestMathRendering:
         assert "\\(x+1\\)" in result
         assert "display=block" not in result
 
-    def test_tmath_with_top_level_pipe_in_latex_brace(self) -> None:
-        # A `|` *inside* nested braces is NOT a param separator — the LaTeX
-        # `\left|x\right|` form has bare pipes but they're inside `{...}` here.
+    def test_math_with_top_level_pipe_in_brace(self) -> None:
+        # A `|` *inside* nested braces is NOT a param separator: `\{a|b\}`
+        # contains a bare pipe but it's inside `{...}`, so the full body
+        # survives into the texhtml span rather than being split at the pipe.
         result = convert_wikitext_to_html("{{math|\\{a|b\\}}}")
-        # The `|` is at single-brace depth 1 (inside `\{...\}`) so it's not a
-        # top-level param separator; full body survives.
         assert "{{math" not in result
-        assert "\\{a|b\\}" in result
+        assert '<span class="texhtml">\\{a|b\\}</span>' in result
 
     def test_multiple_inline_formulas(self) -> None:
         result = convert_wikitext_to_html("When <math>\\mu = 0</math> and <math>\\sigma = 1</math>.")
