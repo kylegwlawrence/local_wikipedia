@@ -23,7 +23,9 @@ class Chunk:
         page_id: ID of the source article.
         title: Title of the source article.
         section: Section heading within the article, or None for the lead.
+        chunk_index: Position of this chunk within its section (0, 1, 2, ...).
         text: Plain text content of the chunk.
+        text_length: Character count of ``text``.
         score: RRF relevance score (higher is more relevant).
     """
 
@@ -31,7 +33,9 @@ class Chunk:
     page_id: int
     title: str
     section: str | None
+    chunk_index: int
     text: str
+    text_length: int
     score: float
 
 
@@ -203,7 +207,7 @@ def _fetch_chunks(
         return {}
     placeholders = ",".join("?" * len(chunk_ids))
     rows = rag_conn.execute(
-        f"SELECT c.chunk_id, c.page_id, c.section, c.text, am.title "
+        f"SELECT c.chunk_id, c.page_id, c.section, c.chunk_index, c.text, c.text_length, am.title "
         f"FROM chunks c JOIN articles_meta am USING(page_id) "
         f"WHERE c.chunk_id IN ({placeholders})",
         chunk_ids,
@@ -214,7 +218,9 @@ def _fetch_chunks(
             page_id=r["page_id"],
             title=r["title"],
             section=r["section"],
+            chunk_index=r["chunk_index"],
             text=r["text"],
+            text_length=r["text_length"],
             score=score_map.get(r["chunk_id"], 0.0),
         )
         for r in rows
