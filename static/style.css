@@ -277,8 +277,8 @@ body {
 
 .sidebar-brand__link:hover { color: var(--color-text); }
 
-.sidebar-brand__logo { font-size: 1.1rem; }
-.sidebar-brand__text { line-height: var(--leading-tight); }
+.sidebar-brand__logo { height: 27px; width: auto; flex-shrink: 0; }
+.sidebar-brand__text { line-height: var(--leading-tight); font-size: var(--text-body); }
 
 .sidebar-nav {
   flex: 1;
