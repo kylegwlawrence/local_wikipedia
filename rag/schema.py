@@ -52,7 +52,6 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
             page_id            INTEGER PRIMARY KEY,
             title              TEXT    NOT NULL,
             revision_id        INTEGER NOT NULL,
-            categories         TEXT    NOT NULL DEFAULT '',
             embedded_at        TEXT,
             article_size_bytes INTEGER,
             links_embedded     INTEGER NOT NULL DEFAULT 0
@@ -98,6 +97,13 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
                 conn.execute("UPDATE articles_meta SET links_embedded = 0 WHERE links_embedded IS NULL")
         except sqlite3.OperationalError:
             pass  # column already exists
+
+    # Drop removed columns from existing databases.
+    try:
+        conn.execute("ALTER TABLE articles_meta DROP COLUMN categories")
+    except sqlite3.OperationalError:
+        pass  # column already absent
+
     conn.commit()
 
 

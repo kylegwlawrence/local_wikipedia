@@ -150,18 +150,16 @@ def _embed_article(
     if chunker.is_redirect(wikitext):
         return 0
 
-    categories = chunker.extract_categories(wikitext)
     chunks = chunker.chunk_article(title, wikitext)
 
     rag_conn.execute(
         "INSERT OR REPLACE INTO articles_meta "
-        "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "(page_id, title, revision_id, embedded_at, article_size_bytes, links_embedded) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (
             page_id,
             title,
             revision_id,
-            "|".join(categories),
             datetime.now(UTC).isoformat(),
             len(wikitext.encode("utf-8")),
             links_embedded,
@@ -217,18 +215,16 @@ def embed_one(
 
     delete_article(rag_conn, page_id)
 
-    categories = chunker.extract_categories(wikitext)
     chunks_data = chunker.chunk_article(title, wikitext)
 
     rag_conn.execute(
         "INSERT INTO articles_meta "
-        "(page_id, title, revision_id, categories, embedded_at, article_size_bytes, links_embedded) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "(page_id, title, revision_id, embedded_at, article_size_bytes, links_embedded) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (
             page_id,
             title,
             revision_id,
-            "|".join(categories),
             datetime.now(UTC).isoformat(),
             len(wikitext.encode("utf-8")),
             preserved_links_embedded,

@@ -90,8 +90,8 @@ def stub_embed_one(monkeypatch):
         calls.append(page_id)
         rag_conn.execute(
             "INSERT OR REPLACE INTO articles_meta "
-            "(page_id, title, revision_id, categories, links_embedded) "
-            "VALUES (?, ?, ?, '', 0)",
+            "(page_id, title, revision_id, links_embedded) "
+            "VALUES (?, ?, ?, 0)",
             (page_id, title, revision_id),
         )
         rag_conn.commit()
@@ -176,7 +176,7 @@ class TestProcessItem:
 
     def test_skipped_unchanged_still_expands(self, chain_db, jobs_conn, rag_conn, stub_embed_one):
         # Pre-populate articles_meta so B is considered unchanged.
-        rag_conn.execute("INSERT INTO articles_meta (page_id, title, revision_id, categories) VALUES (2, 'B', 1, '')")
+        rag_conn.execute("INSERT INTO articles_meta (page_id, title, revision_id) VALUES (2, 'B', 1)")
         rag_conn.commit()
 
         job_id = embed_jobs.create_job(jobs_conn, "enwiki", "/tmp/x.log", "A")

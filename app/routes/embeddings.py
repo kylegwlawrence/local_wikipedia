@@ -50,7 +50,7 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
         page = max(1, min(page, total_pages))
         offset = (page - 1) * EMBED_PAGE_SIZE
         rows = rag_conn.execute(
-            """SELECT m.page_id, m.title, m.categories,
+            """SELECT m.page_id, m.title,
                       m.article_size_bytes, m.embedded_at, m.links_embedded,
                       COUNT(c.chunk_id) AS chunk_count
                FROM articles_meta m

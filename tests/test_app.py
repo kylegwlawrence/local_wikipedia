@@ -388,8 +388,8 @@ class TestEmbedStatusWidget:
         rag_conn = connect_rag(rag_path)
         rag_conn.execute(
             "INSERT INTO articles_meta "
-            "(page_id, title, revision_id, categories, links_embedded) "
-            "VALUES (1, 'April', 1, '', 1)"
+            "(page_id, title, revision_id, links_embedded) "
+            "VALUES (1, 'April', 1, 1)"
         )
         rag_conn.commit()
         rag_conn.close()
@@ -441,7 +441,7 @@ class TestEmbedCount2:
         rag_path.parent.mkdir(exist_ok=True)
         rag_conn = connect_rag(rag_path)
         rag_conn.execute(
-            "INSERT INTO articles_meta (page_id, title, revision_id, categories) VALUES (99, 'Month', 1, '')"
+            "INSERT INTO articles_meta (page_id, title, revision_id) VALUES (99, 'Month', 1)"
         )
         rag_conn.commit()
         rag_conn.close()

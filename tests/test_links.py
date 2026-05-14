@@ -111,7 +111,7 @@ def _mark_embedded(rag_conn: sqlite3.Connection, *titles: str) -> None:
     """Populate articles_meta with rows for the given titles."""
     for i, title in enumerate(titles, start=1000):
         rag_conn.execute(
-            "INSERT INTO articles_meta (page_id, title, revision_id, categories) VALUES (?, ?, 1, '')",
+            "INSERT INTO articles_meta (page_id, title, revision_id) VALUES (?, ?, 1)",
             (i, title),
         )
     rag_conn.commit()
