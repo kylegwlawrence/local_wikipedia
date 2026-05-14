@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
                     if job["include_links"]:
                         source_titles = jobs_conn.execute(
                             "SELECT DISTINCT source_title FROM embed_job_items "
-                            "WHERE job_id = ? AND status = 'complete'",
+                            "WHERE job_id = ? AND status NOT IN ('queued', 'in_progress')",
                             (job_id,),
                         ).fetchall()
                         for st_row in source_titles:
