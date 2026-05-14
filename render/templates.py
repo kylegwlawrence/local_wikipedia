@@ -22,6 +22,7 @@ from render.data import (
     MATH_TEMPLATE_NAMES,
     MONTH_NAMES,
     MVAR_TEMPLATE_NAMES,
+    PASSTHROUGH_FIRST_ARG_TEMPLATES,
     UNIT_NAMES,
     lang_code_to_name,
 )
@@ -77,8 +78,13 @@ def format_cite_template(template) -> str:
 
     parts: list[str] = []
 
-    # Author handling: 'author' wins; else last/first or last1/first1, last2/...
-    author = fields.get("author")
+    # Author handling cascade:
+    #   author=         single name, wins outright
+    #   authors=        comma- or semicolon-separated list (kept verbatim)
+    #   vauthors=       Vancouver style ("Smith J, Doe AB") — comma-separated
+    #   last/first      single author split into surname + given names
+    #   last1/first1 … last9/first9    indexed multi-author form
+    author = fields.get("author") or fields.get("authors") or fields.get("vauthors")
     if not author:
         if "last" in fields:
             author = (fields.get("last", "") + ", " + fields.get("first", "")).strip(", ")
@@ -148,13 +154,15 @@ def collect_inline_refs(
     """Collect inline <ref> tags from the article body, in citation order.
 
     Self-closing back-refs (<ref name="X"/>) are resolved to their content if
-    they were defined inside a {{Reflist|refs=...}} parameter; otherwise they
-    are skipped (the inline definition is collected at its definition site).
+    they were defined inside a {{Reflist|refs=...}} parameter or inside a
+    <references>...</references> body; otherwise they are skipped (the inline
+    definition is collected at its definition site).
 
     Returns a list of (name_or_None, rendered_html). No deduplication.
     """
-    # Build a name → content lookup for refs defined only in refs= parameters.
-    refs_param_content: dict[str, str] = {}
+    # Build a name → content lookup for refs defined only as definitions
+    # (refs= param of {{Reflist}} or body of <references>).
+    refs_definitions: dict[str, str] = {}
     for tmpl in wikicode.filter_templates():
         if str(tmpl.name).strip().lower() != "reflist":
             continue
@@ -164,8 +172,17 @@ def collect_inline_refs(
         for m in _REF_TAG_RE.finditer(str(rp.value)):
             name = m.group(1) or m.group(2) or m.group(3)
             content = m.group(4).strip()
-            if name not in refs_param_content:
-                refs_param_content[name] = content
+            if name not in refs_definitions:
+                refs_definitions[name] = content
+
+    for tag in wikicode.filter_tags(recursive=False):
+        if str(tag.tag).strip().lower() != "references" or tag.self_closing:
+            continue
+        for m in _REF_TAG_RE.finditer(str(tag.contents)):
+            name = m.group(1) or m.group(2) or m.group(3)
+            content = m.group(4).strip()
+            if name not in refs_definitions:
+                refs_definitions[name] = content
 
     collected: list[tuple[str | None, str]] = []
 
@@ -176,10 +193,10 @@ def collect_inline_refs(
         name = str(tag.get("name").value).strip() if tag.has("name") else None
 
         if tag.self_closing:
-            # Resolve only if content was defined in a refs= param. Inline
-            # definitions are already collected when their full tag is hit.
-            if name and name in refs_param_content:
-                contents = refs_param_content[name]
+            # Resolve only if content was defined as a standalone definition.
+            # Inline definitions are already collected when their full tag is hit.
+            if name and name in refs_definitions:
+                contents = refs_definitions[name]
             else:
                 continue
         else:
@@ -241,6 +258,59 @@ def convert_reflist_template(
             wikicode.replace(template, replacement)
         except ValueError:
             pass
+
+
+_REFERENCES_OPEN_CLOSED_RE = re.compile(
+    r"<references\b[^>]*>(.*?)</references>",
+    re.DOTALL | re.IGNORECASE,
+)
+_REFERENCES_SELF_CLOSED_RE = re.compile(r"<references\b[^>]*/>", re.IGNORECASE)
+
+
+def convert_references_tag(
+    text: str,
+    collected_refs: list[tuple[str | None, str]] | None,
+) -> str:
+    """Render bare ``<references />`` / ``<references>...</references>`` tags.
+
+    Articles that use the raw HTML tag instead of ``{{Reflist}}`` lose their
+    reference list otherwise — ``strip_refs`` would remove the tag and the
+    collected inline refs would never appear in the output. This pass mirrors
+    :func:`convert_reflist_template` at the string level and runs *before*
+    ``strip_refs``.
+
+    If a ``{{Reflist}}`` already rendered (detected via ``<ol
+    class="references">`` already in the text), subsequent ``<references>``
+    tags are dropped rather than duplicating the list.
+    """
+    rendered_once = ['<ol class="references">' in text]
+
+    def render_list(body_text: str) -> str:
+        if rendered_once[0]:
+            return ""
+        items: list[str] = []
+        if collected_refs:
+            for idx, (name, rendered) in enumerate(collected_refs, start=1):
+                ref_id = html.escape(name, quote=True) if name else str(idx)
+                items.append(f'<li id="ref_{ref_id}">{rendered}</li>')
+        if body_text:
+            for m in _REF_TAG_RE.finditer(body_text):
+                ref_name = m.group(1) or m.group(2) or m.group(3)
+                ref_content = m.group(4).strip()
+                try:
+                    rendered = _render_ref_body(ref_content)
+                except Exception:
+                    rendered = html.escape(ref_content)
+                if rendered:
+                    items.append(f'<li id="ref_{html.escape(ref_name, quote=True)}">{rendered}</li>')
+        if not items:
+            return ""
+        rendered_once[0] = True
+        return '<ol class="references">\n' + "\n".join(items) + "\n</ol>"
+
+    text = _REFERENCES_OPEN_CLOSED_RE.sub(lambda m: render_list(m.group(1)), text)
+    text = _REFERENCES_SELF_CLOSED_RE.sub(lambda m: render_list(""), text)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -415,17 +485,53 @@ def convert_code_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None
 
 
 def convert_lang_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
-    """Replace {{lang|XX|text}} / {{langx|XX|...|text}} with rendered HTML."""
+    """Replace {{lang|XX|text}} / {{langx|XX|…|text}} / {{lang-XX|text}} with HTML.
+
+    The ``{{lang-XX|text}}`` shorthand encodes the language in the template
+    name (e.g. ``lang-fr``, ``lang-de``). We recognise that pattern as well so
+    the language label appears in output even for the shorthand form.
+    """
     for template in wikicode.filter_templates():
         name = str(template.name).strip().lower()
-        if name not in ("lang", "langx"):
-            continue
         positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
-        # First positional is the language code; last is the text.
-        replacement = _render_lang(positional[0], positional[-1]) if len(positional) >= 2 else None
+
+        if name in ("lang", "langx"):
+            # First positional is the language code; last is the text.
+            replacement = _render_lang(positional[0], positional[-1]) if len(positional) >= 2 else None
+        elif name.startswith("lang-") and len(name) > 5:
+            # Single positional holds the text; language code is in the name.
+            code = name[5:]
+            replacement = _render_lang(code, positional[-1]) if positional else None
+        else:
+            continue
+
         try:
             if replacement:
                 wikicode.replace(template, replacement)
+            else:
+                wikicode.remove(template)
+        except ValueError:
+            pass
+
+
+def convert_passthrough_first_arg_templates(
+    wikicode: mwparserfromhell.wikicode.Wikicode,
+) -> None:
+    """Render templates from ``PASSTHROUGH_FIRST_ARG_TEMPLATES`` as just their
+    first positional arg.
+
+    For content-bearing wrappers like ``{{quote|"text"|author}}`` the body text
+    is what readers want; attribution/styling parameters are dropped. Templates
+    not in the allowlist remain untouched (and get stripped later as usual).
+    """
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name not in PASSTHROUGH_FIRST_ARG_TEMPLATES:
+            continue
+        value = _first_positional(template) or ""
+        try:
+            if value:
+                wikicode.replace(template, value)
             else:
                 wikicode.remove(template)
         except ValueError:
@@ -609,6 +715,27 @@ def convert_simple_inline_templates(wikicode: mwparserfromhell.wikicode.Wikicode
             except ValueError:
                 pass
 
+        elif name in ("as of", "asof"):
+            positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+            year_val = positional[0] if positional else ""
+            month_val = positional[1] if len(positional) >= 2 else ""
+            day_val = positional[2] if len(positional) >= 3 else ""
+            try:
+                month_name = MONTH_NAMES[int(month_val)] if month_val else ""
+            except (ValueError, IndexError):
+                month_name = month_val
+            if day_val and month_name:
+                date_str = f"{month_name} {day_val}, {year_val}"
+            elif month_name:
+                date_str = f"{month_name} {year_val}"
+            else:
+                date_str = year_val
+            asof_replacement = f"as of {date_str}" if date_str else "as of"
+            try:
+                wikicode.replace(template, asof_replacement)
+            except ValueError:
+                pass
+
         elif name in ("circa", "c.", "ca", "ca."):
             year = _first_positional(template) or ""
             replacement = f"c. {year}" if year else "c."
@@ -778,7 +905,7 @@ def convert_list_body_templates(wikicode: mwparserfromhell.wikicode.Wikicode) ->
 # {{convert}} / {{cvt}} — unit conversion display
 # ---------------------------------------------------------------------------
 
-_RANGE_CONNECTORS = frozenset({"to", "and", "-", "–", "or", "+"})
+_RANGE_CONNECTORS = frozenset({"to", "and", "-", "–", "or", "+", "by", "x", "×"})
 
 
 def convert_convert_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
@@ -845,6 +972,110 @@ def convert_flag_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None
                 wikicode.remove(template)
             except ValueError:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Geographic coordinates ({{coord}})
+# ---------------------------------------------------------------------------
+
+
+def _format_dms(parts: list[str]) -> str:
+    """Render up to three degree/minute/second parts as '40°26′46″'."""
+    units = ("°", "′", "″")
+    return "".join(f"{p}{units[i]}" for i, p in enumerate(parts[:3]))
+
+
+def _format_coord(positional: list[str]) -> str:
+    """Render the positional params of a ``{{coord}}`` template as a string.
+
+    Handles four common shapes:
+      ``{{coord|D|N|D|W}}``                  — degree-only DMS-style
+      ``{{coord|D|M|N|D|M|W}}``              — degree+minute
+      ``{{coord|D|M|S|N|D|M|S|W}}``          — full DMS
+      ``{{coord|lat|lon}}``                  — signed decimal
+    Trailing positional metadata (``type:city_region:…``) and any named params
+    (``display=``, ``name=``, ``format=``) are ignored.
+    """
+    if not positional:
+        return ""
+
+    lat_dir_idx = next((i for i, v in enumerate(positional) if v.upper() in ("N", "S")), None)
+    lon_dir_idx = next((i for i, v in enumerate(positional) if v.upper() in ("E", "W")), None)
+
+    if lat_dir_idx is not None and lon_dir_idx is not None and lat_dir_idx < lon_dir_idx:
+        lat_parts = positional[:lat_dir_idx]
+        lat_dir = positional[lat_dir_idx].upper()
+        lon_parts = positional[lat_dir_idx + 1 : lon_dir_idx]
+        lon_dir = positional[lon_dir_idx].upper()
+        if lat_parts and lon_parts:
+            return f"{_format_dms(lat_parts)}{lat_dir} {_format_dms(lon_parts)}{lon_dir}"
+        return ""
+
+    if len(positional) >= 2:
+        try:
+            lat = float(positional[0])
+            lon = float(positional[1])
+        except ValueError:
+            return ""
+        lat_dir = "N" if lat >= 0 else "S"
+        lon_dir = "E" if lon >= 0 else "W"
+        return f"{abs(lat):g}°{lat_dir} {abs(lon):g}°{lon_dir}"
+
+    return ""
+
+
+def convert_sfn_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Render short-footnote templates ({{sfn}}, {{sfnp}}, {{sfnm}}) as numbered markers.
+
+    Each occurrence gets an article-scoped sequential index — no deduplication
+    against ``{{sfn|Smith|2010|p=42}}`` recurrences, since we don't yet emit a
+    matching bibliography that a back-reference could resolve to.
+    """
+    counter = [0]
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name not in ("sfn", "sfnp", "sfnm"):
+            continue
+        counter[0] += 1
+        try:
+            wikicode.replace(template, f'<sup class="sfn">[{counter[0]}]</sup>')
+        except ValueError:
+            pass
+
+
+def convert_short_description_templates(
+    wikicode: mwparserfromhell.wikicode.Wikicode,
+) -> None:
+    """Drop ``{{short description|…}}``.
+
+    The short description is search/preview metadata, not body content — it
+    typically duplicates the article's lead sentence. We keep it stripped, but
+    do it via an explicit handler so future changes (e.g., rendering as a
+    subtitle) only touch this function.
+    """
+    for template in wikicode.filter_templates():
+        name = str(template.name).strip().lower()
+        if name in ("short description", "shortdescription"):
+            try:
+                wikicode.remove(template)
+            except ValueError:
+                pass
+
+
+def convert_coord_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> None:
+    """Replace {{coord|...}} templates with a formatted ``<span class="geo">``."""
+    for template in wikicode.filter_templates():
+        if str(template.name).strip().lower() != "coord":
+            continue
+        positional = [str(p.value).strip() for p in template.params if str(p.name).strip().isdigit()]
+        formatted = _format_coord(positional)
+        try:
+            if formatted:
+                wikicode.replace(template, f'<span class="geo">{formatted}</span>')
+            else:
+                wikicode.remove(template)
+        except ValueError:
+            pass
 
 
 # ---------------------------------------------------------------------------

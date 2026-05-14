@@ -26,14 +26,20 @@ _MEDIA_LINK_PREFIXES = ("file:", "image:", "media:")
 
 from render import strip
 from render.blocks import convert_headings, convert_lists, wrap_paragraphs
-from render.inline import convert_bold_italic, convert_links
+from render.inline import convert_bold_italic, convert_external_links, convert_links
 from render.protect import (
     extract_math_tags,
+    extract_poem_tags,
     extract_syntaxhighlight,
     restore_code_blocks,
     restore_math_tags,
+    restore_poem_tags,
 )
-from render.strip import convert_gallery, strip_external_links_section, strip_nowiki
+from render.strip import (
+    convert_gallery,
+    replace_unsupported_blocks,
+    strip_nowiki,
+)
 from render.tables import convert_tables
 from render.templates import (
     collect_inline_refs,
@@ -41,6 +47,7 @@ from render.templates import (
     convert_citation_templates,
     convert_code_templates,
     convert_convert_templates,
+    convert_coord_templates,
     convert_date_sorting_templates,
     convert_flag_templates,
     convert_hatnote_templates,
@@ -48,8 +55,12 @@ from render.templates import (
     convert_infobox_templates,
     convert_lang_templates,
     convert_list_body_templates,
+    convert_passthrough_first_arg_templates,
+    convert_references_tag,
     convert_reflist_template,
     convert_section_link_templates,
+    convert_sfn_templates,
+    convert_short_description_templates,
     convert_simple_inline_templates,
     convert_wikidata_templates,
     replace_math_templates,
@@ -93,6 +104,10 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         convert_simple_inline_templates(wikicode)
         convert_list_body_templates(wikicode)
         convert_convert_templates(wikicode)
+        convert_coord_templates(wikicode)
+        convert_short_description_templates(wikicode)
+        convert_sfn_templates(wikicode)
+        convert_passthrough_first_arg_templates(wikicode)
         convert_flag_templates(wikicode)
         convert_date_sorting_templates(wikicode)
         collected_refs = collect_inline_refs(wikicode)
@@ -110,18 +125,25 @@ def convert_wikitext_to_html(wikitext: str) -> str:
 
         # 4. Strip remaining noise via regex (faster than wikicode.remove() loops).
         text = strip.strip_comments(text)
+        text = strip.strip_transclusion_tags(text)
+        # Render <references /> / <references>...</references> BEFORE strip_refs
+        # eats them — collected_refs would otherwise be silently discarded for
+        # articles that use the raw tag instead of {{Reflist}}.
+        text = convert_references_tag(text, collected_refs)
         text = strip.strip_refs(text)
+        text = strip.strip_magic_words(text)
         text = strip.strip_templates(text)
         text = strip.strip_categories(text)
-        text = strip_external_links_section(text)
 
         # 4b. Handle MediaWiki-specific HTML tags that survive the strip pass.
         text = strip_nowiki(text)
         text = convert_gallery(text)
+        text = replace_unsupported_blocks(text)
 
-        # 5. Protect code/math from later string-level passes.
+        # 5. Protect code/math/poem from later string-level passes.
         text, code_blocks = extract_syntaxhighlight(text)
         text, math_blocks = extract_math_tags(text)
+        text, poem_blocks = extract_poem_tags(text)
 
         # 6. Block-level structure first.
         text = convert_tables(text)
@@ -131,6 +153,9 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # 7. Inline formatting (tables handle their own inline pass).
         text = convert_bold_italic(text)
         text = convert_links(text)
+        # External links run after wikilinks so [[…]] is already replaced and
+        # [http…] won't be mistaken for the inside of a wikilink.
+        text = convert_external_links(text)
 
         # 8. Wrap remaining bare lines in paragraphs.
         text = wrap_paragraphs(text)
@@ -138,6 +163,7 @@ def convert_wikitext_to_html(wikitext: str) -> str:
         # 9. Restore protected blocks.
         text = restore_code_blocks(text, code_blocks)
         text = restore_math_tags(text, math_blocks)
+        text = restore_poem_tags(text, poem_blocks)
 
         # 10. Tidy.
 

@@ -149,6 +149,36 @@ class TestConvertLinks:
         result = _convert_links("[[Category:Maps]]")
         assert "Category:" not in result
 
+    def test_pipe_trick_strips_parenthetical(self) -> None:
+        result = _convert_links("[[Mercury (planet)|]]")
+        assert 'href="/article/Mercury%20%28planet%29"' in result
+        assert ">Mercury</a>" in result
+
+    def test_pipe_trick_strips_namespace(self) -> None:
+        result = _convert_links("[[Wikipedia:Foo|]]")
+        assert 'href="/article/Wikipedia%3AFoo"' in result
+        assert ">Foo</a>" in result
+
+    def test_pipe_trick_strips_comma_clause(self) -> None:
+        result = _convert_links("[[Smith, John|]]")
+        assert 'href="/article/Smith%2C%20John"' in result
+        assert ">Smith</a>" in result
+
+    def test_linktrail_simple(self) -> None:
+        result = _convert_links("[[Apple]]s are red")
+        assert 'href="/article/Apple"' in result
+        assert ">Apples</a>" in result
+
+    def test_linktrail_with_piped_label(self) -> None:
+        result = _convert_links("[[Apple|apple]]s are red")
+        assert ">apples</a>" in result
+
+    def test_no_linktrail_when_uppercase_follows(self) -> None:
+        # Only lowercase trail is absorbed — uppercase starts a new word.
+        result = _convert_links("[[Apple]]Sentence start")
+        assert ">Apple</a>" in result
+        assert "Sentence start" in result
+
 
 class TestConvertLists:
     def test_bullet_list(self) -> None:
@@ -945,26 +975,319 @@ class TestInlineRefCollection:
         assert "Gone" not in result
 
 
-class TestStripExternalLinksSection:
-    def test_removes_external_links_section(self) -> None:
+class TestReferencesTag:
+    """Bare <references /> / <references>...</references> as a reflist alternative."""
+
+    def test_self_closed_references_renders_inline_refs(self) -> None:
+        wikitext = "Text.<ref>{{cite book |title=Foo |date=2020}}</ref>\n<references />"
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ol class="references">' in result
+        assert "Foo" in result
+
+    def test_open_close_references_renders_body_refs(self) -> None:
+        wikitext = (
+            'Text<ref name="A" />.\n'
+            "<references>\n"
+            '<ref name="A">{{cite book |title=AlphaBook |date=2020}}</ref>\n'
+            "</references>"
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ol class="references">' in result
+        assert "AlphaBook" in result
+        assert 'id="ref_A"' in result
+
+    def test_self_closed_with_no_inline_refs_renders_nothing(self) -> None:
+        result = convert_wikitext_to_html("Some text.\n<references />\nMore text.")
+        assert '<ol class="references">' not in result
+        assert "<references" not in result
+
+    def test_references_after_reflist_not_duplicated(self) -> None:
+        wikitext = "A.<ref>{{cite book |title=Once |date=2020}}</ref>\n{{Reflist}}\n<references />"
+        result = convert_wikitext_to_html(wikitext)
+        assert result.count('<ol class="references">') == 1
+        assert result.count("Once") == 1
+
+    def test_self_closing_inline_ref_resolves_against_references_body(self) -> None:
+        wikitext = (
+            'First<ref name="X" />. Second<ref name="X" />.\n'
+            "<references>\n"
+            '<ref name="X">{{cite book |title=DefBody |date=2021}}</ref>\n'
+            "</references>"
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert '<ol class="references">' in result
+        assert "DefBody" in result
+
+
+class TestExternalLinks:
+    """[url] and [url label] become clickable, opens-in-new-tab anchors."""
+
+    def test_external_link_with_label(self) -> None:
+        result = convert_wikitext_to_html("See [https://example.com Example Site].")
+        assert 'href="https://example.com"' in result
+        assert 'target="_blank"' in result
+        assert 'rel="noopener noreferrer"' in result
+        assert ">Example Site</a>" in result
+
+    def test_external_link_without_label_numbered(self) -> None:
+        result = convert_wikitext_to_html("Citation [https://first.example.com] and [https://second.example.com].")
+        assert ">[1]</a>" in result
+        assert ">[2]</a>" in result
+
+    def test_external_link_label_keeps_inline_html(self) -> None:
+        result = convert_wikitext_to_html("See [https://example.com ''italic'' text].")
+        assert "<em>italic</em>" in result
+        assert 'href="https://example.com"' in result
+
+    def test_bare_url_autolinked(self) -> None:
+        result = convert_wikitext_to_html("Visit https://example.com for more.")
+        assert 'href="https://example.com"' in result
+        assert ">https://example.com</a>" in result
+
+    def test_bare_url_trailing_punctuation_kept_outside_link(self) -> None:
+        result = convert_wikitext_to_html("Source: https://example.com.")
+        assert 'href="https://example.com"' in result
+        assert "</a>." in result
+
+    def test_wikilink_not_treated_as_external(self) -> None:
+        result = convert_wikitext_to_html("See [[Python]] not [http://x.com Py].")
+        assert 'href="/article/Python"' in result
+        assert 'href="http://x.com"' in result
+
+    def test_url_inside_attribute_not_double_linked(self) -> None:
+        wikitext = "{{cite web|title=T|url=https://example.com|date=2020}}"
+        result = convert_wikitext_to_html(f"text<ref>{wikitext}</ref>\n{{{{Reflist}}}}")
+        assert result.count('href="https://example.com"') == 1
+
+
+class TestMagicWords:
+    """MediaWiki behaviour switches like __TOC__ should not leak into output."""
+
+    def test_toc_stripped(self) -> None:
+        result = convert_wikitext_to_html("Intro.\n__TOC__\nBody.")
+        assert "__TOC__" not in result
+        assert "Intro" in result and "Body" in result
+
+    def test_multi_word_magic_word_stripped(self) -> None:
+        result = convert_wikitext_to_html("__EXPECTED_UNCONNECTED_PAGE__\nBody.")
+        assert "EXPECTED_UNCONNECTED_PAGE" not in result
+        assert "Body" in result
+
+    def test_lowercase_dunder_preserved(self) -> None:
+        # Python-style __init__ isn't a magic word — only ALLCAPS form is.
+        result = convert_wikitext_to_html("Method __init__ does setup.")
+        assert "__init__" in result
+
+
+class TestTransclusionTags:
+    """`<noinclude>` keeps content, `<includeonly>` strips it, `<onlyinclude>` keeps it."""
+
+    def test_noinclude_content_kept(self) -> None:
+        result = convert_wikitext_to_html("Before <noinclude>visible content</noinclude> after.")
+        assert "visible content" in result
+        assert "<noinclude>" not in result
+
+    def test_includeonly_content_stripped(self) -> None:
+        result = convert_wikitext_to_html("Before <includeonly>hidden content</includeonly> after.")
+        assert "hidden content" not in result
+        assert "<includeonly>" not in result
+
+    def test_onlyinclude_content_kept(self) -> None:
+        result = convert_wikitext_to_html("Before <onlyinclude>shown content</onlyinclude> after.")
+        assert "shown content" in result
+        assert "<onlyinclude>" not in result
+
+
+class TestCoordTemplate:
+    """{{coord}} → formatted <span class="geo">."""
+
+    def test_decimal_coords(self) -> None:
+        result = convert_wikitext_to_html("Located at {{coord|40.4467|-79.9817}}.")
+        assert '<span class="geo">' in result
+        assert "40.4467°N" in result
+        assert "79.9817°W" in result
+
+    def test_dms_coords(self) -> None:
+        result = convert_wikitext_to_html("At {{coord|40|26|46|N|79|58|56|W}}.")
+        assert "40°26′46″N" in result
+        assert "79°58′56″W" in result
+
+    def test_dm_coords(self) -> None:
+        result = convert_wikitext_to_html("At {{coord|40|26|N|79|58|W}}.")
+        assert "40°26′N" in result
+        assert "79°58′W" in result
+
+    def test_coord_with_named_metadata(self) -> None:
+        result = convert_wikitext_to_html("At {{coord|40|26|46|N|79|58|56|W|name=Pittsburgh|display=title}}.")
+        assert "40°26′46″N" in result
+        assert "Pittsburgh" not in result
+
+
+class TestShortDescription:
+    def test_short_description_dropped(self) -> None:
+        result = convert_wikitext_to_html("{{short description|Capital of France}}\nParis is…")
+        assert "Capital of France" not in result
+        assert "Paris" in result
+
+
+class TestPassthroughFirstArg:
+    """Allowlist templates render only their first positional arg as text."""
+
+    def test_quote_renders_text_drops_author(self) -> None:
+        result = convert_wikitext_to_html("Famous: {{quote|To be or not to be|Hamlet}}.")
+        assert "To be or not to be" in result
+        assert "Hamlet" not in result
+
+    def test_cquote_renders_text(self) -> None:
+        result = convert_wikitext_to_html("{{cquote|Centered quote text}}")
+        assert "Centered quote text" in result
+
+    def test_as_of_keeps_label(self) -> None:
+        result = convert_wikitext_to_html("Population, {{as of|2024}}, was 1M.")
+        assert "as of 2024" in result
+
+    def test_as_of_with_month_year(self) -> None:
+        result = convert_wikitext_to_html("{{as of|2024|3}}")
+        assert "as of March 2024" in result
+
+
+class TestSfnTemplate:
+    """{{sfn}} short footnotes render as numbered superscript markers."""
+
+    def test_sfn_renders_as_numbered_sup(self) -> None:
+        result = convert_wikitext_to_html("Claim{{sfn|Smith|2010|p=42}}.")
+        assert '<sup class="sfn">[1]</sup>' in result
+
+    def test_multiple_sfn_get_incrementing_indices(self) -> None:
+        result = convert_wikitext_to_html("First{{sfn|Smith|2010}}. Second{{sfn|Jones|2011}}.")
+        assert "[1]" in result
+        assert "[2]" in result
+
+    def test_sfnp_recognized(self) -> None:
+        result = convert_wikitext_to_html("X{{sfnp|Smith|2010|p=1}}.")
+        assert '<sup class="sfn">[1]</sup>' in result
+
+
+class TestLangDashFamily:
+    def test_lang_fr_renders_with_language_prefix(self) -> None:
+        result = convert_wikitext_to_html("She said {{lang-fr|bonjour}}.")
+        assert "French" in result
+        assert "<em>bonjour</em>" in result
+
+    def test_lang_de_renders(self) -> None:
+        result = convert_wikitext_to_html("The {{lang-de|Bundestag}} meets.")
+        assert "German" in result
+        assert "<em>Bundestag</em>" in result
+
+
+class TestPoemTag:
+    """<poem> preserves line breaks and wikitext formatting."""
+
+    def test_poem_lines_separated_by_br(self) -> None:
+        wikitext = "<poem>\nFirst line\nSecond line\nThird line\n</poem>"
+        result = convert_wikitext_to_html(wikitext)
+        assert '<div class="poem">' in result
+        assert "First line<br>Second line<br>Third line" in result
+
+    def test_poem_preserves_bold_italic(self) -> None:
+        wikitext = "<poem>\n''italic'' word\n'''bold''' word\n</poem>"
+        result = convert_wikitext_to_html(wikitext)
+        assert "<em>italic</em>" in result
+        assert "<strong>bold</strong>" in result
+
+    def test_poem_preserves_wikilink(self) -> None:
+        wikitext = "<poem>\nVisit [[Python]] often\n</poem>"
+        result = convert_wikitext_to_html(wikitext)
+        assert 'href="/article/Python"' in result
+
+    def test_poem_asterisk_not_treated_as_list(self) -> None:
+        wikitext = "<poem>\n* literal asterisk start\n</poem>"
+        result = convert_wikitext_to_html(wikitext)
+        assert "<ul>" not in result
+        assert "* literal asterisk" in result
+
+
+class TestUnsupportedBlockTags:
+    def test_score_replaced_with_placeholder(self) -> None:
+        wikitext = "Before <score>\\relative c' { c d e f }</score> after."
+        result = convert_wikitext_to_html(wikitext)
+        assert '<div class="unsupported-content">' in result
+        assert "unsupported: score" in result
+        assert "\\relative" not in result
+
+    def test_timeline_replaced(self) -> None:
+        wikitext = "<timeline>\nImageSize = width:200 height:50\n</timeline>"
+        result = convert_wikitext_to_html(wikitext)
+        assert "unsupported: timeline" in result
+        assert "ImageSize" not in result
+
+    def test_hiero_replaced(self) -> None:
+        result = convert_wikitext_to_html("<hiero>N5-Z1-Z1</hiero>")
+        assert "unsupported: hiero" in result
+
+
+class TestChemistryTags:
+    def test_chem_tag_becomes_inline_ce(self) -> None:
+        result = convert_wikitext_to_html("Water is <chem>H2O</chem>.")
+        assert "\\ce{H2O}" in result
+
+    def test_ce_legacy_tag(self) -> None:
+        result = convert_wikitext_to_html("Equation: <ce>2H2 + O2 -> 2H2O</ce>")
+        assert "\\ce{2H2 + O2 -> 2H2O}" in result
+
+
+class TestCitationAuthorVariants:
+    def test_authors_plural_field_used(self) -> None:
+        wikitext = "<ref>{{cite journal|authors=Smith, Jones, Doe|title=Foo|date=2020}}</ref>\n{{Reflist}}"
+        result = convert_wikitext_to_html(wikitext)
+        assert "Smith, Jones, Doe" in result
+
+    def test_vauthors_field_used(self) -> None:
+        wikitext = "<ref>{{cite journal|vauthors=Smith J, Doe AB|title=Foo|date=2020}}</ref>\n{{Reflist}}"
+        result = convert_wikitext_to_html(wikitext)
+        assert "Smith J, Doe AB" in result
+
+
+class TestConvertConnectors:
+    def test_by_connector(self) -> None:
+        result = convert_wikitext_to_html("Dimensions: {{convert|2|by|4|m}}.")
+        assert "2–4 m" in result
+
+    def test_x_connector(self) -> None:
+        result = convert_wikitext_to_html("{{convert|2|x|4|ft}}")
+        assert "2–4 ft" in result
+
+    def test_density_unit_renders(self) -> None:
+        result = convert_wikitext_to_html("Density: {{convert|7.8|g/cm3}}.")
+        assert "7.8 g/cm³" in result
+
+
+class TestExternalLinksSectionKept:
+    """The '== External links ==' section is rendered like any other section
+    now that external-link conversion makes its contents useful."""
+
+    def test_external_links_section_rendered(self) -> None:
         wikitext = "Intro text.\n\n== External links ==\n* [http://example.com Example]\n"
         result = convert_wikitext_to_html(wikitext)
-        assert "External links" not in result
-        assert "example.com" not in result
+        assert "External links" in result
+        assert 'href="http://example.com"' in result
+        assert ">Example</a>" in result
         assert "Intro text" in result
 
-    def test_preserves_content_after_section(self) -> None:
+    def test_following_section_still_rendered(self) -> None:
         wikitext = "Intro.\n\n== External links ==\n* [http://example.com Example]\n\n== See also ==\n* [[Python]]\n"
         result = convert_wikitext_to_html(wikitext)
-        assert "External links" not in result
+        assert "External links" in result
         assert "See also" in result
+        assert 'href="http://example.com"' in result
 
-    def test_case_insensitive(self) -> None:
+    def test_case_insensitive_section_rendered(self) -> None:
         wikitext = "Intro.\n\n== external links ==\n* [http://example.com Example]\n"
         result = convert_wikitext_to_html(wikitext)
-        assert "external links" not in result
+        assert "external links" in result
+        assert 'href="http://example.com"' in result
 
-    def test_no_external_links_section_unchanged(self) -> None:
+    def test_unrelated_section_unaffected(self) -> None:
         wikitext = "== History ==\nSome history text.\n"
         result = convert_wikitext_to_html(wikitext)
         assert "History" in result

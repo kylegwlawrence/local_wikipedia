@@ -30,6 +30,8 @@ WANTED_PREFIXES = (
     "katex/katex.min.css",
     "katex/katex.min.js",
     "katex/contrib/auto-render.min.js",
+    # mhchem extension — required for \ce{} chemistry notation (<chem>/<ce> tags).
+    "katex/contrib/mhchem.min.js",
     "katex/fonts/",
 )
 

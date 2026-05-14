@@ -14,12 +14,21 @@ _SYNTAX_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+_POEM_RE = re.compile(r"<poem\b[^>]*>(.*?)</poem>", re.DOTALL | re.IGNORECASE)
+
 _MATH_BLOCK_RE = re.compile(
     r'<math\b[^>]*\bdisplay\s*=\s*["\']block["\'][^>]*>(.*?)</math>',
     re.DOTALL | re.IGNORECASE,
 )
 _MATH_INLINE_RE = re.compile(
     r"<math(?:\s[^>]*)?>(.*?)</math>",
+    re.DOTALL | re.IGNORECASE,
+)
+# Chemistry notation: <chem>...</chem> and the legacy <ce>...</ce>. Bodies are
+# mhchem syntax (e.g. "H2O", "2H2 + O2 -> 2H2O") which KaTeX renders via the
+# vendored mhchem extension when wrapped as \ce{…}.
+_CHEM_INLINE_RE = re.compile(
+    r"<(chem|ce)(?:\s[^>]*)?>(.*?)</\1>",
     re.DOTALL | re.IGNORECASE,
 )
 # LaTeX environments that KaTeX requires be in display mode. Bare <math>...</math>
@@ -54,6 +63,41 @@ def restore_code_blocks(text: str, blocks: dict[str, str]) -> str:
     return text
 
 
+def extract_poem_tags(text: str) -> tuple[str, dict[str, str]]:
+    """Extract ``<poem>...</poem>`` blocks behind block-shaped placeholders.
+
+    Poem content has its inline wikitext (bold/italic, wikilinks) converted
+    immediately so the final HTML can be restored verbatim later — without
+    block-level converters touching it (which would treat ``*`` at start of
+    line as a bullet, ``;`` as a definition term, etc.). Newlines become
+    ``<br>``; blank lines become empty `<br>` (stanza separators).
+    """
+    # Local import keeps protect.py free of a static dependency on inline.py,
+    # which is only needed here for poem-body processing.
+    from render.inline import convert_bold_italic, convert_links
+
+    blocks: dict[str, str] = {}
+
+    def replace(m: re.Match) -> str:
+        raw = m.group(1).strip("\n")
+        lines: list[str] = []
+        for line in raw.split("\n"):
+            lines.append(convert_links(convert_bold_italic(line)))
+        body = "<br>".join(lines)
+        idx = len(blocks)
+        placeholder = f'<div data-poem="{idx}"></div>'
+        blocks[placeholder] = f'<div class="poem">{body}</div>'
+        return placeholder
+
+    return _POEM_RE.sub(replace, text), blocks
+
+
+def restore_poem_tags(text: str, blocks: dict[str, str]) -> str:
+    for placeholder, poem_html in blocks.items():
+        text = text.replace(placeholder, poem_html)
+    return text
+
+
 def extract_math_tags(text: str) -> tuple[str, dict[str, str]]:
     """Replace <math> tags with placeholders pointing at KaTeX delimiters.
 
@@ -83,8 +127,16 @@ def extract_math_tags(text: str) -> tuple[str, dict[str, str]]:
         blocks[placeholder] = f"\\({content}\\)"
         return placeholder
 
+    def replace_chem(m: re.Match) -> str:
+        content = m.group(2).strip()
+        idx = len(blocks)
+        placeholder = f'<span data-mathinline="{idx}"></span>'
+        blocks[placeholder] = f"\\(\\ce{{{content}}}\\)"
+        return placeholder
+
     text = _MATH_BLOCK_RE.sub(replace_block, text)
     text = _MATH_INLINE_RE.sub(replace_inline, text)
+    text = _CHEM_INLINE_RE.sub(replace_chem, text)
     return text, blocks
 
 

@@ -46,6 +46,23 @@ MONTH_NAMES = (
 
 CITE_TEMPLATE_PREFIXES = ("cite ", "citation")
 
+# Templates whose first positional arg is the content to display. Anything
+# else they accept (author attribution, styling flags) is dropped — better
+# to lose attribution than to lose the quoted text. Used by
+# render.templates.convert_passthrough_first_arg_templates.
+PASSTHROUGH_FIRST_ARG_TEMPLATES = frozenset(
+    {
+        "quote",
+        "cquote",
+        "bquote",
+        "pull quote",
+        "centered pull quote",
+        "talk quote",
+        "blockquote2",
+        "respell",
+    }
+)
+
 # HTML-rendered math: bodies are wikitext (apostrophe-italics, <sup>, {{=}} …)
 # that MediaWiki wraps in <span class="texhtml">. NOT LaTeX.
 HTML_MATH_TEMPLATE_NAMES = {"math", "math block", "bigmath"}
@@ -266,11 +283,24 @@ UNIT_NAMES: dict[str, str] = {
     "N": "N",
     "kN": "kN",
     "Pa": "Pa",
+    "hPa": "hPa",
     "kPa": "kPa",
     "MPa": "MPa",
+    "GPa": "GPa",
+    "Torr": "Torr",
     "atm": "atm",
     "bar": "bar",
     "psi": "psi",
+    # Density
+    "g/cm3": "g/cm³",
+    "kg/m3": "kg/m³",
+    "lb/ft3": "lb/cu ft",
+    "mg/L": "mg/L",
+    # Additional area
+    "mm2": "mm²",
+    "cm2": "cm²",
+    # Additional speed
+    "kt": "kt",
     # Population density (special compound units)
     "/sqmi": "/sq mi",
     "PD/sqmi": "/sq mi",

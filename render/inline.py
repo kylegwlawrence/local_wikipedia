@@ -1,4 +1,4 @@
-"""Inline text-level wikitext converters: bold/italic and wikilinks."""
+"""Inline text-level wikitext converters: bold/italic, wikilinks, external links."""
 
 import html
 import re
@@ -7,6 +7,14 @@ from urllib.parse import quote
 from db import normalize_title
 
 _SKIP_LINK_NAMESPACES = ("file:", "image:", "media:", "category:")
+
+# [url label] or [url] — URL must be http(s); label may contain inline HTML
+# left over from earlier passes (e.g. <em>), so don't HTML-escape it.
+_EXTERNAL_LINK_RE = re.compile(r"\[(https?://[^\s\]]+)(?:\s+([^\]]*))?\]")
+# Bare URLs after whitespace or start-of-line — keeps URLs inside HTML
+# attributes (preceded by `="`) or already-rendered <a> tags untouched.
+_BARE_URL_RE = re.compile(r"(?:(?<=^)|(?<=\s))(https?://[^\s<>\"'\]\)]+)")
+_URL_TRAILING_PUNCT = ".,;:!?"
 
 
 def convert_bold_italic(text: str) -> str:
@@ -18,7 +26,25 @@ def convert_bold_italic(text: str) -> str:
     return text
 
 
-def _render_link(target: str, label: str, escape_label: bool) -> str:
+def _pipe_trick_label(target: str) -> str:
+    """Derive a display label from a page title per MediaWiki's pipe-trick rules.
+
+    Strip namespace prefix (anything before ``:``), then a trailing parenthetical
+    (``Foo (bar)`` → ``Foo``), then a trailing comma clause (``Foo, bar`` → ``Foo``).
+    Examples:
+        ``Wikipedia:Foo`` → ``Foo``
+        ``Foo (bar)``     → ``Foo``
+        ``Smith, John``   → ``Smith``
+    """
+    if ":" in target:
+        target = target.split(":", 1)[1]
+    target = re.sub(r"\s*\([^)]*\)\s*$", "", target)
+    if "," in target:
+        target = target.split(",", 1)[0]
+    return target.strip()
+
+
+def _render_link(target: str, label: str, escape_label: bool, trail: str = "") -> str:
     if target.strip().lower().startswith(_SKIP_LINK_NAMESPACES):
         return ""
     title, _, anchor = target.partition("#")
@@ -31,7 +57,10 @@ def _render_link(target: str, label: str, escape_label: bool) -> str:
         href = f"{href}#{quote(anchor)}"
     href_attr = html.escape(href, quote=True)
     hx_attr = html.escape(hx_url, quote=True)
-    rendered_label = html.escape(label) if escape_label else label
+    if escape_label:
+        rendered_label = html.escape(label + trail)
+    else:
+        rendered_label = label + html.escape(trail)
     return (
         f'<a href="{href_attr}" '
         f'hx-get="{hx_attr}" '
@@ -42,17 +71,73 @@ def _render_link(target: str, label: str, escape_label: bool) -> str:
 
 
 def convert_links(text: str) -> str:
-    """Convert [[Page]] and [[Page|Label]] to local /article/{title} links."""
+    """Convert [[Page]] and [[Page|Label]] to local /article/{title} links.
+
+    Three forms are recognised:
+      ``[[Page|]]``       — pipe trick: label derived from page name
+      ``[[Page|Label]]``  — piped label (may contain inline HTML)
+      ``[[Page]]``        — page name doubles as label
+
+    All forms absorb a trailing ``[a-z]+`` linktrail so ``[[Page]]s`` renders as
+    a single link with label ``Pages`` (MediaWiki English convention).
+    """
+    # Pipe trick: [[Page|]] — derive label from page name.
+    text = re.sub(
+        r"\[\[([^\]|]+)\|\]\]([a-z]*)",
+        lambda m: _render_link(m.group(1), _pipe_trick_label(m.group(1)), escape_label=True, trail=m.group(2)),
+        text,
+    )
     # [[Page|Label]] — labels may contain inline HTML (e.g. <code>); don't escape.
     text = re.sub(
-        r"\[\[([^\]|]+)\|([^\]]+)\]\]",
-        lambda m: _render_link(m.group(1), m.group(2), escape_label=False),
+        r"\[\[([^\]|]+)\|([^\]]+)\]\]([a-z]*)",
+        lambda m: _render_link(m.group(1), m.group(2), escape_label=False, trail=m.group(3)),
         text,
     )
     # [[Page]] — page name doubles as visible label; plain text.
     text = re.sub(
-        r"\[\[([^\]|]+)\]\]",
-        lambda m: _render_link(m.group(1), m.group(1), escape_label=True),
+        r"\[\[([^\]|]+)\]\]([a-z]*)",
+        lambda m: _render_link(m.group(1), m.group(1), escape_label=True, trail=m.group(2)),
         text,
     )
+    return text
+
+
+def convert_external_links(text: str) -> str:
+    """Convert MediaWiki external links to <a target=_blank>.
+
+    Three patterns:
+      ``[url label]``  → ``<a …>label</a>`` (label preserved as-is — may contain inline HTML)
+      ``[url]``        → ``<a …>[N]</a>`` with an article-scoped counter
+      bare ``http://…`` → autolinked, but only when preceded by whitespace or
+                          start-of-line so URLs inside HTML attributes (``href="…"``)
+                          and existing ``<a>`` tags stay intact.
+    """
+    counter = [0]
+
+    def replace_bracketed(m: re.Match) -> str:
+        url = m.group(1)
+        label = (m.group(2) or "").strip()
+        if not label:
+            counter[0] += 1
+            label = f"[{counter[0]}]"
+        return f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">{label}</a>'
+
+    text = _EXTERNAL_LINK_RE.sub(replace_bracketed, text)
+
+    def replace_bare(m: re.Match) -> str:
+        url = m.group(1)
+        # Strip URL-terminating punctuation back into surrounding text so
+        # "Visit https://x.com." doesn't make the period part of the link.
+        suffix = ""
+        while url and url[-1] in _URL_TRAILING_PUNCT:
+            suffix = url[-1] + suffix
+            url = url[:-1]
+        if not url:
+            return m.group(0)
+        return (
+            f'<a href="{html.escape(url, quote=True)}" '
+            f'target="_blank" rel="noopener noreferrer">{html.escape(url)}</a>{suffix}'
+        )
+
+    text = _BARE_URL_RE.sub(replace_bare, text)
     return text
