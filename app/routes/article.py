@@ -107,7 +107,8 @@ def chunks(request: Request, title: str) -> HTMLResponse:
             raise HTTPException(status_code=404, detail=f"Article not embedded: {title}")
 
         rows = rag_conn.execute(
-            "SELECT section, chunk_index, text, text_length FROM chunks WHERE page_id = ? ORDER BY chunk_id",
+            "SELECT section, chunk_index, text, text_length, chunk_type "
+            "FROM chunks WHERE page_id = ? ORDER BY chunk_id",
             (meta["page_id"],),
         ).fetchall()
         chunk_list = [dict(r) for r in rows]

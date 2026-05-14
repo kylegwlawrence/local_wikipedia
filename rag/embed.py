@@ -103,8 +103,16 @@ def _insert_chunk(
         The newly assigned chunk_id.
     """
     cur = rag_conn.execute(
-        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) VALUES (?, ?, ?, ?, ?)",
-        (page_id, chunk["section"], chunk["chunk_index"], chunk["text"], len(chunk["text"])),
+        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length, chunk_type) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            page_id,
+            chunk["section"],
+            chunk["chunk_index"],
+            chunk["text"],
+            len(chunk["text"]),
+            chunk.get("chunk_type", "prose"),
+        ),
     )
     chunk_id = cur.lastrowid
     rag_conn.execute(

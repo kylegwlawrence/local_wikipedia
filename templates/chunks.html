@@ -19,6 +19,9 @@
       <div>
         <strong>Chunk {{ loop.index }}</strong>
         <span class="meta-text">&middot; {{ chunk.section if chunk.section else "Introduction" }}{% if chunk.chunk_index > 0 %} (part {{ chunk.chunk_index + 1 }}){% endif %}</span>
+        {% if chunk.chunk_type and chunk.chunk_type != 'prose' %}
+        <span class="chip chip--{{ chunk.chunk_type }}">{{ chunk.chunk_type }}</span>
+        {% endif %}
       </div>
       <span class="meta-text u-tabular-nums">{{ "{:,}".format(chunk.text_length) }} chars</span>
     </header>

@@ -36,6 +36,7 @@ class Chunk:
     chunk_index: int
     text: str
     text_length: int
+    chunk_type: str
     score: float
 
 
@@ -207,7 +208,7 @@ def _fetch_chunks(
         return {}
     placeholders = ",".join("?" * len(chunk_ids))
     rows = rag_conn.execute(
-        f"SELECT c.chunk_id, c.page_id, c.section, c.chunk_index, c.text, c.text_length, am.title "
+        f"SELECT c.chunk_id, c.page_id, c.section, c.chunk_index, c.text, c.text_length, c.chunk_type, am.title "
         f"FROM chunks c JOIN articles_meta am USING(page_id) "
         f"WHERE c.chunk_id IN ({placeholders})",
         chunk_ids,
@@ -221,6 +222,7 @@ def _fetch_chunks(
             chunk_index=r["chunk_index"],
             text=r["text"],
             text_length=r["text_length"],
+            chunk_type=r["chunk_type"],
             score=score_map.get(r["chunk_id"], 0.0),
         )
         for r in rows
