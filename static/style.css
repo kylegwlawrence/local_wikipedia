@@ -179,7 +179,7 @@
   --sidebar-width:      220px;
   --topbar-height:      56px;
   --content-max-width:  1200px;
-  --reading-max-width:  760px;
+  --reading-max-width:  900px;
 
   --btn-h-sm: 32px;
   --btn-h-md: 36px;
@@ -831,7 +831,7 @@ p.empty-state {
 .reading-column {
   max-width: var(--reading-max-width);
   margin: 0 auto;
-  padding: var(--space-6) var(--space-6) var(--space-16);
+  padding: 0 0 var(--space-16);
 }
 
 .reading-column--wide {
@@ -846,7 +846,7 @@ p.empty-state {
   font-size: 1rem;
   line-height: var(--leading-relaxed);
   color: var(--color-text);
-  padding-top: var(--space-4);
+  padding: var(--space-4) var(--space-6) 0;
 }
 
 .article-body h2 { font-size: 1.5rem; margin-top: var(--space-8); font-weight: var(--weight-medium); }
