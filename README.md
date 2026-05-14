@@ -23,9 +23,10 @@ A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps.
 
 ### Wikitext Converter
 - Converts Wikipedia wikitext to clean, readable HTML
-- Handles bold, italic, headings, links, lists, tables, code blocks
-- Renders infoboxes, citations, and common templates (lang, math, indicators)
-- Renders mathematical formulas using KaTeX (vendored locally — no internet required)
+- Handles bold, italic, headings, lists, tables, code blocks, external links, pipe tricks, and linktrails
+- Renders infoboxes, citations, footnotes (`{{sfn}}`), quotes, coordinates, and common templates (lang, units, indicators)
+- Renders mathematical formulas using KaTeX (vendored locally — no internet required), including `{{math|…}}` family as inline `texhtml` spans and `<math>` / `align` / `equation` / `tmath` blocks
+- Handles `<poem>`, `<chem>`, and `<syntaxhighlight>` tags
 - Modular pipeline: each stage lives in its own file under `render/`
 
 ### Web App
@@ -44,10 +45,16 @@ A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps.
 ### RAG Pipeline
 - Chunks articles into sections using `== Heading ==` regex boundaries and strips wikitext to plain text via mwparserfromhell
 - Embeds chunks with a local Ollama model (`nomic-embed-text`, 768 dims) and stores vectors in `sqlite-vec`
+- Uses nomic's task prefixes — `search_document:` (with `Title — Section\n\n` prepended) when embedding chunks and `search_query:` when embedding queries — for better dense-retrieval alignment
 - Hybrid retrieval: dense ANN search + FTS5 BM25 merged with Reciprocal Rank Fusion
 - Incremental embedding: skips articles whose `revision_id` hasn't changed; safe to re-run after a wiki refresh
 - RAG index stored in `dumps/{wiki}_rag.db` — separate from the wiki DB so refreshes don't clobber embeddings
-- Web UI integration for querying the RAG index is not yet built
+
+### External RAG HTTP API
+- Retrieval-only JSON API for external chat applications to query the local index — no LLM generation happens server-side
+- `GET /rag/info` advertises server identity, embedding model + dimension, available corpora (only wikis whose `_rag.db` exists on disk), and the article URL template for building citation links
+- `POST /rag/retrieve` runs hybrid dense + sparse retrieval against a chosen corpus and returns ranked chunks with `corpus`, `chunk_id`, `page_id`, `title`, `section`, `chunk_index`, `text`, `text_length`, and `score`
+- Pydantic-validated requests: `top_k` clamped to `[1, 50]`, blank queries rejected with 422, unknown corpora rejected with 404
 
 ## Installation
 
@@ -134,7 +141,19 @@ python -m rag.embed --wiki simplewiki
 python -m rag.embed --wiki simplewiki --reset
 ```
 
-The index is saved to `dumps/{wiki}_rag.db`. Web UI integration for querying the RAG index is not yet built.
+The index is saved to `dumps/{wiki}_rag.db`. Once built, the corpus is queryable both via the in-app retriever (used by `/chunks/{title}` etc.) and via the external `/rag/info` + `/rag/retrieve` HTTP API for chat applications.
+
+#### Querying the external RAG API
+
+```bash
+# What corpora are available?
+curl http://127.0.0.1:8000/rag/info
+
+# Hybrid retrieval over a corpus
+curl -X POST http://127.0.0.1:8000/rag/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "what is photosynthesis", "corpus": "simplewiki", "top_k": 5}'
+```
 
 ### Step 4: Query the Database
 
@@ -259,7 +278,8 @@ Dev tooling (not pinned): `ruff` for linting and formatting — config under `[t
 │       ├── article.py         # /article, /wikitext, /chunks
 │       ├── refresh.py         # POST /refresh, GET /refresh/status
 │       ├── embeddings.py      # /embed-manager, /embed-status, /embed-article, …
-│       └── active_embedding.py # /active-embedding (+ /jobs, /panel, /cancel)
+│       ├── active_embedding.py # /active-embedding (+ /jobs, /panel, /cancel)
+│       └── rag.py             # GET /rag/info, POST /rag/retrieve (external API)
 ├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR, JOBS_DB, KNOWN_WIKIS)
 ├── db.py              # connect(), redirect_target(), resolve_redirect()
 ├── jobs/              # Job-queue CRUD package
