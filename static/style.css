@@ -586,13 +586,30 @@ body {
   border: 1px solid var(--color-wiki-simplewiki-border);
 }
 
+/* Active wiki chip: rendered as a <span>. Saturate the colours and add a
+   soft halo in the wiki's border colour so the selected wiki pops. */
+.wiki-chip-group > span.chip--wiki-enwiki {
+  filter: saturate(1.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-wiki-enwiki-border) 40%, transparent);
+}
+.wiki-chip-group > span.chip--wiki-simplewiki {
+  filter: saturate(1.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-wiki-simplewiki-border) 40%, transparent);
+}
+
+/* Inactive (switchable) wiki chip: drained of colour + muted so the
+   selected chip is the obvious one. */
 a.chip--switchable {
-  opacity: 0.65;
+  opacity: 0.55;
+  filter: saturate(0.35);
   text-decoration: none;
   cursor: pointer;
-  transition: opacity var(--motion-fast);
+  transition: opacity var(--motion-fast), filter var(--motion-fast);
 }
-a.chip--switchable:hover { opacity: 1; }
+a.chip--switchable:hover {
+  opacity: 1;
+  filter: saturate(1);
+}
 
 .wiki-chip-group {
   display: inline-flex;
