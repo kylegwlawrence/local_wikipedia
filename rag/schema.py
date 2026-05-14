@@ -64,7 +64,8 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
             section      TEXT,
             chunk_index  INTEGER NOT NULL DEFAULT 0,
             text         TEXT    NOT NULL,
-            text_length  INTEGER NOT NULL
+            text_length  INTEGER NOT NULL,
+            chunk_type   TEXT    NOT NULL DEFAULT 'prose'
         );
 
         CREATE INDEX IF NOT EXISTS idx_chunks_page_id ON chunks(page_id);
@@ -88,6 +89,7 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
         ("embedded_at", "ALTER TABLE articles_meta ADD COLUMN embedded_at TEXT"),
         ("article_size_bytes", "ALTER TABLE articles_meta ADD COLUMN article_size_bytes INTEGER"),
         ("links_embedded", "ALTER TABLE articles_meta ADD COLUMN links_embedded INTEGER NOT NULL DEFAULT 0"),
+        ("chunk_type", "ALTER TABLE chunks ADD COLUMN chunk_type TEXT NOT NULL DEFAULT 'prose'"),
     ]
     for col_name, sql in _col_migrations:
         try:
