@@ -268,7 +268,20 @@ def extract_infoboxes(wikitext: str, article_title: str) -> list[dict]:
                 continue
 
             try:
-                value = mwparserfromhell.parse(raw_value).strip_code().strip()
+                parsed_val = mwparserfromhell.parse(raw_value)
+                value = parsed_val.strip_code().strip()
+                if not value:
+                    # strip_code() drops template content entirely; fall back to
+                    # collecting positional args from nested templates (e.g.
+                    # {{birth date|1980|1|1}} → "1980 1 1").
+                    parts = []
+                    for nested_tpl in parsed_val.filter_templates():
+                        for nested_param in nested_tpl.params:
+                            if str(nested_param.name).strip().isdigit():
+                                v = str(nested_param.value).strip()
+                                if v:
+                                    parts.append(v)
+                    value = " ".join(parts)
             except (ValueError, AttributeError):
                 value = raw_value.strip()
 

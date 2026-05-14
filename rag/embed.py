@@ -103,8 +103,7 @@ def _insert_chunk(
         The newly assigned chunk_id.
     """
     cur = rag_conn.execute(
-        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length, chunk_type) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length, chunk_type) VALUES (?, ?, ?, ?, ?, ?)",
         (
             page_id,
             chunk["section"],

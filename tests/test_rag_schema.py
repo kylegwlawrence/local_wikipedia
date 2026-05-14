@@ -90,3 +90,57 @@ def test_insert_and_retrieve_chunk(tmp_path):
     row = conn.execute("SELECT text FROM chunks WHERE page_id=1").fetchone()
     assert row["text"] == "Hello world"
     conn.close()
+
+
+def test_chunks_has_chunk_type_column(tmp_path):
+    conn = connect_rag(tmp_path / "test.db")
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(chunks)").fetchall()}
+    assert "chunk_type" in cols
+    conn.close()
+
+
+def test_chunk_type_defaults_to_prose(tmp_path):
+    conn = connect_rag(tmp_path / "test.db")
+    conn.execute("INSERT INTO articles_meta (page_id, title, revision_id) VALUES (1, 'Test', 100)")
+    conn.execute(
+        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) VALUES (1, NULL, 0, 'Hello', 5)"
+    )
+    conn.commit()
+    row = conn.execute("SELECT chunk_type FROM chunks WHERE page_id=1").fetchone()
+    assert row["chunk_type"] == "prose"
+    conn.close()
+
+
+def test_chunk_type_migration_on_old_schema(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "old.db"
+    old_conn = sqlite3.connect(db_path)
+    old_conn.executescript("""
+        CREATE TABLE articles_meta (
+            page_id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            revision_id INTEGER NOT NULL
+        );
+        CREATE TABLE chunks (
+            chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            page_id INTEGER NOT NULL,
+            section TEXT,
+            chunk_index INTEGER NOT NULL DEFAULT 0,
+            text TEXT NOT NULL,
+            text_length INTEGER NOT NULL
+        );
+    """)
+    old_conn.execute("INSERT INTO articles_meta VALUES (1, 'Test', 1)")
+    old_conn.execute(
+        "INSERT INTO chunks (page_id, section, chunk_index, text, text_length) VALUES (1, NULL, 0, 'Hi', 2)"
+    )
+    old_conn.commit()
+    old_conn.close()
+
+    conn = connect_rag(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(chunks)").fetchall()}
+    assert "chunk_type" in cols
+    row = conn.execute("SELECT chunk_type FROM chunks WHERE page_id=1").fetchone()
+    assert row["chunk_type"] == "prose"
+    conn.close()

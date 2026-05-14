@@ -109,6 +109,13 @@ class TestChunkArticle:
             assert "section" in chunk
             assert "chunk_index" in chunk
             assert "text" in chunk
+            assert "chunk_type" in chunk
+
+    def test_prose_chunks_have_chunk_type_prose(self):
+        chunks = chunk_article("T", "Some plain text without tables or infoboxes.")
+        assert chunks
+        for chunk in chunks:
+            assert chunk["chunk_type"] == "prose"
 
     def test_h3_section_captured(self):
         wikitext = "=== Subsection ===\nContent."
