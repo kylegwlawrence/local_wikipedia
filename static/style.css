@@ -846,13 +846,15 @@ p.empty-state {
 }
 
 .reading-column {
-  max-width: var(--reading-max-width);
-  margin: 0 auto;
+  --reading-column-width: var(--reading-max-width);
+  max-width: var(--reading-column-width);
+  margin-left: max(0px, calc(50vw - var(--sidebar-width) - var(--reading-column-width) / 2));
+  margin-right: auto;
   padding: 0 0 var(--space-16);
 }
 
 .reading-column--wide {
-  max-width: 980px;
+  --reading-column-width: 980px;
 }
 
 /* =====================================================================
