@@ -3,7 +3,7 @@
 import os
 import pathlib
 import sqlite3
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -64,7 +64,7 @@ def search(request: Request, q: str = "") -> HTMLResponse:
 
 
 @router.get("/switch-wiki")
-def switch_wiki(to: str, article: str = "", return_to: str = "") -> RedirectResponse:
+def switch_wiki(request: Request, to: str, article: str = "", return_to: str = "") -> RedirectResponse:
     if to not in KNOWN_WIKIS:
         raise HTTPException(status_code=400, detail=f"Unknown wiki: {to}")
     if article:
@@ -72,7 +72,16 @@ def switch_wiki(to: str, article: str = "", return_to: str = "") -> RedirectResp
     elif return_to and return_to.startswith("/") and not return_to.startswith("//"):
         redirect_url = return_to
     else:
+        # Fallback: if the caller came from an /article/ or /wikitext/ page,
+        # stay there so wiki-switch chips on those pages always preserve
+        # context even if the link doesn't include &article=.
+        referer = request.headers.get("referer", "")
         redirect_url = "/"
+        if referer:
+            parsed = urlparse(referer)
+            path = parsed.path or ""
+            if path.startswith("/article/") or path.startswith("/wikitext/"):
+                redirect_url = path
     response = RedirectResponse(redirect_url, status_code=302)
     response.set_cookie("wiki_pref", to, max_age=365 * 24 * 3600)
     return response

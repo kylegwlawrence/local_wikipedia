@@ -20,28 +20,9 @@
   });
 })();
 
-// Wiki-chip switch: if we're on /article/X, preserve the article context across the wiki switch.
-(function () {
-  document.addEventListener('click', function (e) {
-    var chip = e.target.closest('.chip--switchable[data-target-wiki]');
-    if (!chip) return;
-    var match = window.location.pathname.match(/^\/article\/(.+)$/);
-    if (match) {
-      e.preventDefault();
-      window.location.href =
-        '/switch-wiki?to=' + encodeURIComponent(chip.dataset.targetWiki) +
-        '&article=' + encodeURIComponent(decodeURIComponent(match[1]));
-      return;
-    }
-    var article = new URLSearchParams(window.location.search).get('article');
-    if (article) {
-      e.preventDefault();
-      window.location.href =
-        '/switch-wiki?to=' + encodeURIComponent(chip.dataset.targetWiki) +
-        '&article=' + encodeURIComponent(article);
-    }
-  });
-})();
+// Wiki chip: the server-rendered href already encodes the right destination
+// (article context on /article and /wikitext pages, return_to elsewhere) so
+// no client-side override is needed.
 
 // Kebab action menu: toggle on click, dismiss on outside-click.
 (function () {

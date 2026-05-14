@@ -95,15 +95,14 @@ class TestArticle:
         assert "2026-01-01" in resp.text
 
     def test_internal_links_point_at_local_endpoint(self, client):
-        # The Python article links to [[programming language]]; the rendered
-        # output should rewrite that to a local /article/ link with HTMX
-        # attributes so the front-end loads it as a fragment swap.
+        # Internal wikilinks rewrite to plain /article/ hrefs for full-page
+        # navigation. No htmx attributes — the full-page article template
+        # has no #article target.
         resp = client.get("/article/Python%20(programming%20language)")
         assert resp.status_code == 200
         # Title is capitalised per MediaWiki convention.
         assert 'href="/article/Programming%20language"' in resp.text
-        assert 'hx-get="/article/Programming%20language"' in resp.text
-        assert 'hx-target="#article"' in resp.text
+        assert "hx-get=" not in resp.text or 'hx-get="/article/' not in resp.text
         # And nothing should still be pointing at en.wikipedia.org.
         assert "en.wikipedia.org" not in resp.text
 
@@ -669,3 +668,58 @@ class TestArticleFullPage:
     def test_article_not_found_returns_404(self, client):
         resp = client.get("/article/DoesNotExist")
         assert resp.status_code == 404
+
+
+class TestSwitchWiki:
+    def test_switch_with_article_redirects_to_article(self, client):
+        resp = client.get("/switch-wiki?to=simplewiki&article=Apple", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/article/Apple"
+        assert "wiki_pref=simplewiki" in resp.headers["set-cookie"]
+
+    def test_switch_without_article_uses_referer_article(self, client):
+        # Even when /switch-wiki is called without &article=, the Referer
+        # header should be inspected so wiki-chip clicks on article pages
+        # stay on the article instead of redirecting to home.
+        resp = client.get(
+            "/switch-wiki?to=simplewiki",
+            headers={"referer": "http://testserver/article/Apple"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/article/Apple"
+
+    def test_switch_without_article_uses_referer_wikitext(self, client):
+        resp = client.get(
+            "/switch-wiki?to=simplewiki",
+            headers={"referer": "http://testserver/wikitext/Apple"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/wikitext/Apple"
+
+    def test_switch_with_return_to_redirects_there(self, client):
+        resp = client.get(
+            "/switch-wiki?to=simplewiki&return_to=/refresh",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/refresh"
+
+    def test_switch_falls_back_to_home(self, client):
+        resp = client.get("/switch-wiki?to=simplewiki", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/"
+
+    def test_switch_rejects_external_return_to(self, client):
+        # Protocol-relative URL must not be honoured as a redirect target.
+        resp = client.get(
+            "/switch-wiki?to=simplewiki&return_to=//evil.example.com",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/"
+
+    def test_switch_rejects_unknown_wiki(self, client):
+        resp = client.get("/switch-wiki?to=fakewiki&article=Apple", follow_redirects=False)
+        assert resp.status_code == 400

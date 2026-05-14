@@ -79,15 +79,21 @@ class TestConvertLinks:
         text = "See [[Python]]"
         result = _convert_links(text)
         assert 'href="/article/Python"' in result
-        assert 'hx-get="/article/Python"' in result
-        assert 'hx-target="#article"' in result
         assert ">Python</a>" in result
+
+    def test_link_has_no_htmx_attributes(self) -> None:
+        # Internal article links now full-page navigate via plain href —
+        # htmx attributes targeting #article would break because the
+        # full-page article template has no #article element.
+        text = "See [[Python]]"
+        result = _convert_links(text)
+        assert "hx-get" not in result
+        assert "hx-target" not in result
 
     def test_link_with_label(self) -> None:
         text = "See [[Python (programming language)|Python]]"
         result = _convert_links(text)
         assert 'href="/article/Python%20%28programming%20language%29"' in result
-        assert 'hx-get="/article/Python%20%28programming%20language%29"' in result
         assert ">Python</a>" in result
 
     def test_link_with_spaces(self) -> None:
@@ -122,9 +128,6 @@ class TestConvertLinks:
         text = "[[Python#History]]"
         result = _convert_links(text)
         assert 'href="/article/Python#History"' in result
-        # The hx-get URL should NOT include the anchor — it's not a different
-        # endpoint, just a scroll target on the same article.
-        assert 'hx-get="/article/Python"' in result
 
     def test_label_can_contain_inline_code(self) -> None:
         # Labels are not HTML-escaped so inline tags survive.

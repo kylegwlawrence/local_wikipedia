@@ -52,22 +52,14 @@ def _render_link(target: str, label: str, escape_label: bool, trail: str = "") -
     if title:
         title = normalize_title(title)
     href = f"/article/{quote(title)}"
-    hx_url = href
     if anchor:
         href = f"{href}#{quote(anchor)}"
     href_attr = html.escape(href, quote=True)
-    hx_attr = html.escape(hx_url, quote=True)
     if escape_label:
         rendered_label = html.escape(label + trail)
     else:
         rendered_label = label + html.escape(trail)
-    return (
-        f'<a href="{href_attr}" '
-        f'hx-get="{hx_attr}" '
-        f'hx-target="#article" '
-        f'hx-swap="innerHTML" '
-        f'hx-indicator="#article-load-spinner">{rendered_label}</a>'
-    )
+    return f'<a href="{href_attr}">{rendered_label}</a>'
 
 
 def convert_links(text: str) -> str:
