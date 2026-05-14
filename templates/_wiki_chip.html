@@ -1,14 +1,14 @@
-{% import "_icons.html" as icon %}
 {% set _switch_url = switch_url if switch_url is defined and switch_url else ('/switch-wiki?to=' + (other_wiki or '')) %}
+{# Render both wikis in a fixed slot order so clicking doesn't swap their positions. #}
 <span class="wiki-chip-group" data-current-wiki="{{ wiki }}">
-  <span class="chip chip--wiki chip--wiki-{{ wiki }}">{{ wiki }}</span>
-  {% if other_wiki %}
-  <a class="chip chip--wiki chip--wiki-{{ other_wiki }} chip--switchable"
+  {% for w in ['enwiki', 'simplewiki'] %}
+    {% if w == wiki %}
+  <span class="chip chip--wiki chip--wiki-{{ w }}">{{ w }}</span>
+    {% elif w == other_wiki %}
+  <a class="chip chip--wiki chip--wiki-{{ w }} chip--switchable"
      href="{{ _switch_url }}"
-     data-target-wiki="{{ other_wiki }}"
-     aria-label="Switch to {{ other_wiki }}">
-    {{ icon.arrow_right(size=14) }}
-    {{ other_wiki }}
-  </a>
-  {% endif %}
+     data-target-wiki="{{ w }}"
+     aria-label="Switch to {{ w }}">{{ w }}</a>
+    {% endif %}
+  {% endfor %}
 </span>
