@@ -164,7 +164,7 @@ def _embed_article(
     if not chunks:
         return 0
 
-    texts = [chunk["text"] for chunk in chunks]
+    texts = [embedder.format_document(title, c["section"], c["text"]) for c in chunks]
     try:
         vecs = embedder.embed_texts_batch(texts, base_url=ollama_url)
     except httpx.HTTPError:
@@ -232,7 +232,7 @@ def embed_one(
         rag_conn.commit()
         return 0
 
-    texts = [chunk["text"] for chunk in chunks_data]
+    texts = [embedder.format_document(title, c["section"], c["text"]) for c in chunks_data]
     try:
         vecs = embedder.embed_texts_batch(texts, base_url=ollama_url)
     except httpx.HTTPError:

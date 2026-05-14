@@ -87,7 +87,7 @@ def retrieve(
     dense: list[tuple[int, float]] = []
     used_dense = False
     try:
-        vec = embedder.embed_text(query, base_url=ollama_url)
+        vec = embedder.embed_text(embedder.format_query(query), base_url=ollama_url)
         dense = _dense_search(vec, rag_conn, candidate_k)
         used_dense = True
     except httpx.HTTPError:

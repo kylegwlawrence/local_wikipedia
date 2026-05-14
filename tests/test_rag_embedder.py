@@ -5,11 +5,15 @@ import pytest
 import respx
 
 from rag.embedder import (
+    EMBED_DOC_PREFIX,
     EMBED_MODEL,
+    EMBED_QUERY_PREFIX,
     EMBEDDING_DIM,
     OLLAMA_BASE_URL,
     embed_text,
     embed_texts_batch,
+    format_document,
+    format_query,
     pack_embedding,
     unpack_embedding,
 )
@@ -114,3 +118,31 @@ class TestPackUnpack:
         vec = [0.0] * EMBEDDING_DIM
         packed = pack_embedding(vec)
         assert len(packed) == EMBEDDING_DIM * 4
+
+
+class TestFormatDocument:
+    def test_includes_doc_prefix(self):
+        out = format_document("Python", "History", "Python was conceived...")
+        assert out.startswith(EMBED_DOC_PREFIX)
+
+    def test_with_section_includes_title_and_section(self):
+        out = format_document("Python", "History", "Python was conceived in 1989.")
+        assert out == "search_document: Python - History\n\nPython was conceived in 1989."
+
+    def test_without_section_uses_title_only(self):
+        out = format_document("Python", None, "Python is a programming language.")
+        assert out == "search_document: Python\n\nPython is a programming language."
+
+    def test_empty_section_treated_as_missing(self):
+        # Falsy section (empty string) collapses to title-only.
+        out = format_document("Python", "", "body")
+        assert out == "search_document: Python\n\nbody"
+
+
+class TestFormatQuery:
+    def test_includes_query_prefix(self):
+        assert format_query("what is python?") == "search_query: what is python?"
+
+    def test_prefix_constant_matches(self):
+        out = format_query("anything")
+        assert out.startswith(EMBED_QUERY_PREFIX)

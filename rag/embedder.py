@@ -10,8 +10,43 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 EMBED_MODEL = "nomic-embed-text"
 EMBEDDING_DIM = 768
 
+# nomic-embed-text is trained with explicit task prefixes; using them is
+# required for best retrieval quality. Indexed passages get
+# ``search_document:`` and user queries get ``search_query:``. Documents and
+# queries embedded without these prefixes land in slightly different parts of
+# the vector space and produce noticeably worse cosine matches.
+EMBED_DOC_PREFIX = "search_document: "
+EMBED_QUERY_PREFIX = "search_query: "
+
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 2.0
+
+
+def format_document(title: str, section: str | None, text: str) -> str:
+    """Build the indexing-time string for a chunk.
+
+    Prepends the ``search_document:`` task prefix nomic-embed-text expects,
+    then a short header with the article title (and section heading when
+    present) so the chunk vector encodes self-contained provenance instead of
+    a fragment that depends on neighbouring chunks for context.
+
+    Args:
+        title: Source article title.
+        section: Section heading containing the chunk, or None for the lead.
+        text: Plain-text chunk content (the same string stored verbatim in
+            ``chunks.text``).
+
+    Returns:
+        Prefixed string suitable for passing to ``embed_text`` or
+        ``embed_texts_batch`` at index time.
+    """
+    header = f"{title} - {section}" if section else title
+    return f"{EMBED_DOC_PREFIX}{header}\n\n{text}"
+
+
+def format_query(query: str) -> str:
+    """Apply the ``search_query:`` prefix to a user query before embedding."""
+    return f"{EMBED_QUERY_PREFIX}{query}"
 
 
 def embed_text(text: str, base_url: str = OLLAMA_BASE_URL) -> list[float]:
