@@ -9,6 +9,8 @@ import re
 
 import mwparserfromhell
 
+from rag.tables import extract_infoboxes, extract_tables
+
 _SECTION_RE = re.compile(r"^(={2,6})\s*(.+?)\s*\1\s*$", re.MULTILINE)
 _CAT_RE = re.compile(r"\[\[Category:([^\]|]+)", re.IGNORECASE)
 _REDIRECT_RE = re.compile(r"^\s*#\s*REDIRECT\s*\[\[", re.IGNORECASE)
@@ -121,10 +123,13 @@ def chunk_article(
             ``section`` (str | None): Heading text; None for the lead section.
             ``chunk_index`` (int): 0-based sub-index within that section.
             ``text`` (str): Plain text ready to embed.
+            ``chunk_type`` (str): One of ``'prose'``, ``'table'``, ``'infobox'``.
         Returns ``[]`` for redirect articles and articles that produce no text.
     """
     if is_redirect(wikitext):
         return []
+
+    infobox_chunks = extract_infoboxes(wikitext, title)
 
     # Find all heading positions
     matches = list(_SECTION_RE.finditer(wikitext))
@@ -143,10 +148,17 @@ def chunk_article(
             segments.append((m.group(2), fragment))
 
     chunks: list[dict] = []
+    chunks.extend(infobox_chunks)
+
     for section, fragment in segments:
+        table_chunks, fragment = extract_tables(fragment, section)
+        chunks.extend(table_chunks)
+
         plain = _strip_wikitext(fragment)
         if not plain:
             continue
+        # Collapse excess blank lines that may appear after table lines are removed.
+        plain = re.sub(r"\n{3,}", "\n\n", plain)
         parts = _split_long_text(plain, max_chars)
         for idx, part in enumerate(parts):
             if part:
@@ -155,6 +167,7 @@ def chunk_article(
                         "section": section,
                         "chunk_index": idx,
                         "text": part,
+                        "chunk_type": "prose",
                     }
                 )
     return chunks
