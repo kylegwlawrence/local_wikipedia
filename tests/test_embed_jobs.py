@@ -58,25 +58,55 @@ class TestItems:
     def test_append_items_dedupes(self, tmp_path):
         conn = _conn(tmp_path)
         job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
-        inserted = embed_jobs.append_items(
+        embed_jobs.append_items(
             conn,
             job_id,
             [
-                ("Apple", "Fruits"),
-                ("Banana", "Fruits"),
-                ("Apple", "OtherSource"),  # duplicate title — should be ignored
+                ("Apple", "Fruits", 0),
+                ("Banana", "Fruits", 0),
+                ("Apple", "OtherSource", 0),  # duplicate title — should be ignored
             ],
         )
-        assert inserted == 2
         items = embed_jobs.get_items(conn, job_id)
         assert [i["title"] for i in items] == ["Apple", "Banana"]
         # source_title is preserved from first insertion.
         assert items[0]["source_title"] == "Fruits"
 
+    def test_append_items_upserts_hops_remaining_max(self, tmp_path):
+        conn = _conn(tmp_path)
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        # First insert at hops=0.
+        embed_jobs.append_items(conn, job_id, [("Seat", "Car", 0)])
+        # Second insert at hops=1 should bump because row is still queued.
+        embed_jobs.append_items(conn, job_id, [("Seat", "OtherSource", 1)])
+        row = embed_jobs.get_items(conn, job_id)[0]
+        assert row["title"] == "Seat"
+        assert row["hops_remaining"] == 1
+        # source_title is left at the first insertion.
+        assert row["source_title"] == "Car"
+
+        # A lower-hops insert must NOT lower an existing higher value.
+        embed_jobs.append_items(conn, job_id, [("Seat", "X", 0)])
+        row = embed_jobs.get_items(conn, job_id)[0]
+        assert row["hops_remaining"] == 1
+
+    def test_append_items_does_not_touch_non_queued_rows(self, tmp_path):
+        conn = _conn(tmp_path)
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        embed_jobs.append_items(conn, job_id, [("Seat", "Car", 0)])
+        item_id = embed_jobs.get_items(conn, job_id)[0]["id"]
+        embed_jobs.update_item(conn, item_id, "complete", chunk_count=1)
+
+        # Trying to bump hops_remaining on a non-queued row is a no-op.
+        embed_jobs.append_items(conn, job_id, [("Seat", "Other", 2)])
+        row = embed_jobs.get_items(conn, job_id)[0]
+        assert row["hops_remaining"] == 0
+        assert row["status"] == "complete"
+
     def test_get_next_queued_oldest_first(self, tmp_path):
         conn = _conn(tmp_path)
         job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
-        embed_jobs.append_items(conn, job_id, [("A", "Src"), ("B", "Src")])
+        embed_jobs.append_items(conn, job_id, [("A", "Src", 0), ("B", "Src", 0)])
         first = embed_jobs.get_next_queued(conn, job_id)
         assert first["title"] == "A"
 
@@ -87,7 +117,7 @@ class TestItems:
     def test_update_item_terminal_sets_finished_at(self, tmp_path):
         conn = _conn(tmp_path)
         job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
-        embed_jobs.append_items(conn, job_id, [("A", "Src")])
+        embed_jobs.append_items(conn, job_id, [("A", "Src", 0)])
         item = embed_jobs.get_next_queued(conn, job_id)
 
         embed_jobs.update_item(conn, item["id"], "in_progress")
@@ -108,9 +138,9 @@ class TestItems:
             conn,
             job_id,
             [
-                ("A", "Src"),
-                ("B", "Src"),
-                ("C", "Src"),
+                ("A", "Src", 0),
+                ("B", "Src", 0),
+                ("C", "Src", 0),
             ],
         )
         items = embed_jobs.get_items(conn, job_id)

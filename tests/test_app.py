@@ -292,6 +292,59 @@ class TestEmbedLinks:
         assert resp.status_code == 204
         assert resp.headers["hx-redirect"] == "/active-embedding"
 
+    def test_enqueues_at_zero_hops_remaining(self, embed_client):
+        # The single-hop route uses hops_remaining=0 for every item — there's
+        # no worker recursion involved.
+        embed_client.post("/embed-links/April", follow_redirects=False)
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            job = embed_client.embed_jobs.get_active_job(conn, "enwiki")
+            items = embed_client.embed_jobs.get_items(conn, job["id"])
+            assert {r["hops_remaining"] for r in items} == {0}
+        finally:
+            conn.close()
+
+
+class TestEmbedLinks2:
+    """`POST /embed-links-2/{title}` enqueues source + 1-hop links at depth=1."""
+
+    def test_404_for_unknown_source(self, embed_client):
+        resp = embed_client.post(
+            "/embed-links-2/NoSuchArticle",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 404
+
+    def test_source_enqueued_at_hops_zero_links_at_hops_one(self, embed_client):
+        # 'April' links to [[month]] (resolved to 'Month'). The new route
+        # should enqueue April at hops=0 (no need to re-expand — its 1-hop
+        # links are already enqueued) and Month at hops=1 so the worker
+        # expands it once more.
+        resp = embed_client.post("/embed-links-2/April", follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/active-embedding"
+
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            job = embed_client.embed_jobs.get_active_job(conn, "enwiki")
+            assert job is not None
+            items = embed_client.embed_jobs.get_items(conn, job["id"])
+            by_title = {r["title"]: r["hops_remaining"] for r in items}
+            assert by_title == {"April": 0, "Month": 1}
+        finally:
+            conn.close()
+
+    def test_spawns_worker_when_no_active_job(self, embed_client):
+        embed_client.post("/embed-links-2/April", follow_redirects=False)
+        assert len(embed_client.spawned) == 1
+        assert embed_client.spawned[0][1:3] == ["-m", "workers.embed"]
+
+    def test_second_click_appends_without_spawning_again(self, embed_client):
+        embed_client.post("/embed-links-2/April", follow_redirects=False)
+        embed_client.post("/embed-links-2/Apple", follow_redirects=False)
+        # Only one worker — second trigger appends to the running job.
+        assert len(embed_client.spawned) == 1
+
 
 class TestEmbedStatusWidget:
     """`GET /embed-status/{title}` reflects whether links have been embedded."""
@@ -300,6 +353,8 @@ class TestEmbedStatusWidget:
         resp = embed_client.get("/embed-status/April")
         assert resp.status_code == 200
         assert "Embed + links" in resp.text
+        # The 2-hop button (Embed + links²) sits next to it.
+        assert "/embed-links-2/April" in resp.text
         assert "links embedded" not in resp.text
 
     def test_shows_links_embedded_badge_after_complete_job(self, embed_client, tmp_path, monkeypatch):

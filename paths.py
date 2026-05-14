@@ -8,6 +8,11 @@ DEFAULT_WIKI = "enwiki"
 JOBS_DB = DUMPS_DIR / "jobs.db"
 KNOWN_WIKIS: frozenset[str] = frozenset({"enwiki", "simplewiki"})
 
+# Cap redirect-chain following so a cycle can't hang. MediaWiki's own limit is 5.
+# Lives here (not app/config.py) so worker subprocesses can import it without
+# pulling in FastAPI / Jinja2.
+REDIRECT_MAX_HOPS = 5
+
 
 def db_path_for(wiki: str) -> pathlib.Path:
     """Default SQLite path for a wiki name (``dumps/{wiki}.db``)."""

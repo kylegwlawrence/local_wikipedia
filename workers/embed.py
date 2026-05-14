@@ -14,11 +14,58 @@ import sys
 
 import db as wiki_db
 from jobs import embed as embed_jobs
-from paths import JOBS_DB, db_path_for, rag_db_path_for
+from paths import JOBS_DB, REDIRECT_MAX_HOPS, db_path_for, rag_db_path_for
 from rag import chunker
 from rag.embed import embed_one
+from rag.links import extract_article_links
 from rag.schema import connect_rag
 from workers.runner import run_worker
+
+
+def _expand_links(
+    item,
+    canonical_title: str,
+    wikitext: str,
+    jobs_conn,
+    wiki_conn,
+) -> None:
+    """If ``item`` has hops left, append its wikilink targets to the job queue.
+
+    Resolves redirects against ``wiki_conn`` so the queue stores canonical
+    titles, mirroring what the route handler does. Each appended row's
+    ``source_title`` is ``canonical_title`` so the end-of-job finalizer marks
+    this parent as ``links_embedded=1``. Children get ``hops_remaining`` one
+    less than the parent (terminal at 0).
+
+    Any failure here is logged but does not change the parent item's status —
+    a successful embed must not be voided by a link-extraction error.
+    """
+    hops = item["hops_remaining"]
+    if hops <= 0:
+        return
+    try:
+        raw_targets = extract_article_links(wikitext, source_title=canonical_title)
+        next_hops = hops - 1
+        children: list[tuple[str, str, int]] = []
+        seen: set[str] = set()
+        for target in raw_targets:
+            resolved = wiki_db.resolve_redirect(wiki_conn, target, REDIRECT_MAX_HOPS)
+            picked = resolved or target
+            if picked == canonical_title or picked in seen:
+                continue
+            seen.add(picked)
+            children.append((picked, canonical_title, next_hops))
+        if children:
+            embed_jobs.append_items(jobs_conn, item["job_id"], children)
+            print(
+                f"[embed_worker] expanded {canonical_title!r} → {len(children)} item(s) at hops={next_hops}",
+                flush=True,
+            )
+    except Exception as exc:
+        print(
+            f"[embed_worker] link expansion failed for {canonical_title!r}: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
 
 
 def _process_item(
@@ -57,11 +104,15 @@ def _process_item(
     wikitext = row["text_content"]
 
     if chunker.is_redirect(wikitext):
+        # Redirect articles have no meaningful links of their own; skip expansion.
         embed_jobs.update_item(jobs_conn, item_id, "skipped_redirect")
         return
 
     if already_embedded.get(page_id) == revision_id:
         embed_jobs.update_item(jobs_conn, item_id, "skipped_unchanged")
+        # Still expand: re-triggering 2-hop on a previously 1-hop'd article
+        # must still reach hop 2 even though we don't re-embed this article.
+        _expand_links(item, row["title"], wikitext, jobs_conn, wiki_conn)
         return
 
     try:
@@ -88,6 +139,7 @@ def _process_item(
         "complete",
         chunk_count=chunk_count,
     )
+    _expand_links(item, row["title"], wikitext, jobs_conn, wiki_conn)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -11,6 +11,9 @@
     <button class="embed-btn"
             hx-post="/embed-links/{{ title|urlencode }}"
             hx-swap="none">Embed + links</button>
+    <button class="embed-btn"
+            hx-post="/embed-links-2/{{ title|urlencode }}"
+            hx-swap="none">Embed + links&sup2;</button>
     {% endif %}
     <a href="/chunks/{{ title|urlencode }}" class="embed-btn">View chunks</a>
 </span>
@@ -29,6 +32,9 @@
     <button class="embed-btn"
             hx-post="/embed-links/{{ title|urlencode }}"
             hx-swap="none">Embed + links</button>
+    <button class="embed-btn"
+            hx-post="/embed-links-2/{{ title|urlencode }}"
+            hx-swap="none">Embed + links&sup2;</button>
     {% endif %}
     <span class="embed-error-note">Ollama unreachable</span>
 </span>
@@ -47,6 +53,9 @@
     <button class="embed-btn"
             hx-post="/embed-links/{{ title|urlencode }}"
             hx-swap="none">Embed + links</button>
+    <button class="embed-btn"
+            hx-post="/embed-links-2/{{ title|urlencode }}"
+            hx-swap="none">Embed + links&sup2;</button>
     {% endif %}
 </span>
 {% endif %}

@@ -63,6 +63,10 @@ def ensure_embed_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_embed_job_items_job_status ON embed_job_items(job_id, status)")
+    try:
+        conn.execute("ALTER TABLE embed_job_items ADD COLUMN hops_remaining INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # column already exists (existing database)
     conn.commit()
 
 
@@ -176,24 +180,33 @@ def clear_orphaned_jobs(conn: sqlite3.Connection) -> int:
 def append_items(
     conn: sqlite3.Connection,
     job_id: int,
-    items: list[tuple[str, str]],
+    items: list[tuple[str, str, int]],
 ) -> int:
-    """Insert ``(title, source_title)`` pairs, ignoring duplicates.
+    """Insert ``(title, source_title, hops_remaining)`` triples.
+
+    On conflict with an existing ``(job_id, title)`` row whose status is still
+    ``queued``, ``hops_remaining`` is bumped to the MAX of existing/incoming —
+    this matters when a 2-hop trigger collides with a same-job row inserted
+    earlier at a shallower depth, otherwise that title would never get its
+    links expanded. Rows already past ``queued`` are left untouched.
 
     Args:
         conn: jobs.db connection.
         job_id: Parent job id.
-        items: List of ``(canonical_title, source_title)`` tuples.
+        items: List of ``(canonical_title, source_title, hops_remaining)`` triples.
 
     Returns:
-        Number of rows actually inserted (excluding duplicates the unique
-        index rejected).
+        Number of rows touched by the statement (inserts + qualifying updates).
     """
     if not items:
         return 0
     cur = conn.executemany(
-        "INSERT OR IGNORE INTO embed_job_items (job_id, title, source_title) VALUES (?, ?, ?)",
-        [(job_id, t, s) for t, s in items],
+        "INSERT INTO embed_job_items (job_id, title, source_title, hops_remaining) "
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(job_id, title) DO UPDATE SET "
+        "    hops_remaining = MAX(embed_job_items.hops_remaining, excluded.hops_remaining) "
+        "    WHERE embed_job_items.status = 'queued'",
+        [(job_id, t, s, h) for t, s, h in items],
     )
     conn.commit()
     return cur.rowcount

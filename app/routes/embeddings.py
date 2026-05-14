@@ -5,11 +5,11 @@ from fastapi.responses import HTMLResponse
 
 import db as wiki_db
 import paths
-from app.config import EMBED_PAGE_SIZE, REDIRECT_MAX_HOPS, templates
+from app.config import EMBED_PAGE_SIZE, templates
 from app.deps import active_wiki, connect, rag_connect
 from app.helpers import format_embedded_at, htmx_redirect, spawn_worker
 from jobs import embed as embed_jobs
-from paths import KNOWN_WIKIS
+from paths import KNOWN_WIKIS, REDIRECT_MAX_HOPS
 from rag.embed import (
     delete_all_articles as rag_delete_all_articles,
     delete_article as rag_delete_article,
@@ -168,13 +168,17 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
     )
 
 
-@router.post("/embed-links/{title:path}", response_class=HTMLResponse)
-def embed_links(request: Request, title: str) -> HTMLResponse:
+def _enqueue_links(request: Request, title: str, link_depth: int) -> HTMLResponse:
     """Extract wikilinks from ``title`` and enqueue them for batch embedding.
 
-    The source article itself is included in the queue. If a job is already
-    running for the active wiki, new items are appended to it; otherwise a new
-    job is created and a worker subprocess is spawned.
+    ``link_depth`` is the ``hops_remaining`` value assigned to each 1-hop link
+    target — pass 0 for a single-hop trigger (worker won't expand further) or
+    1 for a 2-hop trigger (worker expands each link once more).
+
+    The source article itself is included with ``hops_remaining=0`` because
+    the route has already enqueued its 1-hop neighbours. If a job is already
+    running for the active wiki, new items are appended to it; otherwise a
+    new job is created and a worker subprocess is spawned.
     """
     wiki = active_wiki(request)
 
@@ -210,7 +214,7 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
     finally:
         wiki_conn.close()
 
-    items = [(t, source_title) for t in resolved]
+    items = [(t, source_title, 0 if t == source_title else link_depth) for t in resolved]
 
     jobs_conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
     started_new_job = False
@@ -241,6 +245,23 @@ def embed_links(request: Request, title: str) -> HTMLResponse:
         spawn_worker("workers.embed", wiki, job_id, "embed")
 
     return htmx_redirect("/active-embedding", request)
+
+
+@router.post("/embed-links/{title:path}", response_class=HTMLResponse)
+def embed_links(request: Request, title: str) -> HTMLResponse:
+    """1-hop: embed ``title`` plus every wikilink target it references."""
+    return _enqueue_links(request, title, link_depth=0)
+
+
+@router.post("/embed-links-2/{title:path}", response_class=HTMLResponse)
+def embed_links_2(request: Request, title: str) -> HTMLResponse:
+    """2-hop: embed ``title``, every wikilink target, and the link targets of those.
+
+    The 1-hop link rows are enqueued with ``hops_remaining=1`` so the worker
+    extracts each one's wikilinks during processing and appends them at
+    ``hops_remaining=0`` (terminal).
+    """
+    return _enqueue_links(request, title, link_depth=1)
 
 
 @router.delete("/embed/{wiki}/{title:path}")
@@ -305,7 +326,7 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
             triggered_by_title=canonical_title,
             include_links=0,
         )
-        embed_jobs.append_items(jobs_conn, job_id, [(canonical_title, canonical_title)])
+        embed_jobs.append_items(jobs_conn, job_id, [(canonical_title, canonical_title, 0)])
         started_new_job = True
     finally:
         jobs_conn.close()

@@ -14,8 +14,9 @@ from fastapi.responses import RedirectResponse
 
 import db as wiki_db
 import paths
-from app.config import REDIRECT_MAX_HOPS, SEARCH_LIMIT, WIKI_LABELS
+from app.config import SEARCH_LIMIT, WIKI_LABELS
 from app.deps import connect
+from paths import REDIRECT_MAX_HOPS
 
 
 def wiki_label(wiki: str) -> str:

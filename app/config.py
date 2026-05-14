@@ -21,10 +21,6 @@ WIKI_DISPLAY_NAMES = {
 # can stop early.
 SEARCH_LIMIT = 20
 
-# Cap redirect-chain following so a cycle can't hang the request. MediaWiki's
-# own limit is 5 hops; matching that is conservative.
-REDIRECT_MAX_HOPS = 5
-
 EMBED_PAGE_SIZE = 50
 
 # External RAG API (see app/routes/rag.py and CLAUDE.md).
