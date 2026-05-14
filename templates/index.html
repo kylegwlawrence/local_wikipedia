@@ -1,31 +1,20 @@
-{# Single-page UI: a search input, the search-results panel, and the
-   article panel. HTMX wires the input to /search and the result links to
-   /article/<title>; the server returns small HTML fragments that get
-   swapped into #results and #article without reloading the page. #}
 {% extends "base.html" %}
+{% block title %}Local Wikipedia{% endblock %}
 
 {% block content %}
-<header class="site-header">
-    <h1>Local Wikipedia · {{ wiki_label }}<span class="article-count">{{ article_count }} articles</span></h1>
-    <div class="wiki-badges">
-        {%- if wiki == "enwiki" %}<span class="wiki-badge wiki-badge--enwiki">enwiki</span>{% elif other_wiki == "enwiki" %}<a class="wiki-badge wiki-badge--enwiki wiki-badge--switch" href="/switch-wiki?to=enwiki" data-target-wiki="enwiki">enwiki</a>{% endif %}
-        {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki" data-target-wiki="simplewiki">simplewiki</a>{% endif %}
-    </div>
-</header>
-{% include "_nav.html" %}
+<div class="home-hero">
+  <h1 class="home-hero__brand">Local Wikipedia</h1>
+  <p class="home-hero__sub">{{ wiki_label }} · {{ article_count }} articles</p>
 
-{# Search box.
-   - hx-get          : endpoint that returns the result-list fragment.
-   - hx-trigger      : fire on keystrokes once typing has paused (300ms),
-                       and only when the value actually changed.
-   - hx-target       : where the returned HTML goes.
-   - hx-swap         : replace the inner HTML of the target.
-   - name="q"        : sent as the query param, matching FastAPI's `q` arg.
-   - autocomplete    : the browser's own dropdown would fight with ours. #}
+  {% set switch_url = '/switch-wiki?to=' + (other_wiki or '') %}
+  {% include "_wiki_chip.html" %}
 
-<form class="search-form" onsubmit="return false;">
-    <span id="search-spinner" class="search-spinner htmx-indicator" aria-hidden="true"></span>
-    <input
+  <form class="search-hero" onsubmit="return false;" role="search">
+    <label class="input-with-icon">
+      {% from "_icons.html" import search as search_icon %}
+      {{ search_icon(size=20, class_='input-with-icon__icon') }}
+      <input
+        class="input input--pill"
         type="search"
         name="q"
         placeholder="Search articles by title..."
@@ -36,107 +25,10 @@
         hx-target="#results"
         hx-swap="innerHTML"
         hx-indicator="#search-spinner">
-</form>
+      <span id="search-spinner" class="spinner htmx-indicator input-with-icon__spinner" aria-hidden="true"></span>
+    </label>
+  </form>
 
-{% if not_found %}
-<div class="not-found-banner" id="not-found-banner">
-    <em>{{ not_found }}</em> does not exist in {{ wiki_label }}
+  <section id="results" class="search-results" aria-live="polite"></section>
 </div>
-{% endif %}
-
-{# Results stay visible after an article is loaded so the user can keep
-   navigating between matches. The two panels are independent HTMX targets. #}
-<section id="results" class="results"></section>
-<article id="article" class="article"
-    {% if preload_article %}
-    hx-get="/article/{{ preload_article|urlencode }}"
-    hx-trigger="load"
-    hx-swap="innerHTML"
-    {% endif %}></article>
-
-{# Refresh section — one row per wiki. Each button POSTs to trigger a
-   background download + incremental parse; the response fragment
-   self-polls every 3s until the job finishes. #}
-<section class="refresh-section">
-  <h2 class="refresh-heading">Refresh Wikipedia data</h2>
-
-  <div class="refresh-grid">
-    <div class="refresh-col">
-      <div class="refresh-btn-row">
-        <button class="refresh-btn"
-                hx-post="/refresh/simplewiki"
-                hx-target="#refresh-status-simplewiki"
-                hx-swap="innerHTML"
-                hx-indicator="#spinner-simplewiki">
-          Refresh SimpleWiki
-        </button>
-        <span id="spinner-simplewiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
-      </div>
-      <div id="refresh-status-simplewiki" class="refresh-status-area"
-           hx-get="/refresh/status/simplewiki"
-           hx-trigger="load"
-           hx-swap="innerHTML"></div>
-    </div>
-
-    <div class="refresh-col">
-      <div class="refresh-btn-row">
-        <button class="refresh-btn"
-                hx-post="/refresh/enwiki"
-                hx-target="#refresh-status-enwiki"
-                hx-swap="innerHTML"
-                hx-indicator="#spinner-enwiki">
-          Refresh EnWiki
-        </button>
-        <span id="spinner-enwiki" class="search-spinner htmx-indicator" aria-hidden="true"></span>
-      </div>
-      <div id="refresh-status-enwiki" class="refresh-status-area"
-           hx-get="/refresh/status/enwiki"
-           hx-trigger="load"
-           hx-swap="innerHTML"></div>
-    </div>
-  </div>
-</section>
-<div id="article-load-spinner" aria-hidden="true"></div>
-<script>
-document.addEventListener('click', function (e) {
-    if (!e.target.closest('.search-form') && !e.target.closest('#results')) {
-        document.getElementById('results').innerHTML = '';
-    }
-});
-
-(function () {
-    document.querySelectorAll('.wiki-badge--switch').forEach(function (badge) {
-        badge.addEventListener('click', function (e) {
-            var article = new URLSearchParams(window.location.search).get('article');
-            if (article) {
-                e.preventDefault();
-                window.location.href =
-                    '/switch-wiki?to=' + encodeURIComponent(badge.dataset.targetWiki) +
-                    '&article=' + encodeURIComponent(article);
-            }
-        });
-    });
-
-    var banner = document.getElementById('not-found-banner');
-    if (banner) setTimeout(function () { banner.remove(); }, 1000);
-
-    window.addEventListener('pageshow', function () {
-        document.getElementById('article-load-spinner').classList.remove('htmx-request');
-    });
-
-    document.body.addEventListener('articleNotFound', function (e) {
-        var existing = document.getElementById('not-found-banner');
-        if (existing) existing.remove();
-        var newBanner = document.createElement('div');
-        newBanner.className = 'not-found-banner';
-        newBanner.id = 'not-found-banner';
-        var em = document.createElement('em');
-        em.textContent = e.detail.title;
-        newBanner.appendChild(em);
-        newBanner.appendChild(document.createTextNode(' does not exist in ' + e.detail.wiki));
-        document.body.appendChild(newBanner);
-        setTimeout(function () { if (newBanner.parentNode) newBanner.remove(); }, 1000);
-    });
-}());
-</script>
 {% endblock %}

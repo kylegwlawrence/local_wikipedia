@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Refresh · Local Wikipedia{% endblock %}
+
+{% block content %}
+{% set switch_url = '/switch-wiki?to=' + (other_wiki or '') + '&return_to=/refresh' %}
+<div class="page-header">
+  <div class="page-header__title-row">
+    <h1 class="page-title">Refresh</h1>
+    {% include "_wiki_chip.html" %}
+  </div>
+  <p class="page-header__subtitle">Download the latest Wikimedia dumps and parse incremental updates into each wiki's database.</p>
+</div>
+
+<div class="page-grid page-grid--cols-2">
+  {% for w in ['simplewiki', 'enwiki'] %}
+  <section class="card refresh-card" style="margin: 0;">
+    <header class="card__header">
+      <h2 class="card__title">{{ w }}</h2>
+      <button class="btn-tonal"
+              hx-post="/refresh/{{ w }}"
+              hx-target="#refresh-status-{{ w }}"
+              hx-swap="innerHTML"
+              hx-indicator="#spinner-{{ w }}">
+        {% from "_icons.html" import refresh_cw %}
+        {{ refresh_cw(size=16) }}
+        Refresh {{ w }}
+      </button>
+    </header>
+    <div class="card__body">
+      <span id="spinner-{{ w }}" class="spinner htmx-indicator" aria-hidden="true"></span>
+      <div id="refresh-status-{{ w }}"
+           hx-get="/refresh/status/{{ w }}"
+           hx-trigger="load"
+           hx-swap="innerHTML"></div>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

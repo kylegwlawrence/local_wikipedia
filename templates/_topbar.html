@@ -1,0 +1,17 @@
+{% import "_icons.html" as icon %}
+<header class="app-topbar">
+  {% block topbar_breadcrumb %}
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    {% if current_page == 'home' %}
+      <span class="breadcrumb__current">Home</span>
+    {% else %}
+      <a href="/" class="breadcrumb__link">Home</a>
+      {{ icon.chevron_right(size=14, class_='breadcrumb__sep') }}
+      <span class="breadcrumb__current">{{ breadcrumb_current or page_title or '' }}</span>
+    {% endif %}
+  </nav>
+  {% endblock %}
+  <div class="topbar-actions">
+    {% block topbar_actions %}{% endblock %}
+  </div>
+</header>

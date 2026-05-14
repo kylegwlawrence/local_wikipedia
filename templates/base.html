@@ -1,74 +1,47 @@
-{# Base page shell. Loads HTMX from a CDN and the local stylesheet, and
-   exposes a `content` block for child templates to fill in. HTMX is only
-   needed on the index page, but keeping it in the base keeps the templates
-   uniform and the cost is one cached <script> tag. #}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme-mode="auto">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Local Wikipedia{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
-    {# HTMX 2.x — handles the search-on-keyup and click-to-load-article
-       interactions declaratively, no custom JS needed. #}
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    {# KaTeX math rendering — vendored locally so the app works fully offline. #}
     <link rel="stylesheet" href="{{ url_for('static', path='katex/katex.min.css') }}">
     <script defer src="{{ url_for('static', path='katex/katex.min.js') }}"></script>
-    {# mhchem extension — adds \ce{} support so <chem>/<ce> tags render. #}
     <script defer src="{{ url_for('static', path='katex/contrib/mhchem.min.js') }}"></script>
     <script defer src="{{ url_for('static', path='katex/contrib/auto-render.min.js') }}"
             onload="initMath()"></script>
     <script>
-        function renderMath(el) {
-            renderMathInElement(el, {
-                delimiters: [
-                    {left: "$$", right: "$$", display: true},
-                    {left: "\\(", right: "\\)", display: false}
-                ],
-                throwOnError: false
-            });
+      (function () {
+        var stored = localStorage.getItem('theme-mode');
+        if (stored === 'light' || stored === 'dark' || stored === 'auto') {
+          document.documentElement.setAttribute('data-theme-mode', stored);
+          if (stored !== 'auto') {
+            document.documentElement.setAttribute('data-theme', stored);
+          }
         }
-        function initMath() { renderMath(document.body); }
-
-        // Capture any anchor from a clicked HTMX link before the swap fires.
-        var pendingAnchor = null;
-        document.addEventListener('click', function(e) {
-            var link = e.target.closest('a[hx-get]');
-            if (link && link.href) {
-                var hash = link.href.split('#')[1];
-                // Heading IDs use underscores (MediaWiki convention); %20-encoded
-                // spaces must be decoded then converted.
-                pendingAnchor = hash
-                    ? decodeURIComponent(hash).replace(/ /g, '_')
-                    : null;
-            } else {
-                pendingAnchor = null;
-            }
+      })();
+    </script>
+    <script>
+      function renderMath(el) {
+        renderMathInElement(el, {
+          delimiters: [
+            {left: "$$", right: "$$", display: true},
+            {left: "\\(", right: "\\)", display: false}
+          ],
+          throwOnError: false
         });
-
-        // Re-render math and scroll to anchor after every HTMX fragment swap.
-        document.addEventListener("htmx:afterSwap", function(e) {
-            renderMath(e.target);
-            if (e.target.id !== 'article') return;
-            var anchor = pendingAnchor;
-            pendingAnchor = null;
-            requestAnimationFrame(function() {
-                if (anchor) {
-                    var targetEl = document.getElementById(anchor);
-                    if (targetEl) {
-                        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                } else {
-                    window.scrollTo({ top: 0, behavior: 'instant' });
-                }
-            });
-        });
+      }
+      function initMath() { renderMath(document.body); }
+      document.addEventListener("htmx:afterSwap", function (e) { renderMath(e.target); });
     </script>
 </head>
 <body>
-    <main>
-        {% block content %}{% endblock %}
-    </main>
+  {% include "_sidebar.html" %}
+  {% include "_topbar.html" %}
+  <main class="app-main">
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
 </body>
 </html>

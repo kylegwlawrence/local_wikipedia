@@ -1,115 +1,121 @@
-{# Full page: paginated list of articles embedded in the RAG DB for the
-   active wiki, with per-row action menus. #}
 {% extends "base.html" %}
-{% block title %}Embed Manager · Local Wikipedia{% endblock %}
+{% block title %}Embeddings · Local Wikipedia{% endblock %}
 
 {% block content %}
-<header class="site-header">
-    <h1>Embed Manager
-        {%- if wiki == "enwiki" %}<span class="wiki-badge wiki-badge--enwiki">enwiki</span>{% elif other_wiki == "enwiki" %}<a class="wiki-badge wiki-badge--enwiki wiki-badge--switch" href="/switch-wiki?to=enwiki&return_to=/embed-manager">enwiki</a>{% endif %}
-        {%- if wiki == "simplewiki" %}<span class="wiki-badge wiki-badge--simplewiki">simplewiki</span>{% elif other_wiki == "simplewiki" %}<a class="wiki-badge wiki-badge--simplewiki wiki-badge--switch" href="/switch-wiki?to=simplewiki&return_to=/embed-manager">simplewiki</a>{% endif %}
-    </h1>
-</header>
-{% include "_nav.html" %}
+{% set switch_url = '/switch-wiki?to=' + (other_wiki or '') + '&return_to=/embed-manager' %}
+<div class="page-header">
+  <div class="page-header__title-row">
+    <h1 class="page-title">Embeddings</h1>
+    {% include "_wiki_chip.html" %}
+  </div>
+  <p class="page-header__subtitle">
+    {% if total_count %}
+      {{ "{:,}".format(total_count) }} article{{ "s" if total_count != 1 }} embedded
+    {% else %}
+      No articles embedded yet
+    {% endif %}
+  </p>
+</div>
 
 {% if total_count == 0 %}
-<p class="refresh-idle">No articles have been embedded yet. Open any article and click <strong>Embed</strong> to add it to the RAG index.</p>
+<div class="card empty-state-card">
+  <div class="empty-state">
+    {% from "_icons.html" import database %}
+    {{ database(size=32, class_='empty-state__icon') }}
+    <p class="empty-state__text">
+      Open any article and click <strong>Embed</strong> to add it to the RAG index.
+    </p>
+  </div>
+</div>
 {% else %}
-<div class="embed-count-row">
-    <p class="embed-count">{{ "{:,}".format(total_count) }} article{{ "s" if total_count != 1 }} embedded</p>
-    <button class="embed-btn action-delete"
-            hx-delete="/embed-all/{{ wiki }}"
-            hx-confirm="Delete all {{ '{:,}'.format(total_count) }} embeddings for {{ wiki }}? This cannot be undone.">Delete all</button>
+
+<div class="toolbar">
+  <button class="btn-outlined btn-danger"
+          hx-delete="/embed-all/{{ wiki }}"
+          hx-confirm="Delete all {{ '{:,}'.format(total_count) }} embeddings for {{ wiki }}? This cannot be undone.">
+    {% from "_icons.html" import trash %}
+    {{ trash(size=16) }}
+    Delete all
+  </button>
 </div>
 
-<div class="embed-table-wrapper">
-<table class="embed-table">
-    <thead>
+<section class="card">
+  <div class="data-table-wrapper">
+    <table class="data-table">
+      <thead>
         <tr>
-            <th>Title</th>
-            <th>Chunks</th>
-            <th>Size</th>
-            <th>Embedded</th>
-            <th>Links</th>
-            <th>Categories</th>
-            <th class="th-actions"></th>
+          <th>Title</th>
+          <th>Chunks</th>
+          <th>Size</th>
+          <th>Embedded</th>
+          <th>Links</th>
+          <th>Categories</th>
+          <th class="data-table__col-actions"></th>
         </tr>
-    </thead>
-    <tbody>
+      </thead>
+      <tbody>
         {% for a in articles %}
         <tr>
-            <td>
-                <a href="/?article={{ a.title|urlencode }}">{{ a.title }}</a>
-            </td>
-            <td class="embed-chunks">
-                <a href="/chunks/{{ a.title|urlencode }}">{{ a.chunk_count }}</a>
-            </td>
-            <td class="embed-size">
-                {% if a.article_size_bytes is not none %}{{ "{:,}".format(a.article_size_bytes) }} bytes{% else %}—{% endif %}
-            </td>
-            <td class="embed-timestamp">{{ a.embedded_at_display }}</td>
-            <td class="embed-links-col">
-                {% if a.links_embedded %}<span class="links-badge">&#10003;</span>{% else %}—{% endif %}
-            </td>
-            <td class="embed-categories">
-                {% if a.categories %}{{ a.categories.replace("|", " · ") }}{% endif %}
-            </td>
-            <td class="embed-actions-col">
-                <div class="action-menu">
-                    <button type="button" class="action-btn" data-toggle="action-{{ loop.index }}" title="Actions">&#8942;</button>
-                    <div class="action-dropdown" id="action-{{ loop.index }}">
-                        <button type="button"
-                                hx-delete="/embed/{{ wiki }}/{{ a.title|urlencode }}"
-                                hx-target="closest tr"
-                                hx-swap="outerHTML"
-                                hx-confirm="Delete '{{ a.title }}' from the RAG index?"
-                                class="action-delete">Delete</button>
-                        <button type="button"
-                                hx-post="/embed/reembed/{{ wiki }}/{{ a.title|urlencode }}">Re-embed</button>
-                        <button type="button"
-                                hx-post="/embed-links/{{ a.title|urlencode }}">Re-embed + Links</button>
-                    </div>
-                </div>
-            </td>
+          <td><a class="link-primary" href="/article/{{ a.title|urlencode }}">{{ a.title }}</a></td>
+          <td class="u-tabular-nums">
+            <a class="link-muted" href="/chunks/{{ a.title|urlencode }}">{{ a.chunk_count }}</a>
+          </td>
+          <td class="u-tabular-nums meta-text">
+            {% if a.article_size_bytes is not none %}{{ "{:,}".format(a.article_size_bytes) }}&nbsp;B{% else %}—{% endif %}
+          </td>
+          <td class="meta-text">{{ a.embedded_at_display }}</td>
+          <td>
+            {% if a.links_embedded %}
+              <span class="chip chip--status-complete">
+                {% from "_icons.html" import check %}{{ check(size=14) }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="meta-text u-truncate-2">
+            {% if a.categories %}{{ a.categories.replace("|", " · ") }}{% endif %}
+          </td>
+          <td class="data-table__cell-actions">
+            <div class="action-menu">
+              <button type="button" class="btn-icon" data-toggle="action-{{ loop.index }}" aria-label="Actions">
+                {% from "_icons.html" import more_vertical %}{{ more_vertical(size=18) }}
+              </button>
+              <div class="action-dropdown" id="action-{{ loop.index }}" role="menu">
+                <button type="button"
+                        class="action-menu__item action-menu__item--danger"
+                        hx-delete="/embed/{{ wiki }}/{{ a.title|urlencode }}"
+                        hx-target="closest tr"
+                        hx-swap="outerHTML"
+                        hx-confirm="Delete '{{ a.title }}' from the RAG index?">
+                  {% from "_icons.html" import trash %}{{ trash(size=16) }} Delete
+                </button>
+                <button type="button" class="action-menu__item"
+                        hx-post="/embed/reembed/{{ wiki }}/{{ a.title|urlencode }}">
+                  {% from "_icons.html" import refresh_cw %}{{ refresh_cw(size=16) }} Re-embed
+                </button>
+                <button type="button" class="action-menu__item"
+                        hx-post="/embed-links/{{ a.title|urlencode }}">
+                  {% from "_icons.html" import link2 %}{{ link2(size=16) }} Re-embed + Links
+                </button>
+              </div>
+            </div>
+          </td>
         </tr>
         {% endfor %}
-    </tbody>
-</table>
-</div>
+      </tbody>
+    </table>
+  </div>
+</section>
 
 {% if total_pages > 1 %}
-<nav class="embed-pagination">
-    {% if page > 1 %}
-    <a href="/embed-manager?page={{ page - 1 }}" class="embed-page-btn">&larr; Prev</a>
-    {% endif %}
-    <span class="embed-page-info">Page {{ page }} of {{ total_pages }}</span>
-    {% if page < total_pages %}
-    <a href="/embed-manager?page={{ page + 1 }}" class="embed-page-btn">Next &rarr;</a>
-    {% endif %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}
+    <a class="btn-outlined" href="/embed-manager?page={{ page - 1 }}">← Previous</a>
+  {% endif %}
+  <span class="meta-text">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a class="btn-outlined" href="/embed-manager?page={{ page + 1 }}">Next →</a>
+  {% endif %}
 </nav>
 {% endif %}
 {% endif %}
-
-<script>
-(function () {
-    function closeAll(except) {
-        document.querySelectorAll('.action-dropdown').forEach(function (d) {
-            if (d !== except) d.classList.remove('open');
-        });
-    }
-    document.addEventListener('click', function (e) {
-        var btn = e.target.closest('[data-toggle]');
-        if (btn) {
-            var el = document.getElementById(btn.getAttribute('data-toggle'));
-            if (!el) return;
-            var opening = !el.classList.contains('open');
-            closeAll(el);
-            if (opening) el.classList.add('open');
-            e.stopPropagation();
-            return;
-        }
-        closeAll();
-    });
-})();
-</script>
 {% endblock %}

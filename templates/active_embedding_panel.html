@@ -1,80 +1,57 @@
-{# HTMX fragment: status panel for the active embedding job.
-
-   Polls itself every 3s while the job is running. When the job transitions
-   to a terminal status the polling attributes drop and the fragment becomes
-   static.
-
-   Variables expected:
-     job                  dict|None — the active or most recent job for the wiki
-     grouped_items        list[tuple[str, list[dict]]] — items grouped by source_title
-     counts               dict[str, int] — counts by item status for the active job
-     elapsed              str — formatted elapsed time while running
-     started_at_display   str — formatted timestamp when complete/cancelled/failed
-     recent_jobs          list[dict] — recent finished jobs ({"job": ..., "counts": ...})
-#}
 <div id="active-embedding-panel"
      {% if job and job.status == 'running' and not job.cancel_requested %}
      hx-get="/active-embedding/panel"
      hx-trigger="every 3s"
      hx-target="this"
      hx-swap="outerHTML"
-     {% endif %}
-     class="refresh-panel">
-
+     {% endif %}>
   {% if not job %}
-    <p class="refresh-idle">No batch embed has been run yet. Open an article and click <strong>Embed + links</strong> to start one.</p>
+    <p class="empty-state">No batch embed has been run yet. Open an article and click <strong>Embed + links</strong> to start one.</p>
   {% else %}
-    <div class="refresh-status-row">
-      <span class="refresh-badge refresh-badge--{{ job.status }}">{{ job.status }}{% if job.cancel_requested and job.status == 'running' %} (cancelling…){% endif %}</span>
-      {% if elapsed %}<span class="refresh-elapsed">{{ elapsed }}</span>{% endif %}
-      {% if started_at_display %}<span class="refresh-elapsed">{{ started_at_display }}</span>{% endif %}
-      <span class="refresh-elapsed">job #{{ job.id }}</span>
+    <div class="status-row">
+      <span class="chip chip--status-{{ job.status }}">{{ job.status }}{% if job.cancel_requested and job.status == 'running' %} (cancelling…){% endif %}</span>
+      {% if elapsed %}<span class="meta-text">{{ elapsed }}</span>{% endif %}
+      {% if started_at_display %}<span class="meta-text">{{ started_at_display }}</span>{% endif %}
+      <span class="meta-text">job #{{ job.id }}</span>
       {% if job.triggered_by_title %}
-      <span class="refresh-elapsed">triggered by <a href="/?article={{ job.triggered_by_title|urlencode }}"
-              hx-get="/article/{{ job.triggered_by_title|urlencode }}"
-              hx-target="#article"
-              hx-swap="innerHTML"
-              hx-push-url="/?article={{ job.triggered_by_title|urlencode }}">{{ job.triggered_by_title }}</a></span>
+        <span class="meta-text">
+          triggered by <a class="link-primary" href="/article/{{ job.triggered_by_title|urlencode }}">{{ job.triggered_by_title }}</a>
+        </span>
       {% endif %}
       {% if job.status == 'running' and not job.cancel_requested %}
-      <button class="embed-btn"
-              hx-post="/active-embedding/cancel/{{ job.id }}"
-              hx-target="#active-embedding-panel"
-              hx-swap="outerHTML">Cancel</button>
+        <button class="btn-outlined btn-danger btn-outlined--sm"
+                hx-post="/active-embedding/cancel/{{ job.id }}"
+                hx-target="#active-embedding-panel" hx-swap="outerHTML">
+          {% from "_icons.html" import x %}{{ x(size=14) }} Cancel
+        </button>
       {% endif %}
     </div>
-
     {% if counts %}
-    <dl class="refresh-counts">
+    <dl class="stat-grid">
       {% for status, n in counts.items() %}
-      <dt>{{ status.replace('_', ' ') }}</dt><dd>{{ "{:,}".format(n) }}</dd>
+        <div class="stat"><dt>{{ status.replace('_', ' ') }}</dt><dd>{{ "{:,}".format(n) }}</dd></div>
       {% endfor %}
     </dl>
     {% endif %}
-
-    {% if job.error_message %}
-    <p class="refresh-error">{{ job.error_message }}</p>
-    {% endif %}
+    {% if job.error_message %}<p class="callout callout--error">{{ job.error_message }}</p>{% endif %}
 
     {% for source_title, items in grouped_items %}
-    <section class="embed-source-group">
-      <h3 class="embed-source-heading">From <a href="/?article={{ source_title|urlencode }}">{{ source_title }}</a> <span class="embed-source-count">({{ items|length }} item{{ "s" if items|length != 1 }})</span></h3>
-      <table class="embed-table">
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Chunks</th>
-            <th>Note</th>
-          </tr>
-        </thead>
+    <section class="job-source-group">
+      <h3 class="job-source-group__title">
+        From <a class="link-primary" href="/article/{{ source_title|urlencode }}">{{ source_title }}</a>
+        <span class="meta-text">({{ items|length }} item{{ "s" if items|length != 1 }})</span>
+      </h3>
+      <table class="data-table data-table--nested">
+        <thead><tr><th>Title</th><th>Status</th><th>Chunks</th><th>Note</th></tr></thead>
         <tbody>
           {% for item in items %}
           <tr>
-            <td><a href="/?article={{ item.title|urlencode }}">{{ item.title }}</a></td>
-            <td><span class="refresh-badge refresh-badge--{{ item.status }}">{{ item.status.replace('_', ' ') }}</span></td>
-            <td>{% if item.chunk_count %}<a href="/chunks/{{ item.title|urlencode }}">{{ item.chunk_count }}</a>{% endif %}</td>
-            <td class="embed-error-note">{% if item.error_message %}{{ item.error_message }}{% endif %}</td>
+            <td><a class="link-primary" href="/article/{{ item.title|urlencode }}">{{ item.title }}</a></td>
+            <td><span class="chip chip--status-{{ item.status }}">{{ item.status.replace('_', ' ') }}</span></td>
+            <td class="u-tabular-nums">
+              {% if item.chunk_count %}<a class="link-muted" href="/chunks/{{ item.title|urlencode }}">{{ item.chunk_count }}</a>{% endif %}
+            </td>
+            <td class="meta-text">{% if item.error_message %}{{ item.error_message }}{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -82,5 +59,4 @@
     </section>
     {% endfor %}
   {% endif %}
-
 </div>

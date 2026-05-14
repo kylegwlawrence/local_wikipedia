@@ -1,0 +1,35 @@
+{% import "_icons.html" as icon %}
+<aside class="app-sidebar" aria-label="Primary navigation">
+  <div class="sidebar-brand">
+    <a href="/" class="sidebar-brand__link">
+      <span class="sidebar-brand__logo" aria-hidden="true">📖</span>
+      <span class="sidebar-brand__text">Local Wikipedia</span>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="sidebar-item {% if current_page == 'home' %}sidebar-item--active{% endif %}" href="/">
+      {{ icon.home(size=20, class_='sidebar-item__icon') }}
+      <span class="sidebar-item__label">Home</span>
+    </a>
+    <a class="sidebar-item {% if current_page == 'embeddings' %}sidebar-item--active{% endif %}" href="/embed-manager">
+      {{ icon.database(size=20, class_='sidebar-item__icon') }}
+      <span class="sidebar-item__label">Embeddings</span>
+    </a>
+    <a class="sidebar-item {% if current_page == 'processes' %}sidebar-item--active{% endif %}" href="/active-embedding">
+      {{ icon.activity(size=20, class_='sidebar-item__icon') }}
+      <span class="sidebar-item__label">Processes</span>
+    </a>
+    <a class="sidebar-item {% if current_page == 'refresh' %}sidebar-item--active{% endif %}" href="/refresh">
+      {{ icon.refresh_cw(size=20, class_='sidebar-item__icon') }}
+      <span class="sidebar-item__label">Refresh</span>
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <button type="button" class="theme-toggle btn-icon"
+            data-theme-toggle aria-label="Toggle theme">
+      {{ icon.monitor(size=18, class_='theme-toggle__icon theme-toggle__icon--auto') }}
+      {{ icon.sun(size=18, class_='theme-toggle__icon theme-toggle__icon--light') }}
+      {{ icon.moon(size=18, class_='theme-toggle__icon theme-toggle__icon--dark') }}
+    </button>
+  </div>
+</aside>

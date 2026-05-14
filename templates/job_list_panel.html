@@ -1,37 +1,28 @@
-{# HTMX fragment: paginated job history list with search.
-   Variables expected:
-     list_jobs         list[dict] — jobs for the current page
-     list_total        int        — total matching jobs
-     list_counts       dict[int, dict[str, int]] — item counts keyed by job id
-     list_page         int        — current page (1-based)
-     list_total_pages  int        — total pages
-     list_q            str        — current search query
-#}
-<div id="job-list-panel" class="embed-recent-jobs">
-  <div class="embed-count-row">
-    <h3 style="margin:0">Job history</h3>
+<div id="job-list-panel">
+  <div class="status-row" style="margin-bottom: var(--space-3); padding: var(--space-4) var(--space-5) 0;">
     {% if list_total %}
-    <button class="embed-btn action-delete"
+    <button class="btn-outlined btn-danger btn-outlined--sm"
             hx-delete="/active-embedding/jobs"
-            hx-confirm="Delete all {{ list_total }} job record{{ 's' if list_total != 1 }}? This cannot be undone.">Delete all</button>
+            hx-confirm="Delete all {{ list_total }} job record{{ 's' if list_total != 1 }}? This cannot be undone.">
+      {% from "_icons.html" import trash %}{{ trash(size=14) }} Delete all
+    </button>
     {% endif %}
-  </div>
-  <div class="refresh-status-row">
     <input type="search" name="q" value="{{ list_q }}"
            placeholder="Search by job # or article title…"
-           class="job-search-input"
+           class="input"
+           style="width: 260px;"
            hx-get="/active-embedding/jobs"
            hx-trigger="input changed delay:300ms, search"
            hx-target="#job-list-panel"
            hx-swap="outerHTML"
            hx-include="[name='q']">
-    {% if list_total %}<span class="refresh-elapsed">{{ list_total }} job{{ "s" if list_total != 1 }}</span>{% endif %}
+    {% if list_total %}<span class="meta-text">{{ list_total }} job{{ "s" if list_total != 1 }}</span>{% endif %}
   </div>
 
   {% if not list_jobs %}
-    <p class="refresh-idle">No jobs found{% if list_q %} for "{{ list_q }}"{% endif %}.</p>
+    <p class="empty-state" style="padding: var(--space-5);">No jobs found{% if list_q %} for "{{ list_q }}"{% endif %}.</p>
   {% else %}
-  <table class="embed-table">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Job #</th>
@@ -50,20 +41,20 @@
           hx-get="/active-embedding/panel/{{ job.id }}"
           hx-target="#active-embedding-panel"
           hx-swap="outerHTML">
-        <td>#{{ job.id }}</td>
-        <td>{{ job.wiki }}</td>
+        <td class="meta-text">#{{ job.id }}</td>
+        <td class="meta-text">{{ job.wiki }}</td>
         <td>
           {% if job.triggered_by_title %}
-          <a href="/?article={{ job.triggered_by_title|urlencode }}"
+          <a class="link-primary" href="/article/{{ job.triggered_by_title|urlencode }}"
              onclick="return false;">{{ job.triggered_by_title }}</a>
           {% else %}—{% endif %}
         </td>
-        <td>{{ "links" if job.include_links else "single" }}</td>
-        <td><span class="refresh-badge refresh-badge--{{ job.status }}">{{ job.status }}</span></td>
-        <td>{{ job.started_at[:16] }}</td>
-        <td>
+        <td class="meta-text">{{ "links" if job.include_links else "single" }}</td>
+        <td><span class="chip chip--status-{{ job.status }}">{{ job.status }}</span></td>
+        <td class="meta-text u-tabular-nums">{{ job.started_at[:16] }}</td>
+        <td class="meta-text u-tabular-nums">
           {{ c.values()|sum }} total
-          {% if c.get("failed") %}<span class="embed-error-note">, {{ c["failed"] }} failed</span>{% endif %}
+          {% if c.get("failed") %}<span class="callout callout--error" style="display:inline;padding:2px 6px;margin:0;">, {{ c["failed"] }} failed</span>{% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -71,16 +62,16 @@
   </table>
 
   {% if list_total_pages > 1 %}
-  <div class="refresh-status-row" style="margin-top:0.5rem">
+  <div class="pagination">
     {% if list_page > 1 %}
-    <a class="nav-btn"
+    <a class="btn-outlined btn-outlined--sm"
        hx-get="/active-embedding/jobs?page={{ list_page - 1 }}&q={{ list_q|urlencode }}"
        hx-target="#job-list-panel"
        hx-swap="outerHTML">← Prev</a>
     {% endif %}
-    <span class="refresh-elapsed">Page {{ list_page }} of {{ list_total_pages }}</span>
+    <span class="meta-text">Page {{ list_page }} of {{ list_total_pages }}</span>
     {% if list_page < list_total_pages %}
-    <a class="nav-btn"
+    <a class="btn-outlined btn-outlined--sm"
        hx-get="/active-embedding/jobs?page={{ list_page + 1 }}&q={{ list_q|urlencode }}"
        hx-target="#job-list-panel"
        hx-swap="outerHTML">Next →</a>

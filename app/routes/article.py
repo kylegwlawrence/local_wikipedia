@@ -1,16 +1,13 @@
 """Article and wikitext views + the chunks debug page."""
 
-import json
-from urllib.parse import quote
-
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 import db as wiki_db
 import paths
 from app.config import templates
 from app.deps import active_wiki, rag_connect
-from app.helpers import fetch_article, wiki_label
+from app.helpers import fetch_article
 from paths import KNOWN_WIKIS
 from render import convert_wikitext_to_html
 
@@ -19,22 +16,8 @@ router = APIRouter()
 
 @router.get("/article/{title:path}", response_class=HTMLResponse)
 def article(request: Request, title: str) -> HTMLResponse:
-    """Render a single article as HTML.
-
-    The ``{title:path}`` converter is used so titles containing slashes —
-    rare but legal in MediaWiki — round-trip correctly.
-
-    Raises:
-        HTTPException: 404 when no article with that exact title exists.
-    """
     row, redirected_from = fetch_article(title, request)
     if row is None:
-        if request.headers.get("HX-Request") == "true":
-            wiki = active_wiki(request)
-            resp = Response(content="", status_code=200)
-            resp.headers["HX-Reswap"] = "none"
-            resp.headers["HX-Trigger"] = json.dumps({"articleNotFound": {"title": title, "wiki": wiki_label(wiki)}})
-            return resp
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
 
     html = convert_wikitext_to_html(row["text_content"])
@@ -46,12 +29,16 @@ def article(request: Request, title: str) -> HTMLResponse:
     if other_wiki_db.exists():
         try:
             with wiki_db.connect(other_wiki_db) as ow_conn:
-                hit = ow_conn.execute("SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)).fetchone()
+                hit = ow_conn.execute(
+                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1",
+                    (row["title"],),
+                ).fetchone()
                 if hit:
                     other_wiki_for_template = other_wiki
         except Exception:
             pass
-    response = templates.TemplateResponse(
+
+    return templates.TemplateResponse(
         request,
         "article.html",
         {
@@ -62,20 +49,14 @@ def article(request: Request, title: str) -> HTMLResponse:
             "redirected_from": redirected_from,
             "wiki": wiki,
             "other_wiki": other_wiki_for_template,
+            "current_page": "",
+            "breadcrumb_current": row["title"],
         },
     )
-    if request.headers.get("HX-Request") == "true":
-        response.headers["HX-Push-Url"] = f"/?wiki={wiki}&article={quote(row['title'])}"
-    return response
 
 
 @router.get("/wikitext/{title:path}", response_class=HTMLResponse)
 def wikitext(request: Request, title: str) -> HTMLResponse:
-    """Return the raw wikitext for an article, bypassing the render pipeline.
-
-    Paired with ``/article/{title}`` — the two endpoints toggle between the
-    rendered and raw views by swapping each other's fragment into ``#article``.
-    """
     row, _redirected_from = fetch_article(title, request)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Article not found: {title}")
@@ -87,7 +68,10 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     if other_wiki_db.exists():
         try:
             with wiki_db.connect(other_wiki_db) as ow_conn:
-                hit = ow_conn.execute("SELECT 1 FROM articles WHERE title = ? LIMIT 1", (row["title"],)).fetchone()
+                hit = ow_conn.execute(
+                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1",
+                    (row["title"],),
+                ).fetchone()
                 if hit:
                     other_wiki_for_template = other_wiki
         except Exception:
@@ -103,6 +87,8 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
             "timestamp": row["timestamp"],
             "wiki": wiki,
             "other_wiki": other_wiki_for_template,
+            "current_page": "",
+            "breadcrumb_current": row["title"],
         },
     )
 
@@ -136,5 +122,6 @@ def chunks(request: Request, title: str) -> HTMLResponse:
             "chunks": chunk_list,
             "wiki": wiki,
             "current_page": "",
+            "breadcrumb_current": title,
         },
     )

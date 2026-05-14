@@ -4,12 +4,38 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 import paths
+from app.config import templates
+from app.deps import active_wiki
 from app.helpers import spawn_worker
 from app.panels import render_status_panel
 from jobs import refresh as refresh_jobs
 from paths import KNOWN_WIKIS
 
 router = APIRouter()
+
+
+@router.get("/refresh", response_class=HTMLResponse)
+def refresh_page(request: Request) -> HTMLResponse:
+    wiki = active_wiki(request)
+    other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
+    other_wiki_for_template = other_wiki if paths.db_path_for(other_wiki).exists() else None
+    conn = refresh_jobs.connect_jobs(paths.JOBS_DB)
+    try:
+        jobs = {w: refresh_jobs.get_latest_job(conn, w) for w in KNOWN_WIKIS}
+    finally:
+        conn.close()
+    return templates.TemplateResponse(
+        request,
+        "refresh.html",
+        {
+            "wiki": wiki,
+            "other_wiki": other_wiki_for_template,
+            "current_page": "refresh",
+            "breadcrumb_current": "Refresh",
+            "page_title": "Refresh",
+            "jobs": jobs,
+        },
+    )
 
 
 @router.post("/refresh/{wiki}", response_class=HTMLResponse)

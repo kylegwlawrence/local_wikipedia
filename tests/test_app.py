@@ -58,11 +58,10 @@ class TestSearch:
         assert resp.status_code == 200
         assert "No articles match" in resp.text
 
-    def test_result_links_use_htmx(self, client):
+    def test_result_links_navigate_to_article(self, client):
         resp = client.get("/search", params={"q": "Apr"})
-        # Each result is a link that swaps the article panel via HTMX.
-        assert 'hx-get="/article/' in resp.text
-        assert 'hx-target="#article"' in resp.text
+        # Results are plain navigation links to the article page.
+        assert 'href="/article/' in resp.text
 
 
 class TestArticle:
@@ -71,7 +70,9 @@ class TestArticle:
     def test_returns_rendered_html(self, client):
         resp = client.get("/article/April")
         assert resp.status_code == 200
-        assert "<h2>April<span" in resp.text
+        # Article title appears in the page header.
+        assert 'class="article-title"' in resp.text
+        assert "April" in resp.text
         # Bold wikitext -> markdown ** -> <strong>.
         assert "<strong>April</strong>" in resp.text
         # Heading wikitext (== Events ==) -> ## Events -> <h2>Events</h2>.
@@ -114,7 +115,7 @@ class TestRedirects:
         # 'Apples' redirects to 'Apple'; we should see Apple's content.
         resp = client.get("/article/Apples")
         assert resp.status_code == 200
-        assert "<h2>Apple<span" in resp.text
+        assert "Apple" in resp.text
         assert "An <strong>apple</strong>" in resp.text
 
     def test_redirect_displays_redirected_from_note(self, client):
@@ -132,7 +133,7 @@ class TestRedirects:
         # Pyton -> Python (programming language).
         resp = client.get("/article/Pyton")
         assert resp.status_code == 200
-        assert "<h2>Python (programming language)<span" in resp.text
+        assert "Python (programming language)" in resp.text
         assert "Redirected from" in resp.text
 
     def test_redirect_cycle_returns_404(self, client):
@@ -169,7 +170,7 @@ class TestWikitext:
 
     def test_toggle_button_links_to_rendered_view(self, client):
         resp = client.get("/wikitext/April")
-        assert 'hx-get="/article/' in resp.text
+        assert 'href="/article/' in resp.text
 
 
 class TestDatabaseMissing:
@@ -467,9 +468,9 @@ class TestActiveEmbedding:
         embed_client.post("/embed-links/April", follow_redirects=False)
         resp = embed_client.get("/active-embedding")
         assert resp.status_code == 200
-        # Status badge + the source-group heading.
+        # Status chip and the source-group heading.
         assert "running" in resp.text
-        assert "From <a href" in resp.text
+        assert "From" in resp.text
         assert "April" in resp.text
 
     def test_panel_polls_while_running(self, embed_client):
@@ -631,3 +632,40 @@ class TestCrashRecovery:
         assert rows[0]["status"] == "complete"
         assert rows[1]["status"] == "failed"
         assert rows[1]["error_message"] == "earlier failure"
+
+
+class TestThemeToggle:
+    def test_theme_toggle_button_exists(self, client):
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "data-theme-toggle" in resp.text
+
+
+class TestRefreshPage:
+    def test_refresh_page_renders(self, client):
+        resp = client.get("/refresh")
+        assert resp.status_code == 200
+        assert "Refresh" in resp.text
+        assert "simplewiki" in resp.text
+        assert "enwiki" in resp.text
+
+    def test_refresh_page_has_sidebar(self, client):
+        resp = client.get("/refresh")
+        assert "app-sidebar" in resp.text
+
+
+class TestArticleFullPage:
+    def test_article_renders_full_shell(self, client):
+        resp = client.get("/article/Apple")
+        assert resp.status_code == 200
+        assert "app-sidebar" in resp.text
+        assert "article-body" in resp.text
+
+    def test_old_home_article_param_redirects(self, client):
+        resp = client.get("/?article=Apple", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/article/Apple"
+
+    def test_article_not_found_returns_404(self, client):
+        resp = client.get("/article/DoesNotExist")
+        assert resp.status_code == 404

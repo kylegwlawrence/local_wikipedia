@@ -1,24 +1,13 @@
-{# Fragment returned by GET /search. Rendered into #results on the index
-   page. Each link uses hx-get so clicking loads the article into #article
-   without a full page navigation. The `q` value is echoed back so the
-   "no results" message can show what was searched. #}
 {% if titles %}
-    <ul class="result-list">
-        {% for title in titles %}
-            {# urlencode handles spaces, slashes, and other path-unsafe
-               characters in MediaWiki titles (e.g. "Python (programming language)"). #}
-            <li>
-                <a href="#"
-                   hx-get="/article/{{ title|urlencode }}"
-                   hx-target="#article"
-                   hx-swap="innerHTML"
-                   hx-indicator="#search-spinner"
-                   hx-on::after-request="document.getElementById('results').innerHTML=''">{{ title }}</a>
-            </li>
-        {% endfor %}
-    </ul>
+  <ul class="result-list" role="listbox">
+    {% for title in titles %}
+      <li class="result-list__item">
+        <a class="result-list__link" href="/article/{{ title|urlencode }}">
+          {{ title }}
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
 {% elif q %}
-    <p class="no-results">No articles match &ldquo;{{ q }}&rdquo;.</p>
+  <p class="no-results">No articles match &ldquo;{{ q }}&rdquo;.</p>
 {% endif %}
-{# An empty `q` renders nothing — the placeholder text in the input is
-   sufficient guidance and an empty results panel is the cleanest state. #}

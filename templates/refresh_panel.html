@@ -1,37 +1,29 @@
-{# HTMX fragment: status panel for a single wiki refresh job.
-   When the job is active the div polls itself every 3 seconds via outerHTML
-   swap. When the job is complete or failed the returned div has no polling
-   attributes and polling stops naturally. #}
 <div id="refresh-status-panel-{{ wiki }}"
      {% if job and job.status in ('pending', 'downloading', 'parsing', 'rebuilding') %}
      hx-get="/refresh/status/{{ wiki }}"
      hx-trigger="every 3s"
      hx-target="this"
      hx-swap="outerHTML"
-     {% endif %}
-     class="refresh-panel">
-
+     {% endif %}>
   {% if not job %}
-    <p class="refresh-idle">No refresh has been run yet.</p>
+    <p class="empty-state">No refresh has been run yet.</p>
   {% else %}
-    <div class="refresh-status-row">
-      <span class="refresh-badge refresh-badge--{{ job.status }}">{{ job.status }}</span>
-      {% if elapsed %}<span class="refresh-elapsed">{{ elapsed }}</span>{% endif %}
-      {% if started_at_display %}<span class="refresh-elapsed">{{ started_at_display }}</span>{% endif %}
+    <div class="status-row">
+      <span class="chip chip--status-{{ job.status }}">{{ job.status }}</span>
+      {% if elapsed %}<span class="meta-text">{{ elapsed }}</span>{% endif %}
+      {% if started_at_display %}<span class="meta-text">{{ started_at_display }}</span>{% endif %}
     </div>
-
     {% if job.status in ('parsing', 'rebuilding', 'complete') %}
-    <dl class="refresh-counts">
-      <dt>Scanned</dt>  <dd>{{ "{:,}".format(job.articles_scanned) }}</dd>
-      <dt>Skipped</dt>  <dd>{{ "{:,}".format(job.articles_skipped) }}</dd>
-      <dt>Updated</dt>  <dd>{{ "{:,}".format(job.articles_updated) }}</dd>
-      <dt>Inserted</dt> <dd>{{ "{:,}".format(job.articles_inserted) }}</dd>
-      <dt>Archived</dt> <dd>{{ "{:,}".format(job.articles_archived) }}</dd>
+    <dl class="stat-grid">
+      <div class="stat"><dt>Scanned</dt><dd>{{ "{:,}".format(job.articles_scanned) }}</dd></div>
+      <div class="stat"><dt>Skipped</dt><dd>{{ "{:,}".format(job.articles_skipped) }}</dd></div>
+      <div class="stat"><dt>Updated</dt><dd>{{ "{:,}".format(job.articles_updated) }}</dd></div>
+      <div class="stat"><dt>Inserted</dt><dd>{{ "{:,}".format(job.articles_inserted) }}</dd></div>
+      <div class="stat"><dt>Archived</dt><dd>{{ "{:,}".format(job.articles_archived) }}</dd></div>
     </dl>
     {% endif %}
-
     {% if job.status == 'failed' %}
-    <p class="refresh-error">{{ job.error_message }}</p>
+    <p class="callout callout--error">{{ job.error_message }}</p>
     {% endif %}
   {% endif %}
 </div>
