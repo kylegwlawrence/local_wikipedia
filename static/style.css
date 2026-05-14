@@ -872,6 +872,19 @@ a.wiki-badge--switch:hover {
     background: #eaeefa;
 }
 
+/* The two "Embed + links" / "Embed + links²" buttons share a min-width so
+   their counts ("(47)", "(3,402)") fit and the buttons line up visually.
+   ``flex-shrink: 0`` is critical: the parent ``.article-controls`` is a
+   flex-wrap row, and with the default ``flex-shrink: 1`` a wide count would
+   get squeezed past the right edge (white-space: nowrap means it overflows
+   the button's background instead of wrapping). */
+.embed-btn[hx-post^="/embed-links/"],
+.embed-btn[hx-post^="/embed-links-2/"] {
+    flex-shrink: 0;
+    min-width: 12rem;
+    text-align: center;
+}
+
 .embed-badge {
     display: inline-block;
     padding: 0.4rem 0.9rem;

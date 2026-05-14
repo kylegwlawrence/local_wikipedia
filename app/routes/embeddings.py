@@ -15,7 +15,7 @@ from rag.embed import (
     delete_article as rag_delete_article,
     embed_one as rag_embed_one,
 )
-from rag.links import extract_article_links
+from rag.links import count_unembedded_1hop, count_unembedded_2hop, extract_article_links
 from rag.schema import connect_rag
 
 router = APIRouter()
@@ -90,11 +90,31 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
     embedded = False
     links_embedded = False
     if rag_conn is not None:
-        try:
-            row = rag_conn.execute("SELECT links_embedded FROM articles_meta WHERE title = ?", (title,)).fetchone()
-            embedded = row is not None
-            links_embedded = bool(row and row["links_embedded"])
-        finally:
+        row = rag_conn.execute("SELECT links_embedded FROM articles_meta WHERE title = ?", (title,)).fetchone()
+        embedded = row is not None
+        links_embedded = bool(row and row["links_embedded"])
+
+    # Compute the 1-hop unembedded-link count inline so the button can render
+    # "Embed + links (N)". The wiki-DB lookup + one mwparserfromhell parse is
+    # cheap enough to do during the widget's HTMX load. The 2-hop count is
+    # heavier and is fetched separately by the widget via /embed-count-2.
+    wiki_conn = connect(request)
+    link_count_1hop: int | None = None
+    try:
+        src = wiki_conn.execute(
+            "SELECT title, text_content FROM articles WHERE title = ?",
+            (title,),
+        ).fetchone()
+        if src is not None:
+            link_count_1hop = count_unembedded_1hop(
+                wiki_conn,
+                rag_conn,
+                src["title"],
+                src["text_content"],
+            )
+    finally:
+        wiki_conn.close()
+        if rag_conn is not None:
             rag_conn.close()
 
     return templates.TemplateResponse(
@@ -105,8 +125,50 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
             "embedded": embedded,
             "links_embedded": links_embedded,
             "error": False,
+            "link_count_1hop": link_count_1hop,
         },
     )
+
+
+@router.get("/embed-count-2/{title:path}", response_class=HTMLResponse)
+def embed_count_2(request: Request, title: str) -> HTMLResponse:
+    """Return the 2-hop unembedded-link count as a small HTML fragment.
+
+    Called by the widget's ``<span class="link-count" hx-get=...>`` placeholder
+    so the (potentially seconds-long) traversal doesn't block initial widget
+    render. The response replaces the placeholder via ``hx-swap="outerHTML"``.
+    On a missing article or any traversal error the placeholder collapses to
+    an empty span — a missing count is better than a stuck "…" placeholder.
+    """
+    wiki = active_wiki(request)
+    rag_conn = rag_connect(wiki)
+    wiki_conn = connect(request)
+    count: int | None = None
+    try:
+        src = wiki_conn.execute(
+            "SELECT title, text_content FROM articles WHERE title = ?",
+            (title,),
+        ).fetchone()
+        if src is not None:
+            try:
+                count = count_unembedded_2hop(
+                    wiki_conn,
+                    rag_conn,
+                    src["title"],
+                    src["text_content"],
+                )
+            except Exception as exc:
+                print(
+                    f"[embed_count_2] error counting {title!r}: {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+    finally:
+        wiki_conn.close()
+        if rag_conn is not None:
+            rag_conn.close()
+    if count is None:
+        return HTMLResponse('<span class="link-count"></span>')
+    return HTMLResponse(f'<span class="link-count"> ({count:,})</span>')
 
 
 @router.post("/embed-article/{title:path}", response_class=HTMLResponse)
