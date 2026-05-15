@@ -54,6 +54,28 @@ FIXTURE_ARTICLES = [
         "title": "LoopB",
         "wikitext": "#REDIRECT [[LoopA]]",
     },
+    # Two large articles (>3 KB wikitext) so the daily-articles picker —
+    # which filters out stubs — finds candidates against the fixture DB.
+    {
+        "page_id": 8,
+        "title": "Aurora",
+        "wikitext": (
+            "'''Aurora''' is a natural light display in Earth's sky, "
+            "predominantly seen in high-latitude regions. "
+            + "Auroras display dynamic patterns of brilliant lights that appear as curtains, rays, or spirals. "
+            * 50
+        ),
+    },
+    {
+        "page_id": 9,
+        "title": "Cascade",
+        "wikitext": (
+            "'''Cascade''' is a small waterfall, typically one of several "
+            "that fall in stages down a steep rocky slope. "
+            + "Cascades are formed when water flows over rocks of differing hardness. "
+            * 50
+        ),
+    },
 ]
 
 

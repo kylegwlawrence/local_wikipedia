@@ -116,6 +116,9 @@ _SENTENCE_END_RE = re.compile(r"\.(?=\s+[A-Z])")
 _SNIPPET_MAX_CHARS = 240
 _SNIPPET_MIN_CHARS = 10
 
+# Skip stubs / very short articles when picking daily features.
+_MIN_DAILY_ARTICLE_BYTES = 3000
+
 
 def _today_iso() -> str:
     """Return today's date as ``YYYY-MM-DD`` (server-local)."""
@@ -147,7 +150,11 @@ def _pick_random_articles(
     Uses indexed ``page_id``-offset selection so it stays O(log n) on 19M-row
     DBs, unlike ``ORDER BY RANDOM()`` which scans the full table.
     """
-    row = conn.execute("SELECT MAX(page_id) AS max_id FROM articles WHERE namespace = 0").fetchone()
+    row = conn.execute(
+        "SELECT MAX(page_id) AS max_id FROM articles "
+        "WHERE namespace = 0 AND text_bytes >= ?",
+        (_MIN_DAILY_ARTICLE_BYTES,),
+    ).fetchone()
     if not row or not row["max_id"]:
         return []
     max_id = int(row["max_id"])
@@ -159,8 +166,9 @@ def _pick_random_articles(
         offset = random.randint(1, max_id)
         cur = conn.execute(
             "SELECT page_id, title, text_content FROM articles "
-            "WHERE namespace = 0 AND page_id >= ? ORDER BY page_id LIMIT 1",
-            (offset,),
+            "WHERE namespace = 0 AND text_bytes >= ? AND page_id >= ? "
+            "ORDER BY page_id LIMIT 1",
+            (_MIN_DAILY_ARTICLE_BYTES, offset),
         )
         article = cur.fetchone()
         if not article or article["page_id"] in seen:

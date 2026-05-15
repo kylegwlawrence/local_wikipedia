@@ -86,6 +86,17 @@ class TestDailyArticles:
             titles = set(self._card_titles(client.get("/").text))
             assert not (titles & self.REDIRECT_TITLES)
 
+    def test_small_articles_never_appear_as_cards(self, client, monkeypatch):
+        # April / Apple / Python wikitexts are all <100 bytes — well below
+        # the 3 KB minimum — so the picker must skip them.
+        from app import helpers
+
+        small_titles = {"April", "Apple", "Python (programming language)"}
+        for i in range(20):
+            monkeypatch.setattr(helpers, "_today_iso", lambda i=i: f"2099-02-{i + 1:02d}")
+            titles = set(self._card_titles(client.get("/").text))
+            assert not (titles & small_titles)
+
     def test_extract_first_sentence_strips_markup(self):
         from app.helpers import _extract_first_sentence
 
