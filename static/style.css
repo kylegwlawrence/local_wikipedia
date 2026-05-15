@@ -659,24 +659,24 @@ a.chip--switchable:hover {
   border: 1px solid transparent;
 }
 .chip--infobox {
-  background: rgba(76, 175, 80, 0.80);
+  background: rgba(251, 192, 45, 0.50);
 }
 .chip--table {
-  background: rgba(170, 30, 180, 0.80);
+  background: rgba(170, 30, 180, 0.50);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .chip--infobox {
-    background: rgba(102, 187, 106, 0.80);
+    background: rgba(251, 192, 45, 0.90);
   }
   :root:not([data-theme="light"]) .chip--table {
-    background: rgba(186, 80, 196, 0.80);
+    background: rgba(186, 80, 196, 0.90);
   }
 }
 [data-theme="dark"] .chip--infobox {
-  background: rgba(102, 187, 106, 0.80);
+  background: rgba(251, 192, 45, 0.90);
 }
 [data-theme="dark"] .chip--table {
-  background: rgba(186, 80, 196, 0.80);
+  background: rgba(186, 80, 196, 0.90);
 }
 
 /* =====================================================================
