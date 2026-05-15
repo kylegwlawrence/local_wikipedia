@@ -317,17 +317,6 @@ body {
   font-weight: var(--weight-medium);
 }
 
-.sidebar-item--active::before {
-  content: '';
-  position: absolute;
-  left: -var(--space-2);
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--color-primary);
-}
-
 .sidebar-item--active:hover {
   background: color-mix(in srgb, var(--color-primary-container) 90%, var(--color-primary) 10%);
   color: var(--color-primary-on-container);
