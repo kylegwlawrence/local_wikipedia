@@ -14,6 +14,7 @@ import db as wiki_db
 import paths
 from paths import DEFAULT_WIKI
 from rag.schema import connect_rag
+from remote import RemoteSqliteConnection
 
 
 def active_wiki(request: Request) -> str:
@@ -32,13 +33,23 @@ def db_path(request: Request) -> pathlib.Path:
     return paths.db_path_for(active_wiki(request))
 
 
-def connect(request: Request) -> sqlite3.Connection:
-    """Open a per-request SQLite connection with row-dict access.
+def connect(request: Request) -> sqlite3.Connection | RemoteSqliteConnection:
+    """Open a per-request connection to the active wiki.
+
+    Returns a local ``sqlite3.Connection`` for local wikis, or a
+    :class:`RemoteSqliteConnection` (same ``execute / fetchone / fetchall /
+    commit / close`` surface) when the wiki is configured as remote via
+    ``WIKI_REMOTE_<WIKI>``. The ``WIKI_DB`` env var (used by tests) wins over
+    remote config so suites can force a local fixture.
 
     Raises:
-        HTTPException: 503 if the configured database file does not exist —
-            surfaces a clear error when the web app starts before the parser.
+        HTTPException: 503 if a local DB is selected but the file is missing.
     """
+    wiki = active_wiki(request)
+    if "WIKI_DB" not in os.environ:
+        remote_url = paths.remote_url_for(wiki)
+        if remote_url is not None:
+            return RemoteSqliteConnection(remote_url, wiki)
     path = db_path(request)
     if not path.exists():
         raise HTTPException(status_code=503, detail=f"Database not found: {path}")

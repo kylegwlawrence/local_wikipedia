@@ -30,8 +30,9 @@ local_wikipedia/
       refresh.py         POST /refresh, GET /refresh/status
       embeddings.py      /embed-manager, /embed-status, /embed-article, /embed-links, /embed/{wiki}/{title}, /embed-all, /embed/reembed
       active_embedding.py /active-embedding (+ /jobs, /panel, /cancel)
-  paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, rag_db_path_for
+  paths.py          BASE_DIR, DUMPS_DIR, DEFAULT_WIKI, JOBS_DB, KNOWN_WIKIS, rag_db_path_for, remote_url_for, is_remote
   db.py             connect(), redirect_target(), resolve_redirect() — shared by app + embed pipeline
+  remote.py         RemoteSqliteConnection — SQL-over-HTTP proxy that mimics sqlite3.Connection (placeholder; server endpoint not yet implemented)
   jobs/             job-queue CRUD package
     __init__.py
     refresh.py      CRUD helpers for refresh_jobs table in dumps/jobs.db
@@ -237,6 +238,17 @@ UI-triggered batch embedding: clicking "Embed + links" on an article enqueues th
 - **Worker** (`workers/embed.py`): drains the queue serially via `rag.embed.embed_one`; checks `cancel_requested` between items for clean cancellation; writes output to `dumps/{wiki}_embed.log`.
 - **Shared DB**: embed jobs share `dumps/jobs.db` with refresh jobs but use separate tables (`embed_jobs`, `embed_job_items`) — both are created idempotently in `embed_jobs.ensure_embed_schema`.
 - `db.redirect_target()` and `db.resolve_redirect()` live in `db.py` (not `app/`) so the embed pipeline can use them without importing the FastAPI app.
+
+### Remote wiki backend (`remote.py`, placeholder)
+
+Forward-prep for hosting a wiki (e.g. full `enwiki`) on a different machine. The design is a thin SQL-over-HTTP proxy: `app.deps.connect()` returns a `RemoteSqliteConnection` when the active wiki is remote, and that object quacks like `sqlite3.Connection` — same `execute / fetchone / fetchall / commit / close` surface — so existing call sites in `app.helpers`, `db.py`, etc. keep working unchanged. The server-side endpoint that consumes this is **not yet implemented**; setting the env var today will start sending traffic to a non-existent endpoint and surface a `RemoteSqliteError` on the first query.
+
+- **Config**: `paths.remote_url_for(wiki)` reads `WIKI_REMOTE_<WIKI_UPPER>` (e.g. `WIKI_REMOTE_ENWIKI=http://192.168.1.10:8000`); `paths.is_remote(wiki)` is the boolean check. Read on each call — no module-level caching — so tests and live reloads see the current env.
+- **Connection proxy** (`remote.py`): `RemoteSqliteConnection.execute(sql, params)` POSTs to `/api/sql/{wiki}` and returns a `RemoteCursor` over `RemoteRow` objects. `RemoteRow` mirrors `sqlite3.Row` (dict + index access, case-insensitive column lookup, value iteration). The wire contract lives in `docs/apis/REMOTE_WIKI_API.md`.
+- **Dispatch**: `app.deps.connect()` picks the proxy when `WIKI_REMOTE_<WIKI>` is set, the local `sqlite3.Connection` otherwise. The `WIKI_DB` env var (test/dev override) wins over remote config so suites can force a local fixture.
+- **Transaction semantics**: each `execute` round-trips and autocommits on the remote. `commit()` is a no-op; `rollback()` raises `RemoteSqliteError` to fail loudly rather than silently. Code that relies on multi-statement transactions (e.g. `BEGIN IMMEDIATE` in the refresh-job scheduler) is local-machine-only by design.
+- **Trust model**: plain HTTP, no auth — assumes a LAN / Tailscale / WireGuard network. Add bearer-token middleware here if the remote is ever exposed publicly.
+- **Out of scope** for this placeholder: the `POST /api/sql/{wiki}` endpoint on the local app (will need to be added before this can talk to a real remote), RAG/embed pipeline remoting, BLOB columns.
 
 ### RAG pipeline (`rag/`)
 

@@ -1,5 +1,6 @@
 """Project paths, resolved relative to this file (not the working directory)."""
 
+import os
 import pathlib
 
 BASE_DIR = pathlib.Path(__file__).parent.resolve()
@@ -22,3 +23,22 @@ def db_path_for(wiki: str) -> pathlib.Path:
 def rag_db_path_for(wiki: str) -> pathlib.Path:
     """RAG database path for a wiki (``dumps/{wiki}_rag.db``)."""
     return DUMPS_DIR / f"{wiki}_rag.db"
+
+
+def remote_url_for(wiki: str) -> str | None:
+    """Return the configured remote base URL for ``wiki``, or ``None`` if local.
+
+    Env var format: ``WIKI_REMOTE_<WIKI_UPPER>``, e.g.
+    ``WIKI_REMOTE_ENWIKI=http://192.168.1.10:8000``. Read on each call so tests
+    (and a live config reload) see the current environment. Trailing slashes
+    are stripped so callers can append ``/api/v1/...`` consistently.
+    """
+    url = os.environ.get(f"WIKI_REMOTE_{wiki.upper()}")
+    if not url:
+        return None
+    return url.rstrip("/")
+
+
+def is_remote(wiki: str) -> bool:
+    """Return ``True`` if ``wiki`` is configured to use a remote backend."""
+    return remote_url_for(wiki) is not None
