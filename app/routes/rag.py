@@ -70,6 +70,7 @@ class Hit(BaseModel):
     chunk_index: int
     text: str
     text_length: int
+    chunk_type: str
     score: float
 
 
@@ -150,6 +151,7 @@ def rag_retrieve(req: RetrieveRequest) -> RetrieveResponse:
             chunk_index=h.chunk_index,
             text=h.text,
             text_length=h.text_length,
+            chunk_type=h.chunk_type,
             score=h.score,
         )
         for h in result.hits

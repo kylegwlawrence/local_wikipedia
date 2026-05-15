@@ -53,7 +53,7 @@ A Python toolkit for downloading, parsing, and locally querying Wikipedia dumps.
 ### External RAG HTTP API
 - Retrieval-only JSON API for external chat applications to query the local index — no LLM generation happens server-side
 - `GET /rag/info` advertises server identity, embedding model + dimension, available corpora (only wikis whose `_rag.db` exists on disk), and the article URL template for building citation links
-- `POST /rag/retrieve` runs hybrid dense + sparse retrieval against a chosen corpus and returns ranked chunks with `corpus`, `chunk_id`, `page_id`, `title`, `section`, `chunk_index`, `text`, `text_length`, and `score`
+- `POST /rag/retrieve` runs hybrid dense + sparse retrieval against a chosen corpus and returns ranked chunks with `corpus`, `chunk_id`, `page_id`, `title`, `section`, `chunk_index`, `text`, `text_length`, `chunk_type` (`'prose'` / `'table'` / `'infobox'`), and `score`
 - Pydantic-validated requests: `top_k` clamped to `[1, 50]`, blank queries rejected with 422, unknown corpora rejected with 404
 
 ## Installation

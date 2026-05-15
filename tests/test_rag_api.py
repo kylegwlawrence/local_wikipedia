@@ -112,6 +112,7 @@ class TestRagRetrieve:
         assert top["section"] == "History"
         assert top["chunk_index"] == 0
         assert top["text_length"] == 38
+        assert top["chunk_type"] == "prose"
         assert top["score"] > 0
         # Spec'd hit fields all present.
         for field in (
@@ -123,6 +124,7 @@ class TestRagRetrieve:
             "chunk_index",
             "text",
             "text_length",
+            "chunk_type",
             "score",
         ):
             assert field in top

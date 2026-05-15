@@ -66,6 +66,7 @@ Response:
       "chunk_index": 2,
       "text": "Photosynthesis is the process by which …",
       "text_length": 1432,
+      "chunk_type": "prose",
       "score": 0.0317
     }
   ]
@@ -180,6 +181,7 @@ class Hit:
     chunk_index: int         # position within the section (0, 1, 2, …)
     text: str                # plain text, already stripped of wikitext markup
     text_length: int         # character count of text
+    chunk_type: str          # 'prose' | 'table' | 'infobox' — origin of the chunk
     score: float             # RRF score — ordering only, not a threshold
 
 class RetrieveResponse:
@@ -297,7 +299,8 @@ def test_chat_uses_retrieved_context():
         "used_dense": True,
         "hits": [{"corpus": "simplewiki", "chunk_id": 1, "page_id": 1,
                   "title": "Photosynthesis", "section": None, "chunk_index": 0,
-                  "text": "Photosynthesis is …", "text_length": 20, "score": 0.5}],
+                  "text": "Photosynthesis is …", "text_length": 20,
+                  "chunk_type": "prose", "score": 0.5}],
     })
     # …call your chat code, assert it formatted the prompt correctly
 ```
