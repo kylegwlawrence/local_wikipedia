@@ -436,21 +436,26 @@ class TestEmbedLinks2:
 class TestEmbedStatusWidget:
     """`GET /embed-status/{title}` reflects whether links have been embedded."""
 
-    def test_shows_embed_links_button_when_no_job(self, embed_client):
-        resp = embed_client.get("/embed-status/April")
-        assert resp.status_code == 200
-        assert "Embed + links" in resp.text
-        # The 2-hop button (Embed + links²) sits next to it.
-        assert "/embed-links-2/April" in resp.text
-        assert "links embedded" not in resp.text
-
-    def test_shows_1hop_count_inline(self, embed_client):
+    def test_shows_success_chip_when_no_unembedded_links(self, embed_client):
         # April's wikitext links to [[month]]; Month isn't in the fixture wiki
         # DB so the worker would mark it ``not_found``. The 1-hop count
-        # excludes not_found targets, so the badge reads "(0)".
+        # excludes not_found targets, leaving 0 — same success state as if the
+        # action had been run, so the button is replaced by the chip.
         resp = embed_client.get("/embed-status/April")
         assert resp.status_code == 200
-        assert "Embed + links (0)" in resp.text
+        assert "links embedded" in resp.text
+        assert 'hx-post="/embed-links/April"' not in resp.text
+        # The 2-hop button (Embed + links²) still renders next to it.
+        assert "/embed-links-2/April" in resp.text
+
+    def test_shows_button_with_count_when_unembedded_links_exist(self, embed_client, monkeypatch):
+        import app.routes.embeddings as embed_routes
+
+        monkeypatch.setattr(embed_routes, "count_unembedded_1hop", lambda *a, **kw: 5)
+        resp = embed_client.get("/embed-status/April")
+        assert resp.status_code == 200
+        assert "Embed + links (5)" in resp.text
+        assert 'hx-post="/embed-links/April"' in resp.text
 
     def test_shows_2hop_count_placeholder(self, embed_client):
         # The widget should render the async-loading span for the 2-hop count.
@@ -513,8 +518,13 @@ class TestEmbedStatusWidget:
         assert "links² embedded" in resp.text
         assert 'hx-post="/embed-links-2/April"' not in resp.text
 
-    def test_running_job_does_not_show_badge(self, embed_client):
+    def test_running_job_does_not_show_badge(self, embed_client, monkeypatch):
         # A running (not yet complete) job should not trigger the badge.
+        # Force a non-zero 1-hop count so the chip isn't shown for the other
+        # reason (count==0).
+        import app.routes.embeddings as embed_routes
+
+        monkeypatch.setattr(embed_routes, "count_unembedded_1hop", lambda *a, **kw: 5)
         conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
         try:
             embed_client.embed_jobs.create_job(conn, "enwiki", "/tmp/x.log", "April")

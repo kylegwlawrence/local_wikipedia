@@ -3,7 +3,7 @@
   <span class="chip chip--status-complete">
     {% from "_icons.html" import check %}{{ check(size=14) }} embedded
   </span>
-  {% if links_embedded %}
+  {% if links_embedded or link_count_1hop == 0 %}
   <span class="chip chip--status-complete">
     {% from "_icons.html" import check %}{{ check(size=14) }} links embedded
   </span>
@@ -41,7 +41,7 @@
           hx-indicator="#embed-spinner">
     Retry
   </button>
-  {% if links_embedded %}
+  {% if links_embedded or link_count_1hop == 0 %}
   <span class="chip chip--status-complete">
     {% from "_icons.html" import check %}{{ check(size=14) }} links embedded
   </span>
@@ -77,7 +77,7 @@
           hx-indicator="#embed-spinner">
     Embed
   </button>
-  {% if links_embedded %}
+  {% if links_embedded or link_count_1hop == 0 %}
   <span class="chip chip--status-complete">
     {% from "_icons.html" import check %}{{ check(size=14) }} links embedded
   </span>
