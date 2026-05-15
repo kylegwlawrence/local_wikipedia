@@ -82,7 +82,7 @@ def render_active_embedding_panel(
         list_total = 0
         list_counts: dict[int, dict[str, int]] = {}
         if not fragment_only:
-            list_jobs, list_total = embed_jobs.get_jobs_page(conn)
+            list_jobs, list_total = embed_jobs.get_jobs_page(conn, wiki=wiki)
             list_counts = embed_jobs.get_item_counts_for_jobs(conn, [j["id"] for j in list_jobs])
     finally:
         conn.close()
@@ -146,7 +146,7 @@ def render_job_list_panel(
     """Render the paginated job list fragment for HTMX search/pagination."""
     conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
     try:
-        jobs, total = embed_jobs.get_jobs_page(conn, q=q, page=page)
+        jobs, total = embed_jobs.get_jobs_page(conn, wiki=wiki, q=q, page=page)
         counts = embed_jobs.get_item_counts_for_jobs(conn, [j["id"] for j in jobs])
     finally:
         conn.close()

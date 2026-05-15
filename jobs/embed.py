@@ -313,17 +313,22 @@ def get_item_counts_for_jobs(conn: sqlite3.Connection, job_ids: list[int]) -> di
 
 def get_jobs_page(
     conn: sqlite3.Connection,
+    wiki: str | None = None,
     q: str = "",
     page: int = 1,
     per_page: int = 5,
 ) -> tuple[list[sqlite3.Row], int]:
-    """Return ``(rows, total)`` across all wikis with pagination and optional search.
+    """Return ``(rows, total)`` with pagination and optional search/wiki filter.
 
-    If ``q`` is a digit string (optionally prefixed with ``#``) the search
-    filters by job id.  Otherwise it filters by ``triggered_by_title LIKE``.
+    If ``wiki`` is given, only jobs for that wiki are returned. If ``q`` is a
+    digit string (optionally prefixed with ``#``) the search filters by job id.
+    Otherwise it filters by ``triggered_by_title LIKE``.
     """
     where_clauses: list[str] = []
     params: list = []
+    if wiki:
+        where_clauses.append("wiki = ?")
+        params.append(wiki)
     q = q.strip()
     if q:
         stripped = q.lstrip("#")
