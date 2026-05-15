@@ -1,6 +1,6 @@
 <div id="active-embedding-panel"
      {% if job and job.status == 'running' and not job.cancel_requested %}
-     hx-get="/active-embedding/panel"
+     hx-get="/active-embedding/panel?panel_page={{ panel_page }}"
      hx-trigger="every 3s"
      hx-target="this"
      hx-swap="outerHTML"
@@ -35,6 +35,16 @@
     {% endif %}
     {% if job.error_message %}<p class="callout callout--error">{{ job.error_message }}</p>{% endif %}
 
+    {% set panel_job_path = ('/' ~ job.id) if job and job.id else '' %}
+    {% if panel_total %}
+    <div class="status-row" style="margin-top: var(--space-3);">
+      <span class="meta-text">
+        Showing {{ "{:,}".format((panel_page - 1) * panel_per_page + 1) }}–{{ "{:,}".format([panel_page * panel_per_page, panel_total]|min) }}
+        of {{ "{:,}".format(panel_total) }} item{{ "s" if panel_total != 1 }}
+      </span>
+    </div>
+    {% endif %}
+
     {% for source_title, items in grouped_items %}
     <section class="job-source-group">
       <h3 class="job-source-group__title">
@@ -58,5 +68,23 @@
       </table>
     </section>
     {% endfor %}
+
+    {% if panel_total_pages > 1 %}
+    <div class="pagination">
+      {% if panel_page > 1 %}
+      <a class="btn-outlined btn-outlined--sm"
+         hx-get="/active-embedding/panel{{ panel_job_path }}?panel_page={{ panel_page - 1 }}"
+         hx-target="#active-embedding-panel"
+         hx-swap="outerHTML">← Prev</a>
+      {% endif %}
+      <span class="meta-text">Page {{ panel_page }} of {{ panel_total_pages }}</span>
+      {% if panel_page < panel_total_pages %}
+      <a class="btn-outlined btn-outlined--sm"
+         hx-get="/active-embedding/panel{{ panel_job_path }}?panel_page={{ panel_page + 1 }}"
+         hx-target="#active-embedding-panel"
+         hx-swap="outerHTML">Next →</a>
+      {% endif %}
+    </div>
+    {% endif %}
   {% endif %}
 </div>

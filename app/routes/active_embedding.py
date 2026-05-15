@@ -17,9 +17,11 @@ router = APIRouter()
 
 
 @router.get("/active-embedding", response_class=HTMLResponse)
-def active_embedding(request: Request) -> HTMLResponse:
+def active_embedding(request: Request, panel_page: int = 1) -> HTMLResponse:
     wiki = active_wiki(request)
-    return render_active_embedding_panel(request, wiki, fragment_only=False)
+    return render_active_embedding_panel(
+        request, wiki, fragment_only=False, panel_page=panel_page
+    )
 
 
 @router.get("/active-embedding/jobs", response_class=HTMLResponse)
@@ -40,15 +42,21 @@ def delete_all_jobs(request: Request) -> Response:
 
 
 @router.get("/active-embedding/panel", response_class=HTMLResponse)
-def active_embedding_panel(request: Request) -> HTMLResponse:
+def active_embedding_panel(request: Request, panel_page: int = 1) -> HTMLResponse:
     wiki = active_wiki(request)
-    return render_active_embedding_panel(request, wiki, fragment_only=True)
+    return render_active_embedding_panel(
+        request, wiki, fragment_only=True, panel_page=panel_page
+    )
 
 
 @router.get("/active-embedding/panel/{job_id}", response_class=HTMLResponse)
-def active_embedding_panel_for_job(request: Request, job_id: int) -> HTMLResponse:
+def active_embedding_panel_for_job(
+    request: Request, job_id: int, panel_page: int = 1
+) -> HTMLResponse:
     wiki = active_wiki(request)
-    return render_active_embedding_panel(request, wiki, fragment_only=True, job_id=job_id)
+    return render_active_embedding_panel(
+        request, wiki, fragment_only=True, job_id=job_id, panel_page=panel_page
+    )
 
 
 @router.post("/active-embedding/cancel/{job_id}", response_class=HTMLResponse)

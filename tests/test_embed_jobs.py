@@ -131,6 +131,29 @@ class TestItems:
         assert row["chunk_count"] == 5
         assert row["finished_at"] is not None
 
+    def test_get_items_page_paginates_in_insertion_order(self, tmp_path):
+        conn = _conn(tmp_path)
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        embed_jobs.append_items(
+            conn, job_id, [(f"T{i:03d}", "Src", 0) for i in range(250)]
+        )
+
+        rows, total = embed_jobs.get_items_page(conn, job_id, page=1, per_page=100)
+        assert total == 250
+        assert len(rows) == 100
+        assert rows[0]["title"] == "T000"
+        assert rows[-1]["title"] == "T099"
+
+        rows, _ = embed_jobs.get_items_page(conn, job_id, page=3, per_page=100)
+        assert len(rows) == 50
+        assert rows[0]["title"] == "T200"
+        assert rows[-1]["title"] == "T249"
+
+        # Page beyond last returns empty rows but correct total.
+        rows, total = embed_jobs.get_items_page(conn, job_id, page=99, per_page=100)
+        assert rows == []
+        assert total == 250
+
     def test_count_items_by_status(self, tmp_path):
         conn = _conn(tmp_path)
         job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")

@@ -478,6 +478,37 @@ class TestActiveEmbedding:
         assert resp.status_code == 200
         assert 'hx-trigger="every 3s"' in resp.text
 
+    def test_items_paginate_at_100_per_page(self, embed_client):
+        # Seed a job with 150 items directly in jobs.db.
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            job_id = embed_client.embed_jobs.create_job(
+                conn, "enwiki", "/tmp/x.log", "Seed"
+            )
+            embed_client.embed_jobs.append_items(
+                conn, job_id, [(f"Item{i:03d}", "Seed", 0) for i in range(150)]
+            )
+        finally:
+            conn.close()
+
+        # Page 1: shows first 100 items, has "Next →" link.
+        resp = embed_client.get("/active-embedding")
+        assert resp.status_code == 200
+        assert "Item000" in resp.text
+        assert "Item099" in resp.text
+        assert "Item100" not in resp.text
+        assert "Page 1 of 2" in resp.text
+        assert "panel_page=2" in resp.text
+
+        # Page 2: shows remaining 50 items, has "← Prev" link.
+        resp = embed_client.get("/active-embedding?panel_page=2")
+        assert resp.status_code == 200
+        assert "Item099" not in resp.text
+        assert "Item100" in resp.text
+        assert "Item149" in resp.text
+        assert "Page 2 of 2" in resp.text
+        assert "panel_page=1" in resp.text
+
     def test_cancel_sets_flag_and_stops_polling(self, embed_client):
         embed_client.post("/embed-links/April", follow_redirects=False)
         conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)

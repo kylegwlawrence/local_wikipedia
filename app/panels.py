@@ -40,18 +40,23 @@ def render_status_panel(request: Request, wiki: str, job: sqlite3.Row | None) ->
     )
 
 
+ITEMS_PER_PAGE = 100
+
+
 def render_active_embedding_panel(
     request: Request,
     wiki: str,
     *,
     fragment_only: bool,
     job_id: int | None = None,
+    panel_page: int = 1,
 ) -> HTMLResponse:
     """Render the active embedding panel (HTMX-polled inner content).
 
     If ``fragment_only`` is True returns just the panel fragment for HTMX
     polling; otherwise returns the full ``active_embedding.html`` page.
     If ``job_id`` is given, show that specific job instead of the most recent.
+    ``panel_page`` selects the 100-item page of the items table.
     """
     conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
     try:
@@ -65,8 +70,12 @@ def render_active_embedding_panel(
 
         items_by_job: dict[int, list[dict]] = {}
         counts_by_job: dict[int, dict[str, int]] = {}
+        panel_total = 0
         if active is not None:
-            items_by_job[active["id"]] = [dict(r) for r in embed_jobs.get_items(conn, active["id"])]
+            page_rows, panel_total = embed_jobs.get_items_page(
+                conn, active["id"], page=panel_page, per_page=ITEMS_PER_PAGE
+            )
+            items_by_job[active["id"]] = [dict(r) for r in page_rows]
             counts_by_job[active["id"]] = embed_jobs.count_items_by_status(conn, active["id"])
 
         list_jobs: list[sqlite3.Row] = []
@@ -98,6 +107,9 @@ def render_active_embedding_panel(
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
     other_wiki_for_template = other_wiki if paths.db_path_for(other_wiki).exists() else None
 
+    panel_total_pages = math.ceil(panel_total / ITEMS_PER_PAGE) if panel_total else 0
+    panel_page_clamped = max(1, min(panel_page, panel_total_pages or 1))
+
     template = "active_embedding_panel.html" if fragment_only else "active_embedding.html"
     return templates.TemplateResponse(
         request,
@@ -117,6 +129,10 @@ def render_active_embedding_panel(
             "list_page": 1,
             "list_total_pages": math.ceil(list_total / 5) if list_total else 0,
             "list_q": "",
+            "panel_page": panel_page_clamped,
+            "panel_total": panel_total,
+            "panel_total_pages": panel_total_pages,
+            "panel_per_page": ITEMS_PER_PAGE,
         },
     )
 

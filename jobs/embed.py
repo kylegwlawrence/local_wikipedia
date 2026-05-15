@@ -220,6 +220,27 @@ def get_items(conn: sqlite3.Connection, job_id: int) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def get_items_page(
+    conn: sqlite3.Connection,
+    job_id: int,
+    page: int = 1,
+    per_page: int = 100,
+) -> tuple[list[sqlite3.Row], int]:
+    """Return ``(rows, total)`` for one page of items in insertion order."""
+    total: int = conn.execute(
+        "SELECT COUNT(*) FROM embed_job_items WHERE job_id = ?",
+        (job_id,),
+    ).fetchone()[0]
+    if page < 1:
+        page = 1
+    offset = (page - 1) * per_page
+    rows = conn.execute(
+        "SELECT * FROM embed_job_items WHERE job_id = ? ORDER BY id LIMIT ? OFFSET ?",
+        (job_id, per_page, offset),
+    ).fetchall()
+    return rows, total
+
+
 def get_next_queued(conn: sqlite3.Connection, job_id: int) -> sqlite3.Row | None:
     """Return the oldest queued item for ``job_id``, or None if the queue is empty."""
     return conn.execute(
