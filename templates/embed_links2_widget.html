@@ -1,0 +1,38 @@
+{# 2-hop "Embed + links²" widget — used both for initial render (from
+   embed_status_widget.html) and as the response payload for /embed-count-2.
+
+   Context vars:
+     title                — article title (string)
+     links_embedded_2hop  — True if articles_meta says 2-hop is already done
+     link_count_2hop      — int unembedded count, or None when unknown
+     is_initial_render    — True for the embedded widget render (shows the
+                            async-loading placeholder); False from the
+                            /embed-count-2 response (which carries the real
+                            count).
+
+   The wrapper has a stable id so the async loader can target it directly
+   with hx-target="#embed-links-2-wrapper" — using `closest .class-selector`
+   from inside the <button> hit a swap edge case (an inner <button> in the
+   response triggered the parser to auto-close the outer one, stripping the
+   button styling).
+#}
+{% from "_icons.html" import check, link2 %}
+{% if links_embedded_2hop or link_count_2hop == 0 %}
+<span id="embed-links-2-wrapper">
+  <span class="chip chip--status-complete">
+    {{ check(size=14) }} links² embedded
+  </span>
+</span>
+{% else %}
+<span id="embed-links-2-wrapper">
+  <button class="btn-outlined btn-outlined--sm"
+          hx-post="/embed-links-2/{{ title|urlencode }}" hx-swap="none">
+    {{ link2(size=14) }}
+    Embed + links²{% if is_initial_render %}<span class="link-count"
+      hx-get="/embed-count-2/{{ title|urlencode }}"
+      hx-trigger="load"
+      hx-target="#embed-links-2-wrapper"
+      hx-swap="outerHTML"> …</span>{% elif link_count_2hop is not none %} ({{ "{:,}".format(link_count_2hop) }}){% endif %}
+  </button>
+</span>
+{% endif %}

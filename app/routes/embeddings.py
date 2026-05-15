@@ -138,13 +138,14 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
 
 @router.get("/embed-count-2/{title:path}", response_class=HTMLResponse)
 def embed_count_2(request: Request, title: str) -> HTMLResponse:
-    """Return the 2-hop unembedded-link count as a small HTML fragment.
+    """Return the 2-hop button (or "links² embedded" chip) for the article.
 
-    Called by the widget's ``<span class="link-count" hx-get=...>`` placeholder
-    so the (potentially seconds-long) traversal doesn't block initial widget
-    render. The response replaces the placeholder via ``hx-swap="outerHTML"``.
-    On a missing article or any traversal error the placeholder collapses to
-    an empty span — a missing count is better than a stuck "…" placeholder.
+    Called by the widget's async-loading placeholder so the (potentially
+    seconds-long) traversal doesn't block initial widget render. The response
+    replaces the ``.embed-2-wrapper`` via ``hx-swap="outerHTML"`` so a count
+    of zero can flip the button to the success chip — same idea as the 1-hop
+    button. On a missing article or traversal error the count is ``None`` and
+    the button renders without a count badge.
     """
     wiki = active_wiki(request)
     rag_conn = rag_connect(wiki)
@@ -172,9 +173,16 @@ def embed_count_2(request: Request, title: str) -> HTMLResponse:
         wiki_conn.close()
         if rag_conn is not None:
             rag_conn.close()
-    if count is None:
-        return HTMLResponse('<span class="link-count"></span>')
-    return HTMLResponse(f'<span class="link-count"> ({count:,})</span>')
+    return templates.TemplateResponse(
+        request,
+        "embed_links2_widget.html",
+        {
+            "title": title,
+            "links_embedded_2hop": False,
+            "link_count_2hop": count,
+            "is_initial_render": False,
+        },
+    )
 
 
 @router.post("/embed-article/{title:path}", response_class=HTMLResponse)

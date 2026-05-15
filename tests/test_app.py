@@ -540,18 +540,37 @@ class TestEmbedStatusWidget:
 class TestEmbedCount2:
     """`GET /embed-count-2/{title}` returns the deferred 2-hop link count."""
 
-    def test_returns_count_fragment(self, embed_client):
+    def test_returns_success_chip_when_count_is_zero(self, embed_client):
         # April → [[month]]; Month is absent from the fixture wiki DB, so the
         # worker would mark it ``not_found`` and never embed it. The count
-        # excludes not_found targets, so the badge is 0.
+        # excludes not_found targets, so the result is 0 → success chip.
         resp = embed_client.get("/embed-count-2/April")
         assert resp.status_code == 200
-        assert resp.text == '<span class="link-count"> (0)</span>'
+        assert "links² embedded" in resp.text
+        assert 'class="chip chip--status-complete"' in resp.text
+        assert 'hx-post="/embed-links-2/April"' not in resp.text
 
-    def test_missing_article_returns_empty_fragment(self, embed_client):
+    def test_missing_article_renders_button_without_count(self, embed_client):
+        # Article isn't in the wiki DB → count is None → button renders with
+        # no count badge (and no async-loading placeholder either, since this
+        # response replaces it).
         resp = embed_client.get("/embed-count-2/DoesNotExist")
         assert resp.status_code == 200
-        assert resp.text == '<span class="link-count"></span>'
+        assert "Embed + links²" in resp.text
+        assert 'hx-post="/embed-links-2/DoesNotExist"' in resp.text
+        # No count badge, no loading placeholder.
+        assert "(0)" not in resp.text
+        assert 'class="link-count"' not in resp.text
+
+    def test_returns_button_with_count_when_unembedded_2hop_exist(self, embed_client, monkeypatch):
+        import app.routes.embeddings as embed_routes
+
+        monkeypatch.setattr(embed_routes, "count_unembedded_2hop", lambda *a, **kw: 7)
+        resp = embed_client.get("/embed-count-2/April")
+        assert resp.status_code == 200
+        assert "Embed + links² (7)" in resp.text
+        assert 'hx-post="/embed-links-2/April"' in resp.text
+        assert "links² embedded" not in resp.text
 
     def test_excludes_already_embedded(self, embed_client, tmp_path, monkeypatch):
         from rag.schema import connect_rag
@@ -572,7 +591,9 @@ class TestEmbedCount2:
 
         resp = embed_client.get("/embed-count-2/April")
         assert resp.status_code == 200
-        assert resp.text == '<span class="link-count"> (0)</span>'
+        # Count is 0 → chip, not the (0) badge.
+        assert "links² embedded" in resp.text
+        assert 'class="chip chip--status-complete"' in resp.text
 
 
 class TestActiveEmbedding:

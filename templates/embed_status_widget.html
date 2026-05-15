@@ -14,20 +14,7 @@
     Embed + links{% if link_count_1hop is not none %} ({{ "{:,}".format(link_count_1hop) }}){% endif %}
   </button>
   {% endif %}
-  {% if links_embedded_2hop %}
-  <span class="chip chip--status-complete">
-    {% from "_icons.html" import check %}{{ check(size=14) }} links² embedded
-  </span>
-  {% else %}
-  <button class="btn-outlined btn-outlined--sm"
-          hx-post="/embed-links-2/{{ title|urlencode }}" hx-swap="none">
-    {% from "_icons.html" import link2 %}{{ link2(size=14) }}
-    Embed + links²<span class="link-count"
-      hx-get="/embed-count-2/{{ title|urlencode }}"
-      hx-trigger="load"
-      hx-swap="outerHTML"> …</span>
-  </button>
-  {% endif %}
+  {% with link_count_2hop=None, is_initial_render=True %}{% include "embed_links2_widget.html" %}{% endwith %}
   <a href="/chunks/{{ title|urlencode }}" class="btn-outlined btn-outlined--sm">
     {% from "_icons.html" import eye %}{{ eye(size=14) }} View chunks
   </a>
@@ -52,20 +39,7 @@
     Embed + links{% if link_count_1hop is not none %} ({{ "{:,}".format(link_count_1hop) }}){% endif %}
   </button>
   {% endif %}
-  {% if links_embedded_2hop %}
-  <span class="chip chip--status-complete">
-    {% from "_icons.html" import check %}{{ check(size=14) }} links² embedded
-  </span>
-  {% else %}
-  <button class="btn-outlined btn-outlined--sm"
-          hx-post="/embed-links-2/{{ title|urlencode }}" hx-swap="none">
-    {% from "_icons.html" import link2 %}{{ link2(size=14) }}
-    Embed + links²<span class="link-count"
-      hx-get="/embed-count-2/{{ title|urlencode }}"
-      hx-trigger="load"
-      hx-swap="outerHTML"> …</span>
-  </button>
-  {% endif %}
+  {% with link_count_2hop=None, is_initial_render=True %}{% include "embed_links2_widget.html" %}{% endwith %}
   <span class="meta-text">Ollama unreachable</span>
 </span>
 {% else %}
@@ -88,19 +62,6 @@
     Embed + links{% if link_count_1hop is not none %} ({{ "{:,}".format(link_count_1hop) }}){% endif %}
   </button>
   {% endif %}
-  {% if links_embedded_2hop %}
-  <span class="chip chip--status-complete">
-    {% from "_icons.html" import check %}{{ check(size=14) }} links² embedded
-  </span>
-  {% else %}
-  <button class="btn-outlined btn-outlined--sm"
-          hx-post="/embed-links-2/{{ title|urlencode }}" hx-swap="none">
-    {% from "_icons.html" import link2 %}{{ link2(size=14) }}
-    Embed + links²<span class="link-count"
-      hx-get="/embed-count-2/{{ title|urlencode }}"
-      hx-trigger="load"
-      hx-swap="outerHTML"> …</span>
-  </button>
-  {% endif %}
+  {% with link_count_2hop=None, is_initial_render=True %}{% include "embed_links2_widget.html" %}{% endwith %}
 </span>
 {% endif %}
