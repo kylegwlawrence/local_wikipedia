@@ -122,7 +122,7 @@ def render_active_embedding_panel(
             "counts": counts,
             "elapsed": elapsed,
             "started_at_display": started_at_display,
-            "current_page": "processes",
+            "current_page": "jobs",
             "list_jobs": [dict(j) for j in list_jobs],
             "list_total": list_total,
             "list_counts": list_counts,
