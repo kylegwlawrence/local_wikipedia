@@ -652,6 +652,18 @@ a.chip--switchable:hover {
   border: 1px solid var(--color-border);
 }
 
+/* Chunk-type chips */
+.chip--infobox {
+  background: var(--color-info-container);
+  color: var(--color-info-on-container);
+  border: 1px solid transparent;
+}
+.chip--table {
+  background: var(--color-warning-container);
+  color: var(--color-warning-on-container);
+  border: 1px solid transparent;
+}
+
 /* =====================================================================
    10. Inputs
    ===================================================================== */
