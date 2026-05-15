@@ -127,7 +127,14 @@ def _insert_chunk(
 
 
 def _embed_article(
-    rag_conn, page_id: int, title: str, revision_id: int, wikitext: str, ollama_url: str, links_embedded: int = 0
+    rag_conn,
+    page_id: int,
+    title: str,
+    revision_id: int,
+    wikitext: str,
+    ollama_url: str,
+    links_embedded: int = 0,
+    links_embedded_2hop: int = 0,
 ) -> int:
     """Chunk and embed one article, writing results to the RAG database.
 
@@ -143,6 +150,8 @@ def _embed_article(
         ollama_url: Ollama server base URL.
         links_embedded: Preserved value from the previous articles_meta row;
             caller must capture this before calling delete_article().
+        links_embedded_2hop: Preserved value from the previous articles_meta row;
+            caller must capture this before calling delete_article().
 
     Returns:
         Number of chunks successfully inserted.
@@ -154,8 +163,9 @@ def _embed_article(
 
     rag_conn.execute(
         "INSERT OR REPLACE INTO articles_meta "
-        "(page_id, title, revision_id, embedded_at, article_size_bytes, links_embedded) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "(page_id, title, revision_id, embedded_at, article_size_bytes, "
+        "links_embedded, links_embedded_2hop) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             page_id,
             title,
@@ -163,6 +173,7 @@ def _embed_article(
             datetime.now(UTC).isoformat(),
             len(wikitext.encode("utf-8")),
             links_embedded,
+            links_embedded_2hop,
         ),
     )
 
@@ -210,8 +221,12 @@ def embed_one(
     if chunker.is_redirect(wikitext):
         return 0
 
-    existing = rag_conn.execute("SELECT links_embedded FROM articles_meta WHERE page_id = ?", (page_id,)).fetchone()
+    existing = rag_conn.execute(
+        "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE page_id = ?",
+        (page_id,),
+    ).fetchone()
     preserved_links_embedded = existing["links_embedded"] if existing else 0
+    preserved_links_embedded_2hop = existing["links_embedded_2hop"] if existing else 0
 
     delete_article(rag_conn, page_id)
 
@@ -219,8 +234,9 @@ def embed_one(
 
     rag_conn.execute(
         "INSERT INTO articles_meta "
-        "(page_id, title, revision_id, embedded_at, article_size_bytes, links_embedded) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "(page_id, title, revision_id, embedded_at, article_size_bytes, "
+        "links_embedded, links_embedded_2hop) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             page_id,
             title,
@@ -228,6 +244,7 @@ def embed_one(
             datetime.now(UTC).isoformat(),
             len(wikitext.encode("utf-8")),
             preserved_links_embedded,
+            preserved_links_embedded_2hop,
         ),
     )
 
@@ -335,13 +352,16 @@ def main(argv: list[str] | None = None) -> int:
                     stats["skipped"] += 1
                     continue
                 existing = rag_conn.execute(
-                    "SELECT links_embedded FROM articles_meta WHERE page_id = ?", (page_id,)
+                    "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE page_id = ?",
+                    (page_id,),
                 ).fetchone()
                 preserved_links_embedded = existing["links_embedded"] if existing else 0
+                preserved_links_embedded_2hop = existing["links_embedded_2hop"] if existing else 0
                 delete_article(rag_conn, page_id)
                 stats["updated"] += 1
             else:
                 preserved_links_embedded = 0
+                preserved_links_embedded_2hop = 0
                 stats["embedded"] += 1
 
             try:
@@ -353,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
                     row["text_content"],
                     args.ollama_url,
                     links_embedded=preserved_links_embedded,
+                    links_embedded_2hop=preserved_links_embedded_2hop,
                 )
             except Exception as exc:
                 print(f"\nFailed {row['title']!r}: {exc}", file=sys.stderr)

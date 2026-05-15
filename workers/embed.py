@@ -68,6 +68,42 @@ def _expand_links(
         )
 
 
+def _finalize_links_embedded(jobs_conn, rag_conn, job_id: int) -> None:
+    """Mark articles whose links were embedded as part of this job.
+
+    ``links_embedded`` is set on every distinct ``source_title`` that reached a
+    terminal status — that includes the original trigger article and any 1-hop
+    link that was itself the source of a 2-hop expansion.
+
+    ``links_embedded_2hop`` is set only on source_titles that had an item
+    enqueued at ``hops_remaining >= 1``: that flag is exclusive to the
+    article(s) whose trigger was a 2-hop click, since ``_expand_links`` adds
+    depth-1 children at ``hops_remaining=0``.
+    """
+    source_titles = jobs_conn.execute(
+        "SELECT DISTINCT source_title FROM embed_job_items "
+        "WHERE job_id = ? AND status NOT IN ('queued', 'in_progress')",
+        (job_id,),
+    ).fetchall()
+    for st_row in source_titles:
+        rag_conn.execute(
+            "UPDATE articles_meta SET links_embedded = 1 WHERE title = ?",
+            (st_row["source_title"],),
+        )
+    two_hop_sources = jobs_conn.execute(
+        "SELECT DISTINCT source_title FROM embed_job_items "
+        "WHERE job_id = ? AND hops_remaining >= 1 "
+        "AND status NOT IN ('queued', 'in_progress')",
+        (job_id,),
+    ).fetchall()
+    for st_row in two_hop_sources:
+        rag_conn.execute(
+            "UPDATE articles_meta SET links_embedded_2hop = 1 WHERE title = ?",
+            (st_row["source_title"],),
+        )
+    rag_conn.commit()
+
+
 def _process_item(
     item,
     jobs_conn,
@@ -182,17 +218,7 @@ def main(argv: list[str] | None = None) -> int:
                 item = embed_jobs.get_next_queued(jobs_conn, job_id)
                 if item is None:
                     if job["include_links"]:
-                        source_titles = jobs_conn.execute(
-                            "SELECT DISTINCT source_title FROM embed_job_items "
-                            "WHERE job_id = ? AND status NOT IN ('queued', 'in_progress')",
-                            (job_id,),
-                        ).fetchall()
-                        for st_row in source_titles:
-                            rag_conn.execute(
-                                "UPDATE articles_meta SET links_embedded = 1 WHERE title = ?",
-                                (st_row["source_title"],),
-                            )
-                        rag_conn.commit()
+                        _finalize_links_embedded(jobs_conn, rag_conn, job_id)
                     embed_jobs.mark_job(jobs_conn, job_id, "complete")
                     print(f"[embed_worker] job {job_id} complete", flush=True)
                     return 0

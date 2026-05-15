@@ -89,10 +89,15 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
 
     embedded = False
     links_embedded = False
+    links_embedded_2hop = False
     if rag_conn is not None:
-        row = rag_conn.execute("SELECT links_embedded FROM articles_meta WHERE title = ?", (title,)).fetchone()
+        row = rag_conn.execute(
+            "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE title = ?",
+            (title,),
+        ).fetchone()
         embedded = row is not None
         links_embedded = bool(row and row["links_embedded"])
+        links_embedded_2hop = bool(row and row["links_embedded_2hop"])
 
     # Compute the 1-hop unembedded-link count inline so the button can render
     # "Embed + links (N)". The wiki-DB lookup + one mwparserfromhell parse is
@@ -124,6 +129,7 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
             "title": title,
             "embedded": embedded,
             "links_embedded": links_embedded,
+            "links_embedded_2hop": links_embedded_2hop,
             "error": False,
             "link_count_1hop": link_count_1hop,
         },
@@ -193,6 +199,7 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
     error = False
     embed_error: str | None = None
     links_embedded = False
+    links_embedded_2hop = False
     try:
         chunk_count = rag_embed_one(
             rag_conn,
@@ -202,10 +209,11 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
             row["text_content"],
         )
         links_row = rag_conn.execute(
-            "SELECT links_embedded FROM articles_meta WHERE page_id = ?",
+            "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE page_id = ?",
             (row["page_id"],),
         ).fetchone()
         links_embedded = bool(links_row and links_row["links_embedded"])
+        links_embedded_2hop = bool(links_row and links_row["links_embedded_2hop"])
     except Exception as exc:
         error = True
         embed_error = str(exc)
@@ -225,6 +233,7 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
             "title": title,
             "embedded": not error,
             "links_embedded": links_embedded,
+            "links_embedded_2hop": links_embedded_2hop,
             "error": error,
         },
     )

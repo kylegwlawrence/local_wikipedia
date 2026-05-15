@@ -49,12 +49,13 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS articles_meta (
-            page_id            INTEGER PRIMARY KEY,
-            title              TEXT    NOT NULL,
-            revision_id        INTEGER NOT NULL,
-            embedded_at        TEXT,
-            article_size_bytes INTEGER,
-            links_embedded     INTEGER NOT NULL DEFAULT 0
+            page_id              INTEGER PRIMARY KEY,
+            title                TEXT    NOT NULL,
+            revision_id          INTEGER NOT NULL,
+            embedded_at          TEXT,
+            article_size_bytes   INTEGER,
+            links_embedded       INTEGER NOT NULL DEFAULT 0,
+            links_embedded_2hop  INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS chunks (
@@ -88,6 +89,10 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
         ("embedded_at", "ALTER TABLE articles_meta ADD COLUMN embedded_at TEXT"),
         ("article_size_bytes", "ALTER TABLE articles_meta ADD COLUMN article_size_bytes INTEGER"),
         ("links_embedded", "ALTER TABLE articles_meta ADD COLUMN links_embedded INTEGER NOT NULL DEFAULT 0"),
+        (
+            "links_embedded_2hop",
+            "ALTER TABLE articles_meta ADD COLUMN links_embedded_2hop INTEGER NOT NULL DEFAULT 0",
+        ),
         ("chunk_type", "ALTER TABLE chunks ADD COLUMN chunk_type TEXT NOT NULL DEFAULT 'prose'"),
     ]
     for col_name, sql in _col_migrations:
@@ -95,6 +100,10 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
             conn.execute(sql)
             if col_name == "links_embedded":
                 conn.execute("UPDATE articles_meta SET links_embedded = 0 WHERE links_embedded IS NULL")
+            elif col_name == "links_embedded_2hop":
+                conn.execute(
+                    "UPDATE articles_meta SET links_embedded_2hop = 0 WHERE links_embedded_2hop IS NULL"
+                )
         except sqlite3.OperationalError:
             pass  # column already exists
 

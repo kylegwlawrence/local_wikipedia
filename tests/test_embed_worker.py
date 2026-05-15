@@ -231,3 +231,87 @@ class TestProcessItem:
         rows = embed_jobs.get_items(jobs_conn, job_id)
         statuses = {r["title"]: r["status"] for r in rows}
         assert statuses["B"] == "complete"
+
+
+class TestFinalizeLinksEmbedded:
+    """``_finalize_links_embedded`` sets the per-article flags at job complete."""
+
+    def _seed_meta(self, rag_conn, titles: list[str]) -> None:
+        for i, t in enumerate(titles, start=1):
+            rag_conn.execute(
+                "INSERT INTO articles_meta (page_id, title, revision_id) VALUES (?, ?, 1)",
+                (i, t),
+            )
+        rag_conn.commit()
+
+    def test_one_hop_job_marks_links_embedded_only(self, jobs_conn, rag_conn):
+        # 1-hop trigger on A: every item has hops_remaining=0.
+        self._seed_meta(rag_conn, ["A", "B", "C"])
+        job_id = embed_jobs.create_job(jobs_conn, "enwiki", "/tmp/x.log", "A")
+        embed_jobs.append_items(jobs_conn, job_id, [("A", "A", 0), ("B", "A", 0), ("C", "A", 0)])
+        # Mark all items terminal so the finalizer picks them up.
+        jobs_conn.execute("UPDATE embed_job_items SET status = 'complete' WHERE job_id = ?", (job_id,))
+        jobs_conn.commit()
+
+        embed_worker._finalize_links_embedded(jobs_conn, rag_conn, job_id)
+
+        row = rag_conn.execute(
+            "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE title = 'A'"
+        ).fetchone()
+        assert row["links_embedded"] == 1
+        assert row["links_embedded_2hop"] == 0
+
+    def test_two_hop_job_marks_both_flags_on_trigger(self, jobs_conn, rag_conn):
+        # 2-hop trigger on A: (A, A, 0), (B, A, 1), (C, A, 1). Worker later
+        # adds (D, B, 0) and (E, C, 0) as depth-1 children.
+        self._seed_meta(rag_conn, ["A", "B", "C", "D", "E"])
+        job_id = embed_jobs.create_job(jobs_conn, "enwiki", "/tmp/x.log", "A")
+        embed_jobs.append_items(
+            jobs_conn,
+            job_id,
+            [("A", "A", 0), ("B", "A", 1), ("C", "A", 1), ("D", "B", 0), ("E", "C", 0)],
+        )
+        jobs_conn.execute("UPDATE embed_job_items SET status = 'complete' WHERE job_id = ?", (job_id,))
+        jobs_conn.commit()
+
+        embed_worker._finalize_links_embedded(jobs_conn, rag_conn, job_id)
+
+        rows = {
+            r["title"]: r
+            for r in rag_conn.execute(
+                "SELECT title, links_embedded, links_embedded_2hop FROM articles_meta"
+            ).fetchall()
+        }
+        # 1-hop flag set on every source_title (the trigger plus each expanded parent).
+        assert rows["A"]["links_embedded"] == 1
+        assert rows["B"]["links_embedded"] == 1
+        assert rows["C"]["links_embedded"] == 1
+        # 2-hop flag set only on A — only A has an item enqueued at hops_remaining=1.
+        assert rows["A"]["links_embedded_2hop"] == 1
+        assert rows["B"]["links_embedded_2hop"] == 0
+        assert rows["C"]["links_embedded_2hop"] == 0
+        # Leaf depth-2 articles weren't sources of anything.
+        assert rows["D"]["links_embedded"] == 0
+        assert rows["E"]["links_embedded"] == 0
+
+    def test_skips_unfinished_items(self, jobs_conn, rag_conn):
+        # An item still queued or in_progress must not contribute to the flags.
+        self._seed_meta(rag_conn, ["A", "B"])
+        job_id = embed_jobs.create_job(jobs_conn, "enwiki", "/tmp/x.log", "A")
+        embed_jobs.append_items(jobs_conn, job_id, [("A", "A", 0), ("B", "A", 1)])
+        # Leave (B, A, 1) in queued state.
+        jobs_conn.execute(
+            "UPDATE embed_job_items SET status = 'complete' WHERE job_id = ? AND title = 'A'",
+            (job_id,),
+        )
+        jobs_conn.commit()
+
+        embed_worker._finalize_links_embedded(jobs_conn, rag_conn, job_id)
+
+        row = rag_conn.execute(
+            "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE title = 'A'"
+        ).fetchone()
+        # A is itself terminal so its 1-hop flag is set, but its only
+        # hops_remaining=1 item is still queued — 2-hop flag stays 0.
+        assert row["links_embedded"] == 1
+        assert row["links_embedded_2hop"] == 0

@@ -182,27 +182,66 @@ def _embedded_titles(rag_conn: sqlite3.Connection, candidates: list[str]) -> set
     return embedded
 
 
+def _filter_embeddable(wiki_conn: sqlite3.Connection, candidates: set[str]) -> set[str]:
+    """Return the subset of ``candidates`` the worker would actually embed.
+
+    Drops titles the embed worker would mark ``not_found`` (no row in the wiki
+    DB) or ``skipped_redirect`` (the article body is a ``#REDIRECT`` stub) —
+    neither produces a new embedding, so neither should inflate the count
+    shown on the "Embed + links" / "Embed + links²" badges.
+
+    Only the first 100 characters of ``text_content`` are pulled per row: the
+    redirect regex anchors at the start of the string, and avoiding the full
+    article body keeps the scan cheap when ``candidates`` runs into the
+    thousands on hub articles.
+    """
+    if not candidates:
+        return set()
+    candidate_list = list(candidates)
+    keep: set[str] = set()
+    for i in range(0, len(candidate_list), _IN_BATCH):
+        chunk = candidate_list[i : i + _IN_BATCH]
+        placeholders = ",".join("?" * len(chunk))
+        rows = wiki_conn.execute(
+            f"SELECT title, substr(text_content, 1, 100) AS prefix "
+            f"FROM articles WHERE title IN ({placeholders})",
+            chunk,
+        ).fetchall()
+        for r in rows:
+            if not is_redirect(r["prefix"] or ""):
+                keep.add(r["title"])
+    return keep
+
+
 def count_unembedded_1hop(
     wiki_conn: sqlite3.Connection,
     rag_conn: sqlite3.Connection | None,
     source_title: str,
     wikitext: str,
 ) -> int:
-    """Count 1-hop wikilink targets that aren't yet in ``articles_meta``.
+    """Count 1-hop wikilink targets the worker would actually embed.
 
-    This is what the "Embed + links" button's ``(N)`` badge displays — the
-    number of articles a click on it would actually do new work for. Uses the
-    fast regex extractor (see ``_extract_links_fast``) for speed; the value is
-    a close approximation, not an exact match of what the worker would enqueue.
+    This is what the "Embed + links" button's ``(N)`` badge displays. Excludes
+    candidates the worker would skip — articles missing from the wiki DB
+    (``not_found``), redirect stubs (``skipped_redirect``), and ones already
+    present in ``articles_meta`` (``skipped_unchanged``) — so the count
+    reflects only new work the click would actually do.
+
+    Uses the fast regex extractor (see ``_extract_links_fast``) for speed;
+    the value is a close approximation, not an exact match of what the worker
+    would enqueue.
     """
     raw = _extract_links_fast(wikitext, source_title=source_title)
     candidates = _resolve_and_dedup(wiki_conn, raw, source_title)
     if not candidates:
         return 0
+    embeddable = _filter_embeddable(wiki_conn, set(candidates))
+    if not embeddable:
+        return 0
     if rag_conn is None:
-        return len(candidates)
-    embedded = _embedded_titles(rag_conn, candidates)
-    return len(candidates) - len(embedded)
+        return len(embeddable)
+    embedded = _embedded_titles(rag_conn, list(embeddable))
+    return len(embeddable) - len(embedded)
 
 
 def count_unembedded_2hop(
@@ -211,24 +250,27 @@ def count_unembedded_2hop(
     source_title: str,
     wikitext: str,
 ) -> int:
-    """Count the union of 1-hop and 2-hop link targets not yet in ``articles_meta``.
+    """Count the union of 1-hop and 2-hop link targets the worker would embed.
 
-    This is what the "Embed + links²" button's ``(N)`` badge displays. Redirect
-    bodies are skipped (no useful links of their own). Uses the fast regex
-    extractor — the alternative (mwparserfromhell on hundreds of hub articles)
-    pushed this past 2 minutes for "United States" on enwiki; the regex brings
-    that under a second at the cost of missing template-nested links.
+    This is what the "Embed + links²" button's ``(N)`` badge displays. Excludes
+    candidates the worker would skip — articles missing from the wiki DB
+    (``not_found``), redirect stubs (``skipped_redirect``), and ones already
+    present in ``articles_meta`` (``skipped_unchanged``) — so the count reflects
+    only new work the click would actually do.
+
+    Uses the fast regex extractor — the alternative (mwparserfromhell on
+    hundreds of hub articles) pushed this past 2 minutes for "United States"
+    on enwiki; the regex brings that under a second at the cost of missing
+    template-nested links.
     """
     raw_hop1 = _extract_links_fast(wikitext, source_title=source_title)
     hop1 = _resolve_and_dedup(wiki_conn, raw_hop1, source_title)
     if not hop1:
         return 0
 
-    candidates: set[str] = set(hop1)
-
-    # Pull the 1-hop neighbours' wikitext in batched IN queries. Articles that
-    # don't exist (e.g., links to non-existent pages) are silently absent from
-    # ``parent_wikitext`` — those candidates stay in the count but don't expand.
+    # Pull the 1-hop neighbours' full wikitext: it's needed both to filter out
+    # not_found / redirect hop1 entries and to extract their wikilinks for
+    # hop2 expansion.
     parent_wikitext: dict[str, str] = {}
     for i in range(0, len(hop1), _IN_BATCH):
         chunk = hop1[i : i + _IN_BATCH]
@@ -240,17 +282,25 @@ def count_unembedded_2hop(
         for r in rows:
             parent_wikitext[r["title"]] = r["text_content"]
 
+    candidates: set[str] = set()
+    hop2_only: set[str] = set()
     for parent_title in hop1:
         text = parent_wikitext.get(parent_title)
         if not text or is_redirect(text):
+            # not_found (no row) or skipped_redirect — worker wouldn't embed
+            # the parent and wouldn't expand from its body either.
             continue
+        candidates.add(parent_title)
         for t in _extract_links_fast(text, source_title=parent_title):
             # Skip redirect resolution here: resolving ~80k–180k individual
             # titles via SQLite took 20–110 s on hub articles. The count badge
             # is already an approximation; a slight over-count is fine.
-            if t == source_title:
+            if t == source_title or t in candidates:
                 continue
-            candidates.add(t)
+            hop2_only.add(t)
+
+    # Drop hop2 candidates the worker would skip (not_found / redirect).
+    candidates |= _filter_embeddable(wiki_conn, hop2_only)
 
     if rag_conn is None:
         return len(candidates)

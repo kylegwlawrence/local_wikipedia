@@ -358,12 +358,12 @@ class TestEmbedStatusWidget:
         assert "links embedded" not in resp.text
 
     def test_shows_1hop_count_inline(self, embed_client):
-        # April's wikitext links to [[month]] (1 unresolved 1-hop target).
-        # No RAG DB exists for the test wiki, so the count helper returns
-        # len(candidates) = 1.
+        # April's wikitext links to [[month]]; Month isn't in the fixture wiki
+        # DB so the worker would mark it ``not_found``. The 1-hop count
+        # excludes not_found targets, so the badge reads "(0)".
         resp = embed_client.get("/embed-status/April")
         assert resp.status_code == 200
-        assert "Embed + links (1)" in resp.text
+        assert "Embed + links (0)" in resp.text
 
     def test_shows_2hop_count_placeholder(self, embed_client):
         # The widget should render the async-loading span for the 2-hop count.
@@ -403,6 +403,29 @@ class TestEmbedStatusWidget:
         assert "links embedded" in resp.text
         assert 'hx-post="/embed-links/April"' not in resp.text
 
+    def test_shows_links_2hop_badge_after_complete_job(self, embed_client, tmp_path, monkeypatch):
+        from rag.schema import connect_rag
+
+        rag_path = tmp_path / "dumps" / "enwiki_rag.db"
+        rag_path.parent.mkdir(exist_ok=True)
+        rag_conn = connect_rag(rag_path)
+        rag_conn.execute(
+            "INSERT INTO articles_meta "
+            "(page_id, title, revision_id, links_embedded, links_embedded_2hop) "
+            "VALUES (1, 'April', 1, 1, 1)"
+        )
+        rag_conn.commit()
+        rag_conn.close()
+
+        import paths
+
+        monkeypatch.setattr(paths, "rag_db_path_for", lambda wiki: rag_path)
+
+        resp = embed_client.get("/embed-status/April")
+        assert resp.status_code == 200
+        assert "links² embedded" in resp.text
+        assert 'hx-post="/embed-links-2/April"' not in resp.text
+
     def test_running_job_does_not_show_badge(self, embed_client):
         # A running (not yet complete) job should not trigger the badge.
         conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
@@ -421,12 +444,12 @@ class TestEmbedCount2:
     """`GET /embed-count-2/{title}` returns the deferred 2-hop link count."""
 
     def test_returns_count_fragment(self, embed_client):
-        # April → [[month]] (the only 1-hop link; not in the fixture DB so it
-        # stays as a candidate but doesn't expand). Total candidates = {Month};
-        # no RAG DB exists → count = 1.
+        # April → [[month]]; Month is absent from the fixture wiki DB, so the
+        # worker would mark it ``not_found`` and never embed it. The count
+        # excludes not_found targets, so the badge is 0.
         resp = embed_client.get("/embed-count-2/April")
         assert resp.status_code == 200
-        assert resp.text == '<span class="link-count"> (1)</span>'
+        assert resp.text == '<span class="link-count"> (0)</span>'
 
     def test_missing_article_returns_empty_fragment(self, embed_client):
         resp = embed_client.get("/embed-count-2/DoesNotExist")

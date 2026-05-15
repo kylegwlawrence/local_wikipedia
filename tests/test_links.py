@@ -186,6 +186,33 @@ class TestCountUnembedded1Hop:
             n = count_unembedded_1hop(wconn, rag_db, "A", "Self-link [[A]] and [[B]].")
         assert n == 1
 
+    def test_excludes_not_found_target(self, chain_wiki, rag_db):
+        # A link to a non-existent article would be marked ``not_found`` by
+        # the worker — it must not contribute to the count.
+        with wiki_db.connect(chain_wiki) as wconn:
+            n = count_unembedded_1hop(wconn, rag_db, "A", "Links to [[B]] and [[NoSuchArticle]].")
+        assert n == 1  # only B counts
+
+    def test_excludes_redirect_target_not_resolving_to_canonical(self, tmp_path, rag_db):
+        # A redirect whose target chain ends in a non-existent article — the
+        # resolve_redirect fallback used to leave the dangling title in the
+        # candidate set; with skip-filtering it now drops out.
+        db = tmp_path / "broken.db"
+        _build_wiki_db(
+            db,
+            [
+                (1, "A", "Links to [[B]] and [[Broken]]."),
+                (2, "B", "Leaf."),
+                (3, "Broken", "#REDIRECT [[NoSuchArticle]]"),
+            ],
+        )
+        with wiki_db.connect(db) as wconn:
+            n = count_unembedded_1hop(wconn, rag_db, "A", "Links to [[B]] and [[Broken]].")
+        # B is embeddable; Broken resolves to a non-existent target so the
+        # _resolve_and_dedup fallback keeps "NoSuchArticle" as a candidate,
+        # which _filter_embeddable then drops.
+        assert n == 1
+
 
 class TestCountUnembedded2Hop:
     def test_union_of_hops_deduplicated(self, chain_wiki, rag_db):
@@ -247,3 +274,59 @@ class TestCountUnembedded2Hop:
         with wiki_db.connect(chain_wiki) as wconn:
             n = count_unembedded_2hop(wconn, rag_db, "A", "No links here.")
         assert n == 0
+
+    def test_excludes_not_found_1hop_target(self, tmp_path, rag_db):
+        # A 1-hop link that points at a non-existent article would be marked
+        # ``not_found`` by the worker; it must not contribute to the count.
+        db = tmp_path / "missing.db"
+        _build_wiki_db(
+            db,
+            [
+                (1, "A", "Links to [[B]] and [[NoSuchArticle]]."),
+                (2, "B", "B links to [[C]]."),
+                (3, "C", "Leaf."),
+            ],
+        )
+        with wiki_db.connect(db) as wconn:
+            n = count_unembedded_2hop(wconn, rag_db, "A", "Links to [[B]] and [[NoSuchArticle]].")
+        # Without filtering this would be 3 (B, NoSuchArticle, C). With
+        # filtering: NoSuchArticle drops out, leaving {B, C} = 2.
+        assert n == 2
+
+    def test_excludes_not_found_2hop_target(self, tmp_path, rag_db):
+        # B's body links at a non-existent article — the worker would mark
+        # that hop2 target as ``not_found`` and never embed it.
+        db = tmp_path / "missing2.db"
+        _build_wiki_db(
+            db,
+            [
+                (1, "A", "Links to [[B]]."),
+                (2, "B", "B links to [[C]] and [[NoSuchArticle]]."),
+                (3, "C", "Leaf."),
+            ],
+        )
+        with wiki_db.connect(db) as wconn:
+            n = count_unembedded_2hop(wconn, rag_db, "A", "Links to [[B]].")
+        # Without filtering this would be 3 (B, C, NoSuchArticle). With
+        # filtering: NoSuchArticle drops out, leaving {B, C} = 2.
+        assert n == 2
+
+    def test_excludes_redirect_2hop_target(self, tmp_path, rag_db):
+        # A hop2 link target whose body is a #REDIRECT must be excluded — the
+        # worker either resolves it to its canonical target (counted via its
+        # direct link, if any) or marks it ``skipped_redirect``.
+        db = tmp_path / "redirect2.db"
+        _build_wiki_db(
+            db,
+            [
+                (1, "A", "Links to [[B]]."),
+                (2, "B", "B links to [[C]] and [[Cdup]]."),
+                (3, "C", "Leaf."),
+                (4, "Cdup", "#REDIRECT [[C]]"),
+            ],
+        )
+        with wiki_db.connect(db) as wconn:
+            n = count_unembedded_2hop(wconn, rag_db, "A", "Links to [[B]].")
+        # Without filtering this would be 3 (B, C, Cdup). With filtering:
+        # Cdup is a redirect → drops out, leaving {B, C} = 2.
+        assert n == 2
