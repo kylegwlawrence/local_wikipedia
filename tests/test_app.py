@@ -29,6 +29,82 @@ class TestIndex:
         assert 'hx-get="/search"' in resp.text
 
 
+class TestDailyArticles:
+    """Two random article cards rendered below the search bar."""
+
+    REDIRECT_TITLES = {"Apples", "Pyton", "LoopA", "LoopB"}
+
+    def _card_titles(self, html: str) -> list[str]:
+        import re
+
+        return re.findall(r'<h2 class="daily-card__title">([^<]+)</h2>', html)
+
+    def test_two_cards_appear(self, client):
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert resp.text.count('class="daily-card"') == 2
+        assert resp.text.count('class="daily-card__title"') == 2
+        assert resp.text.count('class="daily-card__snippet"') == 2
+
+    def test_cards_link_to_articles(self, client):
+        resp = client.get("/")
+        titles = self._card_titles(resp.text)
+        assert len(titles) == 2
+        for title in titles:
+            assert f'href="/article/{title.replace(" ", "%20").replace("(", "%28").replace(")", "%29")}"' in resp.text \
+                or f'href="/article/{title}"' in resp.text
+
+    def test_cards_persist_within_same_day(self, client):
+        first = self._card_titles(client.get("/").text)
+        second = self._card_titles(client.get("/").text)
+        assert first == second
+        assert len(first) == 2
+
+    def test_cards_rotate_on_new_day(self, client, monkeypatch, wiki_db_path):
+        import sqlite3
+
+        from app import helpers
+
+        client.get("/")  # locks in today's picks
+        monkeypatch.setattr(helpers, "_today_iso", lambda: "2099-12-31")
+        client.get("/")
+        conn = sqlite3.connect(wiki_db_path)
+        row = conn.execute(
+            "SELECT value FROM db_metadata WHERE key = 'daily_articles_date'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "2099-12-31"
+
+    def test_redirects_never_appear_as_cards(self, client, monkeypatch):
+        # Force fresh picks 20 times by rolling the date; redirects in the
+        # fixture (Apples, Pyton, LoopA, LoopB) must never leak through.
+        from app import helpers
+
+        for i in range(20):
+            monkeypatch.setattr(helpers, "_today_iso", lambda i=i: f"2099-01-{i + 1:02d}")
+            titles = set(self._card_titles(client.get("/").text))
+            assert not (titles & self.REDIRECT_TITLES)
+
+    def test_extract_first_sentence_strips_markup(self):
+        from app.helpers import _extract_first_sentence
+
+        assert _extract_first_sentence("'''Foo''' is a [[bar]]. Another one.") == "Foo is a bar."
+
+    def test_extract_first_sentence_slices_at_first_heading(self):
+        from app.helpers import _extract_first_sentence
+
+        wikitext = "'''April''' is the fourth month.\n== History ==\nLong history follows."
+        result = _extract_first_sentence(wikitext)
+        assert "April" in result
+        assert "history" not in result.lower()
+
+    def test_extract_first_sentence_returns_empty_for_empty_input(self):
+        from app.helpers import _extract_first_sentence
+
+        assert _extract_first_sentence("") == ""
+
+
 class TestSearch:
     """`/search` returns an HTML fragment of matching titles."""
 

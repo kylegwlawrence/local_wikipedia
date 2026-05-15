@@ -30,5 +30,16 @@
   </form>
 
   <section id="results" class="search-results" aria-live="polite"></section>
+
+  {% if daily_articles %}
+  <section class="daily-articles" aria-label="Today's featured articles">
+    {% for item in daily_articles %}
+      <a class="daily-card" href="/article/{{ item.title|urlencode }}">
+        <h2 class="daily-card__title">{{ item.title }}</h2>
+        <p class="daily-card__snippet">{{ item.snippet }}</p>
+      </a>
+    {% endfor %}
+  </section>
+  {% endif %}
 </div>
 {% endblock %}

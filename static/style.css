@@ -1256,6 +1256,55 @@ p.no-results {
   font-size: var(--text-small);
 }
 
+.daily-articles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 580px;
+  margin-top: var(--space-6);
+}
+
+.daily-card {
+  display: block;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-1);
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow var(--motion-fast), border-color var(--motion-fast);
+}
+.daily-card:hover,
+.daily-card:focus-visible {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--elev-2);
+  outline: none;
+}
+
+.daily-card__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-h3);
+  font-weight: var(--weight-medium);
+  color: var(--color-primary);
+}
+
+.daily-card__snippet {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 600px) {
+  .daily-articles { grid-template-columns: 1fr; }
+}
+
 /* =====================================================================
    19. Embed status widget
    ===================================================================== */

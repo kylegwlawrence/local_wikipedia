@@ -12,7 +12,7 @@ import db as wiki_db
 import paths
 from app.config import WIKI_LABELS, templates
 from app.deps import active_wiki
-from app.helpers import search_titles
+from app.helpers import daily_random_articles, search_titles
 from paths import KNOWN_WIKIS
 
 router = APIRouter()
@@ -41,6 +41,7 @@ def index(request: Request, article: str = "", wiki: str = "") -> HTMLResponse:
                 "INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('article_count', ?)",
                 (str(article_count),),
             )
+        daily_articles = daily_random_articles(conn)
     response = templates.TemplateResponse(
         request,
         "index.html",
@@ -50,6 +51,7 @@ def index(request: Request, article: str = "", wiki: str = "") -> HTMLResponse:
             "other_wiki": other_wiki_for_template,
             "current_page": "home",
             "article_count": f"{article_count:,}",
+            "daily_articles": daily_articles,
         },
     )
     if wiki in KNOWN_WIKIS:
