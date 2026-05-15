@@ -844,6 +844,26 @@ p.empty-state {
   border-bottom: 1px solid var(--color-divider);
 }
 
+.article-search {
+  padding: var(--space-6) var(--space-6) 0;
+}
+
+.article-search__form {
+  position: relative;
+}
+
+.article-search__results {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+
+.article-search__results:empty {
+  display: none;
+}
+
 .article-title {
   font-size: var(--text-h1);
   font-weight: var(--weight-medium);

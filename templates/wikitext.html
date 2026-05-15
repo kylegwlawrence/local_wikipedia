@@ -4,6 +4,28 @@
 {% block content %}
 {% set switch_url = '/switch-wiki?to=' + (other_wiki or '') + '&article=' + (title|urlencode) %}
 <div class="reading-column reading-column--wide">
+  <div class="article-search">
+    <form class="article-search__form" onsubmit="return false;" role="search">
+      <label class="input-with-icon">
+        {% from "_icons.html" import search as search_icon %}
+        {{ search_icon(size=20, class_='input-with-icon__icon') }}
+        <input
+          class="input input--pill"
+          type="search"
+          name="q"
+          placeholder="Search articles by title..."
+          autocomplete="off"
+          hx-get="/search"
+          hx-trigger="keyup changed delay:300ms, search"
+          hx-target="#article-search-results"
+          hx-swap="innerHTML"
+          hx-indicator="#article-search-spinner">
+        <span id="article-search-spinner" class="spinner htmx-indicator input-with-icon__spinner" aria-hidden="true"></span>
+      </label>
+      <div id="article-search-results" class="article-search__results" aria-live="polite"></div>
+    </form>
+  </div>
+
   <div class="page-header page-header--article">
     <div class="page-header__title-row">
       <h1 class="article-title">{{ title }}</h1>
