@@ -653,15 +653,31 @@ a.chip--switchable:hover {
 }
 
 /* Chunk-type chips */
-.chip--infobox {
-  background: var(--color-info-container);
-  color: var(--color-info-on-container);
+.chip--infobox,
+.chip--table {
+  color: #000000;
+  font-weight: var(--weight-semibold);
   border: 1px solid transparent;
 }
+.chip--infobox {
+  background: rgba(76, 175, 80, 0.80);
+}
 .chip--table {
-  background: var(--color-warning-container);
-  color: var(--color-warning-on-container);
-  border: 1px solid transparent;
+  background: rgba(170, 30, 180, 0.80);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chip--infobox {
+    background: rgba(102, 187, 106, 0.80);
+  }
+  :root:not([data-theme="light"]) .chip--table {
+    background: rgba(186, 80, 196, 0.80);
+  }
+}
+[data-theme="dark"] .chip--infobox {
+  background: rgba(102, 187, 106, 0.80);
+}
+[data-theme="dark"] .chip--table {
+  background: rgba(186, 80, 196, 0.80);
 }
 
 /* =====================================================================
