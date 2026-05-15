@@ -9,6 +9,7 @@ import re
 
 import mwparserfromhell
 
+from rag.math import normalize_math
 from rag.tables import extract_infoboxes, extract_tables
 
 _SECTION_RE = re.compile(r"^(={2,6})\s*(.+?)\s*\1\s*$", re.MULTILINE)
@@ -128,6 +129,9 @@ def chunk_article(
     """
     if is_redirect(wikitext):
         return []
+
+    # Inline math/chem constructs so strip_code() doesn't drop their bodies.
+    wikitext = normalize_math(wikitext)
 
     infobox_chunks = extract_infoboxes(wikitext, title)
 

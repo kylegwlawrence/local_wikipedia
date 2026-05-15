@@ -150,3 +150,9 @@ class TestChunkArticle:
         chunks = chunk_article("T", wikitext)
         assert chunks
         assert "Python" in chunks[0]["text"]
+
+    def test_math_tag_preserved_in_chunk_text(self):
+        # Regression: <math> bodies used to be dropped wholesale by strip_code().
+        chunks = chunk_article("T", "Pythagoras: <math>a^2+b^2=c^2</math> holds.")
+        assert chunks
+        assert any("a^2+b^2=c^2" in c["text"] for c in chunks)

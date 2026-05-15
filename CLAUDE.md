@@ -56,6 +56,7 @@ local_wikipedia/
     __init__.py
     schema.py       connect_rag(), create_rag_schema() — chunks + vec + FTS tables
     chunker.py      chunk_article(), extract_categories(), is_redirect()
+    math.py         normalize_math() — inline math/chem tags + templates so strip_code keeps them
     embedder.py     embed_text() sync/async + embed_texts_batch() via Ollama; pack/unpack_embedding()
     embed.py        CLI entry point + embed_one() used by embed_worker
     links.py        extract_article_links() — parse wikilinks from raw wikitext
@@ -247,6 +248,7 @@ Offline embedding pipeline that chunks articles into sections and embeds them us
 - Max 1,600 chars/chunk (~400 tokens); long sections split at paragraph boundaries first
 - Skips redirect articles entirely
 - Extracts `[[Category:...]]` names via regex before stripping
+- Runs `rag/math.py:normalize_math` before stripping so `<math>` / `<chem>` / `<ce>` tag bodies and the `{{math|…}}` / `{{tmath|…}}` / `{{mvar|…}}` / `{{bigmath|…}}` / `{{chem|…}}` template families survive `strip_code()` and stay inline within their containing chunk. Reuses `render.templates.replace_math_templates` for the math template family (handles LaTeX-brace closer edge cases).
 
 **RAG DB schema** (in `dumps/{wiki}_rag.db`):
 - `articles_meta` — mirrors `page_id`, `title`, `revision_id`, `categories` from the wiki DB; enables incremental re-embedding keyed on `revision_id`
@@ -285,5 +287,6 @@ Shared fixtures live in `tests/conftest.py` and are auto-discovered by pytest. T
 | `tests/test_links.py` | `extract_article_links` — namespace filtering, dedup, redirect stubs |
 | `tests/test_rag_schema.py` | RAG schema creation and idempotence |
 | `tests/test_rag_chunker.py` | Chunker unit tests — no external deps required |
+| `tests/test_rag_math.py` | `normalize_math` unit + chunker integration tests for math/chem constructs |
 | `tests/test_rag_embedder.py` | `embed_text`, `embed_texts_batch`, `pack/unpack_embedding` — Ollama calls mocked with respx |
 | `tests/test_rag_retriever.py` | Retrieval tests against fixture RAG DB; Ollama not required |
