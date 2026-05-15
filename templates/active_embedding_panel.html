@@ -1,10 +1,16 @@
-<div id="active-embedding-panel"
-     {% if job and job.status == 'running' and not job.cancel_requested %}
-     hx-get="/active-embedding/panel?panel_page={{ panel_page }}"
-     hx-trigger="every 3s"
-     hx-target="this"
-     hx-swap="outerHTML"
-     {% endif %}>
+<section id="active-embedding-panel"
+         class="card"
+         style="margin-top: var(--space-4)"
+         {% if job and job.status == 'running' and not job.cancel_requested %}
+         hx-get="/active-embedding/panel?panel_page={{ panel_page }}"
+         hx-trigger="every 3s"
+         hx-target="this"
+         hx-swap="outerHTML"
+         {% endif %}>
+  <header class="card__header">
+    <h2 class="card__title">{% if job %}Job #{{ job.id }}{% else %}Active job{% endif %}</h2>
+  </header>
+  <div class="card__body">
   {% if not job %}
     <p class="empty-state">No batch embed has been run yet. Open an article and click <strong>Embed + links</strong> to start one.</p>
   {% else %}
@@ -87,4 +93,5 @@
     </div>
     {% endif %}
   {% endif %}
-</div>
+  </div>
+</section>
