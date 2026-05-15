@@ -343,7 +343,6 @@ body {
 
 /* Theme toggle icon visibility */
 .theme-toggle__icon { display: none; }
-[data-theme-mode="auto"]  .theme-toggle__icon--auto  { display: block; }
 [data-theme-mode="light"] .theme-toggle__icon--light { display: block; }
 [data-theme-mode="dark"]  .theme-toggle__icon--dark  { display: block; }
 

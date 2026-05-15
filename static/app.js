@@ -1,22 +1,16 @@
-// Theme toggle: cycles auto → light → dark → auto.
+// Theme toggle: cycles light → dark → light.
 (function () {
   function applyMode(mode) {
     document.documentElement.setAttribute('data-theme-mode', mode);
-    if (mode === 'auto') {
-      localStorage.removeItem('theme-mode');
-      document.documentElement.removeAttribute('data-theme');
-    } else {
-      localStorage.setItem('theme-mode', mode);
-      document.documentElement.setAttribute('data-theme', mode);
-    }
+    localStorage.setItem('theme-mode', mode);
+    document.documentElement.setAttribute('data-theme', mode);
   }
 
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-theme-toggle]');
     if (!btn) return;
-    var current = document.documentElement.getAttribute('data-theme-mode') || 'auto';
-    var next = current === 'auto' ? 'light' : current === 'light' ? 'dark' : 'auto';
-    applyMode(next);
+    var current = document.documentElement.getAttribute('data-theme-mode') || 'light';
+    applyMode(current === 'light' ? 'dark' : 'light');
   });
 })();
 
