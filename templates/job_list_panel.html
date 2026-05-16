@@ -1,4 +1,11 @@
-<div id="job-list-panel">
+{% set has_running_job = list_jobs|selectattr('status', 'equalto', 'running')|list|length > 0 %}
+<div id="job-list-panel"
+     {% if has_running_job %}
+     hx-get="/active-embedding/jobs?page={{ list_page }}&q={{ list_q|urlencode }}"
+     hx-trigger="every 3s"
+     hx-target="this"
+     hx-swap="outerHTML"
+     {% endif %}>
   <div class="status-row" style="margin-bottom: var(--space-3); padding: var(--space-4) var(--space-5) 0;">
     {% if list_total %}
     <button class="btn-outlined btn-danger btn-outlined--sm"
@@ -7,7 +14,7 @@
       {% from "_icons.html" import trash %}{{ trash(size=14) }} Delete all
     </button>
     {% endif %}
-    <input type="search" name="q" value="{{ list_q }}"
+    <input type="search" name="q" id="job-list-search" hx-preserve="true" value="{{ list_q }}"
            placeholder="Search by job # or article title…"
            class="input"
            style="width: 260px;"
