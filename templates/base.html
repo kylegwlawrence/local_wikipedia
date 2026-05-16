@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Local Wikipedia{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='wikipedia-logo.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <link rel="stylesheet" href="{{ url_for('static', path='katex/katex.min.css') }}">
