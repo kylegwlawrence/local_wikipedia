@@ -59,7 +59,15 @@ def connect(request: Request) -> sqlite3.Connection | RemoteSqliteConnection:
 def rag_connect(wiki: str):
     """Open the RAG DB if it exists; return None if not yet created."""
     if paths.is_remote(wiki):
-        return RemoteSqliteConnection(paths.remote_url_for(wiki), f"{wiki}_rag")
+        import httpx
+        base_url = paths.remote_url_for(wiki)
+        try:
+            r = httpx.get(f"{base_url}/api/exists/{wiki}_rag", timeout=5.0)
+            if not r.json().get("exists"):
+                return None
+        except Exception:
+            return None
+        return RemoteSqliteConnection(base_url, f"{wiki}_rag")
     path = paths.rag_db_path_for(wiki)
     if not path.exists():
         return None

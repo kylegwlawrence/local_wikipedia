@@ -18,6 +18,7 @@ from app.config import SEARCH_LIMIT, WIKI_LABELS
 from app.deps import connect
 from paths import REDIRECT_MAX_HOPS
 from rag.chunker import _strip_wikitext
+from remote import RemoteSqliteError
 from workers.spawn import spawn_worker as _spawn_worker
 
 
@@ -184,7 +185,7 @@ def daily_random_articles(conn: sqlite3.Connection) -> list[dict[str, str]]:
     try:
         date_row = conn.execute("SELECT value FROM db_metadata WHERE key = ?", (_DAILY_DATE_KEY,)).fetchone()
         payload_row = conn.execute("SELECT value FROM db_metadata WHERE key = ?", (_DAILY_PAYLOAD_KEY,)).fetchone()
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, RemoteSqliteError):
         date_row = payload_row = None
     if date_row and date_row["value"] == today and payload_row:
         try:

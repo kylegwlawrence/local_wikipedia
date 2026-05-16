@@ -47,6 +47,13 @@ def _connect(wiki: str) -> sqlite3.Connection:
     return conn
 
 
+@app.get("/api/exists/{wiki}")
+def db_exists(wiki: str):
+    if wiki not in _DB_PATHS:
+        return {"exists": False}
+    return {"exists": _DB_PATHS[wiki].exists()}
+
+
 @app.post("/api/sql/{wiki}")
 def run_sql(wiki: str, body: SqlRequest):
     if wiki not in _DB_PATHS:

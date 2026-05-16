@@ -14,6 +14,7 @@ from app.config import WIKI_LABELS, templates
 from app.deps import active_wiki
 from app.helpers import daily_random_articles, search_titles
 from paths import KNOWN_WIKIS
+from remote import RemoteSqliteConnection, RemoteSqliteError
 
 router = APIRouter()
 
@@ -25,14 +26,21 @@ def index(request: Request, article: str = "", wiki: str = "") -> HTMLResponse:
 
     selected_wiki = wiki if wiki in KNOWN_WIKIS else active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != selected_wiki)
-    other_wiki_db = paths.db_path_for(other_wiki)
-    other_wiki_for_template = other_wiki if other_wiki_db.exists() else None
-    wiki_db_path = pathlib.Path(os.environ["WIKI_DB"]) if "WIKI_DB" in os.environ else paths.db_path_for(selected_wiki)
-    with wiki_db.connect(wiki_db_path) as conn:
+    other_wiki_for_template = other_wiki if (paths.db_path_for(other_wiki).exists() or paths.is_remote(other_wiki)) else None
+    if "WIKI_DB" in os.environ:
+        _conn = wiki_db.connect(pathlib.Path(os.environ["WIKI_DB"]))
+    elif paths.is_remote(selected_wiki):
+        _conn = RemoteSqliteConnection(paths.remote_url_for(selected_wiki), selected_wiki)
+    else:
+        wiki_db_path = paths.db_path_for(selected_wiki)
+        if not wiki_db_path.exists():
+            raise HTTPException(status_code=503, detail=f"Database not found: {wiki_db_path}")
+        _conn = wiki_db.connect(wiki_db_path)
+    with _conn as conn:
         try:
             row = conn.execute("SELECT value FROM db_metadata WHERE key = 'article_count'").fetchone()
             article_count = int(row["value"]) if row else None
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, RemoteSqliteError):
             article_count = None
         if article_count is None:
             article_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
