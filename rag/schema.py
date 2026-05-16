@@ -86,42 +86,61 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
     """)
     conn.commit()
 
-    # Migrate existing databases: add new columns if absent.
+    # Migrate existing databases: add new columns if absent. The presence
+    # check via PRAGMA avoids attempting a write when the migration is
+    # already done — important on the remote proxy where a long-running
+    # embed worker may hold a write lock. The except handler narrowly
+    # catches the "duplicate column" race so real errors (lock contention,
+    # read-only DB) still propagate instead of silently corrupting the
+    # caller's assumption that the column exists.
+    articles_meta_cols = {row[1] for row in conn.execute("PRAGMA table_info(articles_meta)").fetchall()}
+    chunks_cols = {row[1] for row in conn.execute("PRAGMA table_info(chunks)").fetchall()}
+
     _col_migrations = [
-        ("embedded_at", "ALTER TABLE articles_meta ADD COLUMN embedded_at TEXT"),
-        ("article_size_bytes", "ALTER TABLE articles_meta ADD COLUMN article_size_bytes INTEGER"),
-        ("links_embedded", "ALTER TABLE articles_meta ADD COLUMN links_embedded INTEGER NOT NULL DEFAULT 0"),
+        ("articles_meta", "embedded_at", "ALTER TABLE articles_meta ADD COLUMN embedded_at TEXT"),
+        ("articles_meta", "article_size_bytes", "ALTER TABLE articles_meta ADD COLUMN article_size_bytes INTEGER"),
         (
+            "articles_meta",
+            "links_embedded",
+            "ALTER TABLE articles_meta ADD COLUMN links_embedded INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "articles_meta",
             "links_embedded_2hop",
             "ALTER TABLE articles_meta ADD COLUMN links_embedded_2hop INTEGER NOT NULL DEFAULT 0",
         ),
-        ("chunk_type", "ALTER TABLE chunks ADD COLUMN chunk_type TEXT NOT NULL DEFAULT 'prose'"),
+        ("chunks", "chunk_type", "ALTER TABLE chunks ADD COLUMN chunk_type TEXT NOT NULL DEFAULT 'prose'"),
         (
+            "articles_meta",
             "unembedded_link_count_1hop",
             "ALTER TABLE articles_meta ADD COLUMN unembedded_link_count_1hop INTEGER",
         ),
         (
+            "articles_meta",
             "unembedded_link_count_2hop",
             "ALTER TABLE articles_meta ADD COLUMN unembedded_link_count_2hop INTEGER",
         ),
     ]
-    for col_name, sql in _col_migrations:
+    for table, col_name, sql in _col_migrations:
+        existing = articles_meta_cols if table == "articles_meta" else chunks_cols
+        if col_name in existing:
+            continue
         try:
             conn.execute(sql)
+            existing.add(col_name)
             if col_name == "links_embedded":
                 conn.execute("UPDATE articles_meta SET links_embedded = 0 WHERE links_embedded IS NULL")
             elif col_name == "links_embedded_2hop":
                 conn.execute(
                     "UPDATE articles_meta SET links_embedded_2hop = 0 WHERE links_embedded_2hop IS NULL"
                 )
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
 
     # Drop removed columns from existing databases.
-    try:
+    if "categories" in articles_meta_cols:
         conn.execute("ALTER TABLE articles_meta DROP COLUMN categories")
-    except sqlite3.OperationalError:
-        pass  # column already absent
 
     conn.commit()
 
