@@ -3,6 +3,7 @@
 
 {% block content %}
 {% set switch_url = '/switch-wiki?to=' + (other_wiki or '') + '&return_to=/embed-manager' %}
+{% include "_search_bar.html" %}
 <div class="page-header">
   <div class="page-header__title-row">
     <h1 class="page-title">Embeddings</h1>
