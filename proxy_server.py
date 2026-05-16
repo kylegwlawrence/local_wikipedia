@@ -39,12 +39,13 @@ class SqlRequest(BaseModel):
 
 
 def _connect(wiki: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(_DB_PATHS[wiki])
     if wiki in _RAG_WIKIS:
-        import sqlite_vec
-        conn.enable_load_extension(True)
-        conn.load_extension(sqlite_vec.loadable_path())
-    return conn
+        # Use connect_rag so the RAG schema migrations run — the local app
+        # adds columns to articles_meta over time, and the remote DB must be
+        # kept in sync or the proxy returns "no such column" for new SELECTs.
+        from rag.schema import connect_rag
+        return connect_rag(_DB_PATHS[wiki])
+    return sqlite3.connect(_DB_PATHS[wiki])
 
 
 @app.get("/api/exists/{wiki}")
