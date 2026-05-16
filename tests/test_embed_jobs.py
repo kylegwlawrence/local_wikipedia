@@ -53,6 +53,23 @@ class TestJobsCrud:
         # cancel-requested job should NOT be appended to.
         assert embed_jobs.get_active_job(conn, "simplewiki") is None
 
+    def test_count_running_jobs(self, tmp_path):
+        conn = _conn(tmp_path)
+        assert embed_jobs.count_running_jobs(conn, "simplewiki") == 0
+
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        assert embed_jobs.count_running_jobs(conn, "simplewiki") == 1
+        # Scoped to wiki.
+        assert embed_jobs.count_running_jobs(conn, "enwiki") == 0
+
+        embed_jobs.request_cancel(conn, job_id)
+        assert embed_jobs.count_running_jobs(conn, "simplewiki") == 0
+
+        other = embed_jobs.create_job(conn, "simplewiki", "/tmp/y.log")
+        assert embed_jobs.count_running_jobs(conn, "simplewiki") == 1
+        embed_jobs.mark_job(conn, other, "complete")
+        assert embed_jobs.count_running_jobs(conn, "simplewiki") == 0
+
 
 class TestItems:
     def test_append_items_dedupes(self, tmp_path):

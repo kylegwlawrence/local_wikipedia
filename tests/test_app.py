@@ -664,6 +664,23 @@ class TestActiveEmbedding:
         assert 'hx-trigger="every 3s"' not in resp.text
         assert "cancelling" in resp.text or "cancel" in resp.text.lower()
 
+    def test_running_count_empty(self, embed_client):
+        resp = embed_client.get("/active-embedding/running-count")
+        assert resp.status_code == 200
+        # Always carries the polling attribute so the badge keeps refreshing.
+        assert 'hx-trigger="every 3s"' in resp.text
+        # Empty body when there are zero running jobs (CSS :empty hides it).
+        assert 'id="sidebar-jobs-count"' in resp.text
+        assert ">1<" not in resp.text
+        assert ">0<" not in resp.text
+
+    def test_running_count_shows_one(self, embed_client):
+        embed_client.post("/embed-links/April", follow_redirects=False)
+        resp = embed_client.get("/active-embedding/running-count")
+        assert resp.status_code == 200
+        assert 'hx-trigger="every 3s"' in resp.text
+        assert ">1<" in resp.text
+
 
 class TestCrashRecovery:
     """Lifespan startup hook cleans up after a crashed worker."""

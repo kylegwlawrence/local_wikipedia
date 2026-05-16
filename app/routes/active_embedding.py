@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse
 
 import paths
+from app.config import templates
 from app.deps import active_wiki
 from app.helpers import htmx_redirect
 from app.panels import render_active_embedding_panel, render_job_list_panel
@@ -21,6 +22,19 @@ def active_embedding(request: Request, panel_page: int = 1) -> HTMLResponse:
     wiki = active_wiki(request)
     return render_active_embedding_panel(
         request, wiki, fragment_only=False, panel_page=panel_page
+    )
+
+
+@router.get("/active-embedding/running-count", response_class=HTMLResponse)
+def running_jobs_count(request: Request) -> HTMLResponse:
+    wiki = active_wiki(request)
+    conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
+    try:
+        count = embed_jobs.count_running_jobs(conn, wiki)
+    finally:
+        conn.close()
+    return templates.TemplateResponse(
+        request, "_sidebar_jobs_count.html", {"count": count}
     )
 
 

@@ -322,6 +322,25 @@ body {
   color: var(--color-primary-on-container);
 }
 
+.sidebar-item__count {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.sidebar-item__count:empty { display: none; }
+
 .sidebar-footer {
   padding: var(--space-3) var(--space-2);
   border-top: 1px solid var(--color-divider);

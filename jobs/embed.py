@@ -103,6 +103,16 @@ def get_active_job(conn: sqlite3.Connection, wiki: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def count_running_jobs(conn: sqlite3.Connection, wiki: str) -> int:
+    """Number of running, non-cancelled jobs for ``wiki``."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM embed_jobs WHERE wiki = ? "
+        "AND status = 'running' AND cancel_requested = 0",
+        (wiki,),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def get_latest_jobs(conn: sqlite3.Connection, wiki: str, limit: int = 5) -> list[sqlite3.Row]:
     """Return the most recent jobs for ``wiki`` (any status)."""
     return conn.execute(

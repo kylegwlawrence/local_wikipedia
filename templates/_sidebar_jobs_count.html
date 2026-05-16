@@ -1,0 +1,5 @@
+<span id="sidebar-jobs-count"
+      class="sidebar-item__count"
+      hx-get="/active-embedding/running-count"
+      hx-trigger="every 3s"
+      hx-swap="outerHTML">{% if count %}{{ count }}{% endif %}</span>
