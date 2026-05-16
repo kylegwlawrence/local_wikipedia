@@ -58,6 +58,8 @@ def connect(request: Request) -> sqlite3.Connection | RemoteSqliteConnection:
 
 def rag_connect(wiki: str):
     """Open the RAG DB if it exists; return None if not yet created."""
+    if paths.is_remote(wiki):
+        return RemoteSqliteConnection(paths.remote_url_for(wiki), f"{wiki}_rag")
     path = paths.rag_db_path_for(wiki)
     if not path.exists():
         return None

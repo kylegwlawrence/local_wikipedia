@@ -13,13 +13,16 @@ import argparse
 import sys
 
 import db as wiki_db
+import paths
 from jobs import embed as embed_jobs
 from paths import JOBS_DB, REDIRECT_MAX_HOPS, db_path_for, rag_db_path_for
 from rag import chunker
 from rag.embed import embed_one
 from rag.links import extract_article_links
 from rag.schema import connect_rag
+from remote import RemoteSqliteConnection
 from workers.runner import run_worker
+from workers.spawn import spawn_worker
 
 
 def _expand_links(
@@ -178,6 +181,25 @@ def _process_item(
     _expand_links(item, row["title"], wikitext, jobs_conn, wiki_conn)
 
 
+def _dispatch_next(jobs_conn, wiki: str) -> None:
+    """Promote the oldest queued job for ``wiki`` and spawn its worker.
+
+    Called after this worker reaches a terminal state. If two workers race to
+    promote the same row, ``start_queued_job`` returns 0 for the loser and no
+    duplicate subprocess is spawned.
+    """
+    nxt = embed_jobs.get_next_queued_for_wiki(jobs_conn, wiki)
+    if nxt is None:
+        return
+    if embed_jobs.start_queued_job(jobs_conn, nxt["id"]) == 0:
+        return
+    print(
+        f"[embed_worker] dispatching queued job {nxt['id']} for {wiki}",
+        flush=True,
+    )
+    spawn_worker("workers.embed", wiki, nxt["id"], "embed")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wiki", required=True)
@@ -191,12 +213,17 @@ def main(argv: list[str] | None = None) -> int:
 
     def mark_failed(error_message: str) -> None:
         embed_jobs.mark_job(jobs_conn, job_id, "failed", error_message=error_message)
+        _dispatch_next(jobs_conn, wiki)
 
     def body() -> int:
-        wiki_conn = wiki_db.connect(db_path_for(wiki))
-        rag_conn = None
-        try:
+        if paths.is_remote(wiki):
+            remote_url = paths.remote_url_for(wiki)
+            wiki_conn = RemoteSqliteConnection(remote_url, wiki)
+            rag_conn = RemoteSqliteConnection(remote_url, f"{wiki}_rag")
+        else:
+            wiki_conn = wiki_db.connect(db_path_for(wiki))
             rag_conn = connect_rag(rag_db_path_for(wiki))
+        try:
 
             already_embedded = {
                 r["page_id"]: r["revision_id"]
@@ -213,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
                 if job["cancel_requested"]:
                     embed_jobs.mark_job(jobs_conn, job_id, "cancelled")
                     print(f"[embed_worker] job {job_id} cancelled", flush=True)
+                    _dispatch_next(jobs_conn, wiki)
                     return 0
 
                 item = embed_jobs.get_next_queued(jobs_conn, job_id)
@@ -221,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
                         _finalize_links_embedded(jobs_conn, rag_conn, job_id)
                     embed_jobs.mark_job(jobs_conn, job_id, "complete")
                     print(f"[embed_worker] job {job_id} complete", flush=True)
+                    _dispatch_next(jobs_conn, wiki)
                     return 0
 
                 print(
@@ -230,8 +259,7 @@ def main(argv: list[str] | None = None) -> int:
                 _process_item(item, jobs_conn, wiki_conn, rag_conn, already_embedded)
                 embed_jobs.touch_job(jobs_conn, job_id)
         finally:
-            if rag_conn is not None:
-                rag_conn.close()
+            rag_conn.close()
             wiki_conn.close()
 
     try:

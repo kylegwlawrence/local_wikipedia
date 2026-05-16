@@ -15,12 +15,20 @@ Lives at the project root (not under ``app/``) so worker subprocesses can
 import it without pulling in FastAPI.
 """
 
+import base64
 from collections.abc import Iterator, Sequence
 from typing import Any
 
 import httpx
 
 _DEFAULT_TIMEOUT = 30.0
+
+
+def _encode_param(v: Any) -> Any:
+    """Encode bytes params as base64 strings so they survive JSON serialisation."""
+    if isinstance(v, bytes):
+        return f"__base64__:{base64.b64encode(v).decode()}"
+    return v
 
 
 class RemoteSqliteError(Exception):
@@ -70,9 +78,10 @@ class RemoteRow:
 class RemoteCursor:
     """Subset of ``sqlite3.Cursor`` covering fetchone/fetchall/iter."""
 
-    def __init__(self, columns: Sequence[str], rows: Sequence[Sequence[Any]]):
+    def __init__(self, columns: Sequence[str], rows: Sequence[Sequence[Any]], last_insert_rowid: int = 0):
         self._rows: list[RemoteRow] = [RemoteRow(columns, r) for r in rows]
         self._index = 0
+        self.lastrowid: int = last_insert_rowid
 
     def fetchone(self) -> RemoteRow | None:
         if self._index >= len(self._rows):
@@ -120,7 +129,9 @@ class RemoteSqliteConnection:
         """
         url = f"{self.base_url}/api/sql/{self.wiki}"
         try:
-            response = self._client.post(url, json={"sql": sql, "params": list(params)})
+            response = self._client.post(
+                url, json={"sql": sql, "params": [_encode_param(p) for p in params]}
+            )
         except httpx.HTTPError as exc:
             raise RemoteSqliteError(f"network error talking to {url}: {exc}") from exc
         if response.status_code >= 400:
@@ -129,7 +140,11 @@ class RemoteSqliteConnection:
                 f"(body: {response.text[:500]})"
             )
         payload = response.json()
-        return RemoteCursor(payload.get("columns", []), payload.get("rows", []))
+        return RemoteCursor(
+            payload.get("columns", []),
+            payload.get("rows", []),
+            payload.get("last_insert_rowid", 0),
+        )
 
     def commit(self) -> None:
         # Each statement autocommits on the remote — see module docstring.
