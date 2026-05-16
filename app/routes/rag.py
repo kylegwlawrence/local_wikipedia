@@ -23,8 +23,8 @@ from app.config import (
     RAG_SERVER_VERSION,
     WIKI_DISPLAY_NAMES,
 )
+from app.deps import rag_connect
 from rag import embedder, retriever
-from rag.schema import connect_rag
 
 router = APIRouter()
 
@@ -80,8 +80,14 @@ class RetrieveResponse(BaseModel):
 
 
 def _available_corpora() -> list[str]:
-    """Return wikis whose RAG DB exists on disk, in deterministic order."""
-    return sorted(w for w in paths.KNOWN_WIKIS if paths.rag_db_path_for(w).exists())
+    """Return wikis whose RAG DB is available (local or remote), in deterministic order."""
+    available = []
+    for w in paths.KNOWN_WIKIS:
+        conn = rag_connect(w)
+        if conn is not None:
+            conn.close()
+            available.append(w)
+    return sorted(available)
 
 
 @router.get("/rag/info")
@@ -94,7 +100,9 @@ def rag_info() -> ServerInfo:
     """
     corpora = []
     for wiki in _available_corpora():
-        conn = connect_rag(paths.rag_db_path_for(wiki))
+        conn = rag_connect(wiki)
+        if conn is None:
+            continue
         try:
             article_count = conn.execute("SELECT COUNT(*) FROM articles_meta").fetchone()[0]
         finally:
@@ -135,7 +143,12 @@ def rag_retrieve(req: RetrieveRequest) -> RetrieveResponse:
             detail=f"corpus '{req.corpus}' not found; available: {available}",
         )
 
-    conn = connect_rag(paths.rag_db_path_for(req.corpus))
+    conn = rag_connect(req.corpus)
+    if conn is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"corpus '{req.corpus}' not found; available: {available}",
+        )
     try:
         result = retriever.retrieve(req.query, conn, top_k=req.top_k)
     finally:

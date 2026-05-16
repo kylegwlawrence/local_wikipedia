@@ -25,18 +25,21 @@ def article(request: Request, title: str) -> HTMLResponse:
     wiki = active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
     other_wiki_for_template = None
-    other_wiki_db = paths.db_path_for(other_wiki)
-    if other_wiki_db.exists():
-        try:
-            with wiki_db.connect(other_wiki_db) as ow_conn:
-                hit = ow_conn.execute(
-                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1",
-                    (row["title"],),
-                ).fetchone()
-                if hit:
-                    other_wiki_for_template = other_wiki
-        except Exception:
-            pass
+    if paths.is_remote(other_wiki):
+        other_wiki_for_template = other_wiki
+    else:
+        other_wiki_db = paths.db_path_for(other_wiki)
+        if other_wiki_db.exists():
+            try:
+                with wiki_db.connect(other_wiki_db) as ow_conn:
+                    hit = ow_conn.execute(
+                        "SELECT 1 FROM articles WHERE title = ? LIMIT 1",
+                        (row["title"],),
+                    ).fetchone()
+                    if hit:
+                        other_wiki_for_template = other_wiki
+            except Exception:
+                pass
 
     return templates.TemplateResponse(
         request,
@@ -64,18 +67,21 @@ def wikitext(request: Request, title: str) -> HTMLResponse:
     wiki = active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
     other_wiki_for_template = None
-    other_wiki_db = paths.db_path_for(other_wiki)
-    if other_wiki_db.exists():
-        try:
-            with wiki_db.connect(other_wiki_db) as ow_conn:
-                hit = ow_conn.execute(
-                    "SELECT 1 FROM articles WHERE title = ? LIMIT 1",
-                    (row["title"],),
-                ).fetchone()
-                if hit:
-                    other_wiki_for_template = other_wiki
-        except Exception:
-            pass
+    if paths.is_remote(other_wiki):
+        other_wiki_for_template = other_wiki
+    else:
+        other_wiki_db = paths.db_path_for(other_wiki)
+        if other_wiki_db.exists():
+            try:
+                with wiki_db.connect(other_wiki_db) as ow_conn:
+                    hit = ow_conn.execute(
+                        "SELECT 1 FROM articles WHERE title = ? LIMIT 1",
+                        (row["title"],),
+                    ).fetchone()
+                    if hit:
+                        other_wiki_for_template = other_wiki
+            except Exception:
+                pass
 
     return templates.TemplateResponse(
         request,

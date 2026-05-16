@@ -25,7 +25,7 @@ router = APIRouter()
 def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
     wiki = active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
-    other_wiki_for_template = other_wiki if paths.db_path_for(other_wiki).exists() else None
+    other_wiki_for_template = other_wiki if (paths.db_path_for(other_wiki).exists() or paths.is_remote(other_wiki)) else None
     rag_conn = rag_connect(wiki)
 
     if rag_conn is None:

@@ -105,7 +105,7 @@ def render_active_embedding_panel(
         started_at_display = "" if is_running else format_started_at(active_dict["started_at"])
 
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
-    other_wiki_for_template = other_wiki if paths.db_path_for(other_wiki).exists() else None
+    other_wiki_for_template = other_wiki if (paths.db_path_for(other_wiki).exists() or paths.is_remote(other_wiki)) else None
 
     panel_total_pages = math.ceil(panel_total / ITEMS_PER_PAGE) if panel_total else 0
     panel_page_clamped = max(1, min(panel_page, panel_total_pages or 1))

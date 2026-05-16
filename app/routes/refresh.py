@@ -18,7 +18,7 @@ router = APIRouter()
 def refresh_page(request: Request) -> HTMLResponse:
     wiki = active_wiki(request)
     other_wiki = next(w for w in KNOWN_WIKIS if w != wiki)
-    other_wiki_for_template = other_wiki if paths.db_path_for(other_wiki).exists() else None
+    other_wiki_for_template = other_wiki if (paths.db_path_for(other_wiki).exists() or paths.is_remote(other_wiki)) else None
     conn = refresh_jobs.connect_jobs(paths.JOBS_DB)
     try:
         jobs = {w: refresh_jobs.get_latest_job(conn, w) for w in KNOWN_WIKIS}

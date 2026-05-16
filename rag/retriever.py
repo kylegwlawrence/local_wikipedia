@@ -12,6 +12,7 @@ from typing import NamedTuple
 import httpx
 
 from rag import embedder
+from remote import RemoteSqliteError
 
 
 @dataclass
@@ -158,7 +159,7 @@ def _sparse_search(
             (escaped, k),
         ).fetchall()
         return [(r["rowid"], r["rank"]) for r in rows]
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, RemoteSqliteError):
         return []
 
 
