@@ -51,7 +51,9 @@ def embed_manager(request: Request, page: int = 1) -> HTMLResponse:
         offset = (page - 1) * EMBED_PAGE_SIZE
         rows = rag_conn.execute(
             """SELECT m.page_id, m.title,
-                      m.article_size_bytes, m.embedded_at, m.links_embedded,
+                      m.article_size_bytes, m.embedded_at,
+                      m.links_embedded, m.links_embedded_2hop,
+                      m.unembedded_link_count_1hop, m.unembedded_link_count_2hop,
                       COUNT(c.chunk_id) AS chunk_count
                FROM articles_meta m
                LEFT JOIN chunks c ON c.page_id = m.page_id
@@ -195,38 +197,39 @@ def embed_article(request: Request, title: str) -> HTMLResponse:
             "SELECT page_id, title, revision_id, text_content FROM articles WHERE title = ?",
             (title,),
         ).fetchone()
+
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Article not found: {title}")
+
+        rag_path = paths.rag_db_path_for(wiki)
+        rag_conn = connect_rag(rag_path)
+        chunk_count = 0
+        error = False
+        embed_error: str | None = None
+        links_embedded = False
+        links_embedded_2hop = False
+        try:
+            chunk_count = rag_embed_one(
+                rag_conn,
+                row["page_id"],
+                row["title"],
+                row["revision_id"],
+                row["text_content"],
+                wiki_conn=wiki_conn,
+            )
+            links_row = rag_conn.execute(
+                "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE page_id = ?",
+                (row["page_id"],),
+            ).fetchone()
+            links_embedded = bool(links_row and links_row["links_embedded"])
+            links_embedded_2hop = bool(links_row and links_row["links_embedded_2hop"])
+        except Exception as exc:
+            error = True
+            embed_error = str(exc)
+        finally:
+            rag_conn.close()
     finally:
         wiki_conn.close()
-
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Article not found: {title}")
-
-    rag_path = paths.rag_db_path_for(wiki)
-    rag_conn = connect_rag(rag_path)
-    chunk_count = 0
-    error = False
-    embed_error: str | None = None
-    links_embedded = False
-    links_embedded_2hop = False
-    try:
-        chunk_count = rag_embed_one(
-            rag_conn,
-            row["page_id"],
-            row["title"],
-            row["revision_id"],
-            row["text_content"],
-        )
-        links_row = rag_conn.execute(
-            "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE page_id = ?",
-            (row["page_id"],),
-        ).fetchone()
-        links_embedded = bool(links_row and links_row["links_embedded"])
-        links_embedded_2hop = bool(links_row and links_row["links_embedded_2hop"])
-    except Exception as exc:
-        error = True
-        embed_error = str(exc)
-    finally:
-        rag_conn.close()
 
     jobs_conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
     try:

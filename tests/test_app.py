@@ -606,6 +606,85 @@ class TestEmbedCount2:
         assert 'class="chip chip--status-complete"' in resp.text
 
 
+class TestEmbedManagerLinksColumns:
+    """`/embed-manager` Links and Links² columns reflect cached count + flag."""
+
+    def _seed_rag(self, tmp_path, rows):
+        """Build a tmp RAG DB and seed ``articles_meta`` with the given rows."""
+        from rag.schema import connect_rag
+
+        rag_path = tmp_path / "dumps" / "enwiki_rag.db"
+        rag_path.parent.mkdir(exist_ok=True)
+        rag_conn = connect_rag(rag_path)
+        rag_conn.executemany(
+            "INSERT INTO articles_meta "
+            "(page_id, title, revision_id, links_embedded, links_embedded_2hop, "
+            " unembedded_link_count_1hop, unembedded_link_count_2hop) "
+            "VALUES (?, ?, 1, ?, ?, ?, ?)",
+            rows,
+        )
+        rag_conn.commit()
+        rag_conn.close()
+        return rag_path
+
+    def test_renders_checkmark_when_flag_set(self, embed_client, tmp_path, monkeypatch):
+        import paths
+
+        # links_embedded=1, both counts NULL → 1-hop checkmark; Links² stays —.
+        rag_path = self._seed_rag(tmp_path, [(1, "April", 1, 0, None, None)])
+        monkeypatch.setattr(paths, "rag_db_path_for", lambda wiki: rag_path)
+
+        resp = embed_client.get("/embed-manager")
+        assert resp.status_code == 200
+        # Exactly one checkmark chip for the row (Links only, not Links²).
+        assert resp.text.count('class="chip chip--status-complete"') == 1
+        # Links² column shows the dash.
+        assert "—" in resp.text
+
+    def test_renders_checkmark_when_count_is_zero(self, embed_client, tmp_path, monkeypatch):
+        import paths
+
+        # Both flags 0 but both counts == 0 → both columns get checkmarks.
+        rag_path = self._seed_rag(tmp_path, [(1, "April", 0, 0, 0, 0)])
+        monkeypatch.setattr(paths, "rag_db_path_for", lambda wiki: rag_path)
+
+        resp = embed_client.get("/embed-manager")
+        assert resp.status_code == 200
+        assert resp.text.count('class="chip chip--status-complete"') == 2
+
+    def test_renders_dash_when_count_is_null(self, embed_client, tmp_path, monkeypatch):
+        import paths
+
+        # Both flags 0 and both counts NULL → both columns render "—".
+        rag_path = self._seed_rag(tmp_path, [(1, "April", 0, 0, None, None)])
+        monkeypatch.setattr(paths, "rag_db_path_for", lambda wiki: rag_path)
+
+        resp = embed_client.get("/embed-manager")
+        assert resp.status_code == 200
+        assert 'class="chip chip--status-complete"' not in resp.text
+        # Two dashes — one per column. (Page header doesn't render dashes when
+        # total_count > 0; the "Size" column shows "—" only when size is NULL,
+        # which we set to 0 / NULL — but actually article_size_bytes is NULL
+        # too in this seed, so we get one more dash there.)
+        assert resp.text.count("—") >= 2
+
+    def test_renders_count_when_nonzero(self, embed_client, tmp_path, monkeypatch):
+        import re
+
+        import paths
+
+        # links_embedded=0, count=5 → Links column shows "5" (no checkmark).
+        rag_path = self._seed_rag(tmp_path, [(1, "April", 0, 0, 5, 12)])
+        monkeypatch.setattr(paths, "rag_db_path_for", lambda wiki: rag_path)
+
+        resp = embed_client.get("/embed-manager")
+        assert resp.status_code == 200
+        assert 'class="chip chip--status-complete"' not in resp.text
+        # The Links / Links² cells just contain the formatted number plus whitespace.
+        assert re.search(r"<td>\s*5\s*</td>", resp.text)
+        assert re.search(r"<td>\s*12\s*</td>", resp.text)
+
+
 class TestActiveEmbedding:
     """`/active-embedding` and its panel + cancel endpoints."""
 

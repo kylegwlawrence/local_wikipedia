@@ -307,3 +307,47 @@ def count_unembedded_2hop(
     candidate_list = list(candidates)
     embedded = _embedded_titles(rag_conn, candidate_list)
     return len(candidates) - len(embedded)
+
+
+def recompute_link_counts(
+    rag_conn: sqlite3.Connection,
+    wiki_conn: sqlite3.Connection,
+    title: str,
+    wikitext: str,
+    *,
+    include_2hop: bool,
+) -> None:
+    """Cache 1-hop (and optionally 2-hop) unembedded-link counts on ``articles_meta``.
+
+    Called from two trigger sites:
+      * ``rag.embed.embed_one`` — right after a single-article embed (1-hop
+        only; 2-hop is too expensive for a synchronous request).
+      * ``workers.embed._finalize_links_embedded`` — once a job's queue drains
+        (both 1-hop AND 2-hop, for each distinct ``source_title``).
+
+    Best-effort: exceptions are swallowed and logged. The cache is allowed to
+    go stale (over-count) when neighbours get embedded outside one of these
+    trigger sites; clicking Embed+Links on the affected source refreshes it.
+    """
+    try:
+        n1 = count_unembedded_1hop(wiki_conn, rag_conn, title, wikitext)
+        if include_2hop:
+            n2 = count_unembedded_2hop(wiki_conn, rag_conn, title, wikitext)
+            rag_conn.execute(
+                "UPDATE articles_meta "
+                "SET unembedded_link_count_1hop = ?, "
+                "    unembedded_link_count_2hop = ? "
+                "WHERE title = ?",
+                (n1, n2, title),
+            )
+        else:
+            rag_conn.execute(
+                "UPDATE articles_meta SET unembedded_link_count_1hop = ? WHERE title = ?",
+                (n1, title),
+            )
+        rag_conn.commit()
+    except Exception as exc:
+        print(
+            f"[recompute_link_counts] {title!r}: {type(exc).__name__}: {exc}",
+            flush=True,
+        )

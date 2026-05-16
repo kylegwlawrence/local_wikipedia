@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import sqlite3
 import sys
 from datetime import UTC, datetime
 
@@ -16,6 +17,7 @@ from tqdm import tqdm
 import db as wiki_db
 from paths import db_path_for, rag_db_path_for
 from rag import chunker, embedder
+from rag.links import recompute_link_counts
 from rag.schema import connect_rag, get_embedding_dim, set_embedding_dim
 
 
@@ -199,6 +201,8 @@ def embed_one(
     revision_id: int,
     wikitext: str,
     ollama_url: str = embedder.OLLAMA_BASE_URL,
+    *,
+    wiki_conn: sqlite3.Connection | None = None,
 ) -> int:
     """Chunk, embed, and store one article, syncing FTS incrementally.
 
@@ -213,6 +217,10 @@ def embed_one(
         revision_id: Current revision ID for incremental tracking.
         wikitext: Raw wikitext content of the article.
         ollama_url: Ollama server base URL.
+        wiki_conn: If provided, the article's 1-hop unembedded-link count is
+            recomputed and cached on ``articles_meta`` after the embed
+            commits. Pass ``None`` from the bulk CLI path where this would
+            duplicate work.
 
     Returns:
         Number of chunks successfully embedded. Returns 0 for redirect
@@ -250,6 +258,8 @@ def embed_one(
 
     if not chunks_data:
         rag_conn.commit()
+        if wiki_conn is not None:
+            recompute_link_counts(rag_conn, wiki_conn, title, wikitext, include_2hop=False)
         return 0
 
     texts = [embedder.format_document(title, c["section"], c["text"]) for c in chunks_data]
@@ -257,6 +267,8 @@ def embed_one(
         vecs = embedder.embed_texts_batch(texts, base_url=ollama_url)
     except httpx.HTTPError:
         rag_conn.commit()
+        if wiki_conn is not None:
+            recompute_link_counts(rag_conn, wiki_conn, title, wikitext, include_2hop=False)
         return 0
 
     _check_embedding_dim(rag_conn, vecs[0])
@@ -264,6 +276,8 @@ def embed_one(
         _insert_chunk(rag_conn, page_id, chunk, vec, fts_incremental=True)
 
     rag_conn.commit()
+    if wiki_conn is not None:
+        recompute_link_counts(rag_conn, wiki_conn, title, wikitext, include_2hop=False)
     return len(vecs)
 
 

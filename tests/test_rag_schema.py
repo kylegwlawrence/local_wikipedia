@@ -144,3 +144,59 @@ def test_chunk_type_migration_on_old_schema(tmp_path):
     row = conn.execute("SELECT chunk_type FROM chunks WHERE page_id=1").fetchone()
     assert row["chunk_type"] == "prose"
     conn.close()
+
+
+def test_articles_meta_has_link_count_columns(tmp_path):
+    conn = connect_rag(tmp_path / "test.db")
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(articles_meta)").fetchall()}
+    assert "unembedded_link_count_1hop" in cols
+    assert "unembedded_link_count_2hop" in cols
+    conn.close()
+
+
+def test_link_count_columns_default_null(tmp_path):
+    conn = connect_rag(tmp_path / "test.db")
+    conn.execute("INSERT INTO articles_meta (page_id, title, revision_id) VALUES (1, 'Test', 100)")
+    conn.commit()
+    row = conn.execute(
+        "SELECT unembedded_link_count_1hop, unembedded_link_count_2hop FROM articles_meta WHERE page_id = 1"
+    ).fetchone()
+    assert row["unembedded_link_count_1hop"] is None
+    assert row["unembedded_link_count_2hop"] is None
+    conn.close()
+
+
+def test_link_count_columns_migrate_on_old_schema(tmp_path):
+    db_path = tmp_path / "old.db"
+    old_conn = sqlite3.connect(db_path)
+    old_conn.executescript("""
+        CREATE TABLE articles_meta (
+            page_id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            revision_id INTEGER NOT NULL,
+            links_embedded INTEGER NOT NULL DEFAULT 0,
+            links_embedded_2hop INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE chunks (
+            chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            page_id INTEGER NOT NULL,
+            section TEXT,
+            chunk_index INTEGER NOT NULL DEFAULT 0,
+            text TEXT NOT NULL,
+            text_length INTEGER NOT NULL
+        );
+    """)
+    old_conn.execute("INSERT INTO articles_meta (page_id, title, revision_id) VALUES (1, 'Test', 1)")
+    old_conn.commit()
+    old_conn.close()
+
+    conn = connect_rag(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(articles_meta)").fetchall()}
+    assert "unembedded_link_count_1hop" in cols
+    assert "unembedded_link_count_2hop" in cols
+    row = conn.execute(
+        "SELECT unembedded_link_count_1hop, unembedded_link_count_2hop FROM articles_meta WHERE page_id = 1"
+    ).fetchone()
+    assert row["unembedded_link_count_1hop"] is None
+    assert row["unembedded_link_count_2hop"] is None
+    conn.close()

@@ -18,7 +18,7 @@ from jobs import embed as embed_jobs
 from paths import JOBS_DB, REDIRECT_MAX_HOPS, db_path_for, rag_db_path_for
 from rag import chunker
 from rag.embed import embed_one
-from rag.links import extract_article_links
+from rag.links import extract_article_links, recompute_link_counts
 from rag.schema import connect_rag
 from remote import RemoteSqliteConnection
 from workers.runner import run_worker
@@ -71,8 +71,8 @@ def _expand_links(
         )
 
 
-def _finalize_links_embedded(jobs_conn, rag_conn, job_id: int) -> None:
-    """Mark articles whose links were embedded as part of this job.
+def _finalize_links_embedded(jobs_conn, rag_conn, wiki_conn, job_id: int) -> None:
+    """Mark articles whose links were embedded as part of this job, then refresh counts.
 
     ``links_embedded`` is set on every distinct ``source_title`` that reached a
     terminal status — that includes the original trigger article and any 1-hop
@@ -82,6 +82,11 @@ def _finalize_links_embedded(jobs_conn, rag_conn, job_id: int) -> None:
     enqueued at ``hops_remaining >= 1``: that flag is exclusive to the
     article(s) whose trigger was a 2-hop click, since ``_expand_links`` adds
     depth-1 children at ``hops_remaining=0``.
+
+    After the flags settle, each source_title's cached unembedded-link counts
+    on ``articles_meta`` are refreshed via ``recompute_link_counts`` so the
+    embeddings-page listing reflects current state. 2-hop counts are only
+    recomputed for source_titles that triggered a 2-hop expansion.
     """
     source_titles = jobs_conn.execute(
         "SELECT DISTINCT source_title FROM embed_job_items "
@@ -105,6 +110,23 @@ def _finalize_links_embedded(jobs_conn, rag_conn, job_id: int) -> None:
             (st_row["source_title"],),
         )
     rag_conn.commit()
+
+    two_hop_set = {r["source_title"] for r in two_hop_sources}
+    for st_row in source_titles:
+        st = st_row["source_title"]
+        wt = wiki_conn.execute(
+            "SELECT text_content FROM articles WHERE title = ?",
+            (st,),
+        ).fetchone()
+        if wt is None:
+            continue
+        recompute_link_counts(
+            rag_conn,
+            wiki_conn,
+            st,
+            wt["text_content"],
+            include_2hop=(st in two_hop_set),
+        )
 
 
 def _process_item(
@@ -161,6 +183,7 @@ def _process_item(
             row["title"],
             revision_id,
             wikitext,
+            wiki_conn=wiki_conn,
         )
     except Exception as exc:
         embed_jobs.update_item(
@@ -246,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
                 item = embed_jobs.get_next_queued(jobs_conn, job_id)
                 if item is None:
                     if job["include_links"]:
-                        _finalize_links_embedded(jobs_conn, rag_conn, job_id)
+                        _finalize_links_embedded(jobs_conn, rag_conn, wiki_conn, job_id)
                     embed_jobs.mark_job(jobs_conn, job_id, "complete")
                     print(f"[embed_worker] job {job_id} complete", flush=True)
                     _dispatch_next(jobs_conn, wiki)

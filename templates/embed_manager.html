@@ -50,6 +50,7 @@
           <th>Size</th>
           <th>Embedded</th>
           <th>Links</th>
+          <th>Links²</th>
           <th class="data-table__col-actions"></th>
         </tr>
       </thead>
@@ -65,11 +66,20 @@
           </td>
           <td class="meta-text">{{ a.embedded_at_display }}</td>
           <td>
-            {% if a.links_embedded %}
+            {% if a.links_embedded or a.unembedded_link_count_1hop == 0 %}
               <span class="chip chip--status-complete">
                 {% from "_icons.html" import check %}{{ check(size=14) }}
               </span>
-            {% else %}—{% endif %}
+            {% elif a.unembedded_link_count_1hop is none %}—
+            {% else %}{{ "{:,}".format(a.unembedded_link_count_1hop) }}{% endif %}
+          </td>
+          <td>
+            {% if a.links_embedded_2hop or a.unembedded_link_count_2hop == 0 %}
+              <span class="chip chip--status-complete">
+                {% from "_icons.html" import check %}{{ check(size=14) }}
+              </span>
+            {% elif a.unembedded_link_count_2hop is none %}—
+            {% else %}{{ "{:,}".format(a.unembedded_link_count_2hop) }}{% endif %}
           </td>
           <td class="data-table__cell-actions">
             <div class="action-menu">

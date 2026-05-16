@@ -49,13 +49,15 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS articles_meta (
-            page_id              INTEGER PRIMARY KEY,
-            title                TEXT    NOT NULL,
-            revision_id          INTEGER NOT NULL,
-            embedded_at          TEXT,
-            article_size_bytes   INTEGER,
-            links_embedded       INTEGER NOT NULL DEFAULT 0,
-            links_embedded_2hop  INTEGER NOT NULL DEFAULT 0
+            page_id                     INTEGER PRIMARY KEY,
+            title                       TEXT    NOT NULL,
+            revision_id                 INTEGER NOT NULL,
+            embedded_at                 TEXT,
+            article_size_bytes          INTEGER,
+            links_embedded              INTEGER NOT NULL DEFAULT 0,
+            links_embedded_2hop         INTEGER NOT NULL DEFAULT 0,
+            unembedded_link_count_1hop  INTEGER,
+            unembedded_link_count_2hop  INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS chunks (
@@ -94,6 +96,14 @@ def create_rag_schema(conn: sqlite3.Connection) -> None:
             "ALTER TABLE articles_meta ADD COLUMN links_embedded_2hop INTEGER NOT NULL DEFAULT 0",
         ),
         ("chunk_type", "ALTER TABLE chunks ADD COLUMN chunk_type TEXT NOT NULL DEFAULT 'prose'"),
+        (
+            "unembedded_link_count_1hop",
+            "ALTER TABLE articles_meta ADD COLUMN unembedded_link_count_1hop INTEGER",
+        ),
+        (
+            "unembedded_link_count_2hop",
+            "ALTER TABLE articles_meta ADD COLUMN unembedded_link_count_2hop INTEGER",
+        ),
     ]
     for col_name, sql in _col_migrations:
         try:

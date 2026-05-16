@@ -86,7 +86,7 @@ def stub_embed_one(monkeypatch):
     """Replace ``embed_one`` with a stub that records the page_id in articles_meta."""
     calls: list[int] = []
 
-    def fake_embed_one(rag_conn, page_id, title, revision_id, wikitext):
+    def fake_embed_one(rag_conn, page_id, title, revision_id, wikitext, *, wiki_conn=None):
         calls.append(page_id)
         rag_conn.execute(
             "INSERT OR REPLACE INTO articles_meta "
@@ -244,7 +244,13 @@ class TestFinalizeLinksEmbedded:
             )
         rag_conn.commit()
 
-    def test_one_hop_job_marks_links_embedded_only(self, jobs_conn, rag_conn):
+    def _empty_wiki_db(self, tmp_path):
+        """A wiki DB with no rows — finalize will skip its count-refresh loop."""
+        wiki_path = tmp_path / "empty.db"
+        _build_wiki_db(wiki_path, [])
+        return wiki_path
+
+    def test_one_hop_job_marks_links_embedded_only(self, tmp_path, jobs_conn, rag_conn):
         # 1-hop trigger on A: every item has hops_remaining=0.
         self._seed_meta(rag_conn, ["A", "B", "C"])
         job_id = embed_jobs.create_job(jobs_conn, "enwiki", "/tmp/x.log", "A")
@@ -253,7 +259,9 @@ class TestFinalizeLinksEmbedded:
         jobs_conn.execute("UPDATE embed_job_items SET status = 'complete' WHERE job_id = ?", (job_id,))
         jobs_conn.commit()
 
-        embed_worker._finalize_links_embedded(jobs_conn, rag_conn, job_id)
+        wiki_path = self._empty_wiki_db(tmp_path)
+        with wiki_db.connect(wiki_path) as wconn:
+            embed_worker._finalize_links_embedded(jobs_conn, rag_conn, wconn, job_id)
 
         row = rag_conn.execute(
             "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE title = 'A'"
@@ -261,7 +269,7 @@ class TestFinalizeLinksEmbedded:
         assert row["links_embedded"] == 1
         assert row["links_embedded_2hop"] == 0
 
-    def test_two_hop_job_marks_both_flags_on_trigger(self, jobs_conn, rag_conn):
+    def test_two_hop_job_marks_both_flags_on_trigger(self, tmp_path, jobs_conn, rag_conn):
         # 2-hop trigger on A: (A, A, 0), (B, A, 1), (C, A, 1). Worker later
         # adds (D, B, 0) and (E, C, 0) as depth-1 children.
         self._seed_meta(rag_conn, ["A", "B", "C", "D", "E"])
@@ -274,7 +282,9 @@ class TestFinalizeLinksEmbedded:
         jobs_conn.execute("UPDATE embed_job_items SET status = 'complete' WHERE job_id = ?", (job_id,))
         jobs_conn.commit()
 
-        embed_worker._finalize_links_embedded(jobs_conn, rag_conn, job_id)
+        wiki_path = self._empty_wiki_db(tmp_path)
+        with wiki_db.connect(wiki_path) as wconn:
+            embed_worker._finalize_links_embedded(jobs_conn, rag_conn, wconn, job_id)
 
         rows = {
             r["title"]: r
@@ -294,7 +304,7 @@ class TestFinalizeLinksEmbedded:
         assert rows["D"]["links_embedded"] == 0
         assert rows["E"]["links_embedded"] == 0
 
-    def test_skips_unfinished_items(self, jobs_conn, rag_conn):
+    def test_skips_unfinished_items(self, tmp_path, jobs_conn, rag_conn):
         # An item still queued or in_progress must not contribute to the flags.
         self._seed_meta(rag_conn, ["A", "B"])
         job_id = embed_jobs.create_job(jobs_conn, "enwiki", "/tmp/x.log", "A")
@@ -306,7 +316,9 @@ class TestFinalizeLinksEmbedded:
         )
         jobs_conn.commit()
 
-        embed_worker._finalize_links_embedded(jobs_conn, rag_conn, job_id)
+        wiki_path = self._empty_wiki_db(tmp_path)
+        with wiki_db.connect(wiki_path) as wconn:
+            embed_worker._finalize_links_embedded(jobs_conn, rag_conn, wconn, job_id)
 
         row = rag_conn.execute(
             "SELECT links_embedded, links_embedded_2hop FROM articles_meta WHERE title = 'A'"
@@ -315,3 +327,48 @@ class TestFinalizeLinksEmbedded:
         # hops_remaining=1 item is still queued — 2-hop flag stays 0.
         assert row["links_embedded"] == 1
         assert row["links_embedded_2hop"] == 0
+
+    def test_finalize_populates_link_counts(self, tmp_path, jobs_conn, rag_conn):
+        # Wiki has A→[[B]], B→[[C]], C as leaf. All three are seeded in
+        # articles_meta so every link target counts as "already embedded".
+        wiki_path = tmp_path / "chain.db"
+        _build_wiki_db(
+            wiki_path,
+            [
+                (1, "A", "A talks about [[B]]."),
+                (2, "B", "B talks about [[C]]."),
+                (3, "C", "Leaf."),
+            ],
+        )
+        self._seed_meta(rag_conn, ["A", "B", "C"])
+
+        # 2-hop trigger on A; B becomes a 1-hop source via expansion.
+        job_id = embed_jobs.create_job(jobs_conn, "enwiki", "/tmp/x.log", "A")
+        embed_jobs.append_items(
+            jobs_conn,
+            job_id,
+            [("A", "A", 1), ("B", "A", 0), ("C", "B", 0)],
+        )
+        jobs_conn.execute("UPDATE embed_job_items SET status='complete' WHERE job_id=?", (job_id,))
+        jobs_conn.commit()
+
+        with wiki_db.connect(wiki_path) as wconn:
+            embed_worker._finalize_links_embedded(jobs_conn, rag_conn, wconn, job_id)
+
+        rows = {
+            r["title"]: r
+            for r in rag_conn.execute(
+                "SELECT title, unembedded_link_count_1hop, unembedded_link_count_2hop "
+                "FROM articles_meta"
+            ).fetchall()
+        }
+        # A's only outbound link is B, which is embedded → 1-hop count = 0.
+        assert rows["A"]["unembedded_link_count_1hop"] == 0
+        # A had a hops_remaining=1 item → 2-hop count is also computed (also 0).
+        assert rows["A"]["unembedded_link_count_2hop"] == 0
+        # B is a source of hops=0 items only → 1-hop refreshed, 2-hop stays NULL.
+        assert rows["B"]["unembedded_link_count_1hop"] == 0
+        assert rows["B"]["unembedded_link_count_2hop"] is None
+        # C never appears as a source_title → both stay NULL.
+        assert rows["C"]["unembedded_link_count_1hop"] is None
+        assert rows["C"]["unembedded_link_count_2hop"] is None
