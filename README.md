@@ -181,6 +181,52 @@ To point the app at a specific database file, set `WIKI_DB`:
 WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
 ```
 
+**Option C: Remote Wiki via SQL Proxy**
+
+If a wiki database (e.g. `enwiki.db`) lives on a different machine on your local network or Tailscale, you can serve it over a lightweight SQL proxy instead of copying the file. The local app talks to the proxy transparently — search, article rendering, and embedding all work the same way.
+
+**On the remote machine:**
+
+1. Copy `proxy_server.py` to the remote machine:
+   ```bash
+   scp proxy_server.py user@remote-host:~/
+   ```
+
+2. Create a virtual environment and install dependencies:
+   ```bash
+   python3 -m venv proxy-venv
+   proxy-venv/bin/pip install fastapi "uvicorn[standard]" sqlite-vec
+   ```
+
+3. Start the proxy (point `ENWIKI_DB` at the actual database path):
+   ```bash
+   ENWIKI_DB=/path/to/enwiki.db proxy-venv/bin/uvicorn proxy_server:app --host 0.0.0.0 --port 8000
+   ```
+
+   To keep it running after you disconnect, use tmux:
+   ```bash
+   tmux new-session -d -s wiki "ENWIKI_DB=/path/to/enwiki.db proxy-venv/bin/uvicorn proxy_server:app --host 0.0.0.0 --port 8000"
+   ```
+
+**On your local machine:**
+
+Set `WIKI_REMOTE_ENWIKI` to the proxy's base URL when starting the app:
+```bash
+WIKI_REMOTE_ENWIKI=http://remote-host:8000 uvicorn app:app --reload
+```
+
+The local app will route all enwiki queries through the proxy. simplewiki (or any other wiki whose `.db` file is present locally) continues to use the local database as normal.
+
+**Enabling embedding on a remote wiki:**
+
+Embedding triggered from the local UI writes chunks to `enwiki_rag.db` on the remote machine through the same proxy. Before the first embed job runs, initialise the RAG database schema on the remote machine (requires the full project to be present there):
+
+```bash
+python -m rag.embed --wiki enwiki --limit 1
+```
+
+This creates `enwiki_rag.db` with the correct schema and embeds one article. All subsequent embed jobs triggered from the local UI will write to it automatically.
+
 **Option B: SQLite CLI**
 
 Query directly using sqlite3:
@@ -282,6 +328,8 @@ Dev tooling (not pinned): `ruff` for linting and formatting — config under `[t
 │       └── rag.py             # GET /rag/info, POST /rag/retrieve (external API)
 ├── paths.py           # Project paths (BASE_DIR, DUMPS_DIR, JOBS_DB, KNOWN_WIKIS)
 ├── db.py              # connect(), redirect_target(), resolve_redirect()
+├── remote.py          # RemoteSqliteConnection — SQL-over-HTTP proxy client
+├── proxy_server.py    # Standalone SQL proxy server (deploy to remote machine)
 ├── jobs/              # Job-queue CRUD package
 │   ├── __init__.py
 │   ├── refresh.py     # CRUD helpers for refresh_jobs table in dumps/jobs.db
@@ -289,6 +337,7 @@ Dev tooling (not pinned): `ruff` for linting and formatting — config under `[t
 ├── workers/           # Background-subprocess package
 │   ├── __init__.py
 │   ├── runner.py      # Shared harness (log redirect, exception capture)
+│   ├── spawn.py       # Subprocess spawn helper (used by app routes + workers)
 │   ├── refresh.py     # Download → refresh → FTS rebuild
 │   └── embed.py       # Drains embed_job_items queue
 ├── start.sh           # tmux helper — start/stop/attach the uvicorn server
