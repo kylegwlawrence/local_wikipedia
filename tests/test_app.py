@@ -51,8 +51,10 @@ class TestDailyArticles:
         titles = self._card_titles(resp.text)
         assert len(titles) == 2
         for title in titles:
-            assert f'href="/article/{title.replace(" ", "%20").replace("(", "%28").replace(")", "%29")}"' in resp.text \
+            assert (
+                f'href="/article/{title.replace(" ", "%20").replace("(", "%28").replace(")", "%29")}"' in resp.text
                 or f'href="/article/{title}"' in resp.text
+            )
 
     def test_cards_persist_within_same_day(self, client):
         first = self._card_titles(client.get("/").text)
@@ -69,9 +71,7 @@ class TestDailyArticles:
         monkeypatch.setattr(helpers, "_today_iso", lambda: "2099-12-31")
         client.get("/")
         conn = sqlite3.connect(wiki_db_path)
-        row = conn.execute(
-            "SELECT value FROM db_metadata WHERE key = 'daily_articles_date'"
-        ).fetchone()
+        row = conn.execute("SELECT value FROM db_metadata WHERE key = 'daily_articles_date'").fetchone()
         conn.close()
         assert row is not None
         assert row[0] == "2099-12-31"
@@ -346,12 +346,12 @@ class TestEmbedLinks:
         finally:
             conn.close()
 
-    def test_second_click_appends_to_running_job(self, embed_client):
-        # First click — creates job, spawns worker.
+    def test_second_click_creates_queued_job(self, embed_client):
+        # First click — creates a running job, spawns worker.
         r1 = embed_client.post("/embed-links/April", follow_redirects=False)
         assert r1.status_code == 303
-        # Second click on a different source — should append to the same job,
-        # NOT spawn a second worker.
+        # Second click on a different source while the first is still running
+        # should create a SECOND job in 'queued' status — no second worker spawn.
         r2 = embed_client.post("/embed-links/Apple", follow_redirects=False)
         assert r2.status_code == 303
 
@@ -359,13 +359,19 @@ class TestEmbedLinks:
 
         conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
         try:
-            jobs = embed_client.embed_jobs.get_latest_jobs(conn, "enwiki")
-            assert len(jobs) == 1
-            job_id = jobs[0]["id"]
-            items = embed_client.embed_jobs.get_items(conn, job_id)
-            titles = {r["title"] for r in items}
-            # Both sources and their (resolved) link targets are present.
-            assert {"April", "Apple"}.issubset(titles)
+            jobs = embed_client.embed_jobs.get_latest_jobs(conn, "enwiki", limit=5)
+            assert len(jobs) == 2
+            # Latest (newest) first; the queued job is the second click.
+            assert jobs[0]["status"] == "queued"
+            assert jobs[0]["triggered_by_title"] == "Apple"
+            assert jobs[1]["status"] == "running"
+            assert jobs[1]["triggered_by_title"] == "April"
+
+            # Each job has its own items.
+            running_items = {r["title"] for r in embed_client.embed_jobs.get_items(conn, jobs[1]["id"])}
+            queued_items = {r["title"] for r in embed_client.embed_jobs.get_items(conn, jobs[0]["id"])}
+            assert "April" in running_items
+            assert "Apple" in queued_items
         finally:
             conn.close()
 
@@ -426,11 +432,19 @@ class TestEmbedLinks2:
         assert len(embed_client.spawned) == 1
         assert embed_client.spawned[0][1:3] == ["-m", "workers.embed"]
 
-    def test_second_click_appends_without_spawning_again(self, embed_client):
+    def test_second_click_creates_queued_job_without_spawning_again(self, embed_client):
         embed_client.post("/embed-links-2/April", follow_redirects=False)
         embed_client.post("/embed-links-2/Apple", follow_redirects=False)
-        # Only one worker — second trigger appends to the running job.
+        # Only one worker — second trigger queues a separate job for the
+        # finishing worker to pick up via _dispatch_next.
         assert len(embed_client.spawned) == 1
+
+        conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
+        try:
+            jobs = embed_client.embed_jobs.get_latest_jobs(conn, "enwiki", limit=5)
+            assert [j["status"] for j in jobs] == ["queued", "running"]
+        finally:
+            conn.close()
 
 
 class TestEmbedStatusWidget:
@@ -479,9 +493,7 @@ class TestEmbedStatusWidget:
         rag_path.parent.mkdir(exist_ok=True)
         rag_conn = connect_rag(rag_path)
         rag_conn.execute(
-            "INSERT INTO articles_meta "
-            "(page_id, title, revision_id, links_embedded) "
-            "VALUES (1, 'April', 1, 1)"
+            "INSERT INTO articles_meta (page_id, title, revision_id, links_embedded) VALUES (1, 'April', 1, 1)"
         )
         rag_conn.commit()
         rag_conn.close()
@@ -579,9 +591,7 @@ class TestEmbedCount2:
         rag_path = tmp_path / "dumps" / "enwiki_rag.db"
         rag_path.parent.mkdir(exist_ok=True)
         rag_conn = connect_rag(rag_path)
-        rag_conn.execute(
-            "INSERT INTO articles_meta (page_id, title, revision_id) VALUES (99, 'Month', 1)"
-        )
+        rag_conn.execute("INSERT INTO articles_meta (page_id, title, revision_id) VALUES (99, 'Month', 1)")
         rag_conn.commit()
         rag_conn.close()
 
@@ -623,12 +633,8 @@ class TestActiveEmbedding:
         # Seed a job with 150 items directly in jobs.db.
         conn = embed_client.embed_jobs.connect_embed_jobs(embed_client.jobs_db)
         try:
-            job_id = embed_client.embed_jobs.create_job(
-                conn, "enwiki", "/tmp/x.log", "Seed"
-            )
-            embed_client.embed_jobs.append_items(
-                conn, job_id, [(f"Item{i:03d}", "Seed", 0) for i in range(150)]
-            )
+            job_id = embed_client.embed_jobs.create_job(conn, "enwiki", "/tmp/x.log", "Seed")
+            embed_client.embed_jobs.append_items(conn, job_id, [(f"Item{i:03d}", "Seed", 0) for i in range(150)])
         finally:
             conn.close()
 
@@ -680,6 +686,14 @@ class TestActiveEmbedding:
         assert resp.status_code == 200
         assert 'hx-trigger="every 3s"' in resp.text
         assert ">1<" in resp.text
+
+    def test_running_count_includes_queued(self, embed_client):
+        # First trigger runs; second trigger queues. Counter should be 2.
+        embed_client.post("/embed-links/April", follow_redirects=False)
+        embed_client.post("/embed-links/Apple", follow_redirects=False)
+        resp = embed_client.get("/active-embedding/running-count")
+        assert resp.status_code == 200
+        assert ">2<" in resp.text
 
 
 class TestCrashRecovery:
@@ -792,6 +806,49 @@ class TestCrashRecovery:
             assert "simplewiki" not in jobs.get_fts_dirty_wikis(conn)
         finally:
             conn.close()
+
+    def test_queued_embed_job_is_resumed_on_startup(self, crash_recovery_env, monkeypatch):
+        # A queued embed job left over from a previous run should be promoted
+        # to 'running' and have its worker subprocess spawned during the
+        # lifespan startup hook.
+        import subprocess
+
+        embed_jobs = crash_recovery_env["embed_jobs"]
+        conn = embed_jobs.connect_embed_jobs(crash_recovery_env["jobs_db"])
+        try:
+            cur = conn.execute(
+                "INSERT INTO embed_jobs (wiki, status) VALUES (?, ?)",
+                ("enwiki", "queued"),
+            )
+            job_id = cur.lastrowid
+            conn.commit()
+        finally:
+            conn.close()
+
+        spawned: list[list[str]] = []
+
+        def fake_popen(args, **kwargs):
+            spawned.append(args)
+
+            class _P:
+                pass
+
+            return _P()
+
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+        with TestClient(web_app.app):
+            pass
+
+        conn = embed_jobs.connect_embed_jobs(crash_recovery_env["jobs_db"])
+        try:
+            row = conn.execute("SELECT status FROM embed_jobs WHERE id = ?", (job_id,)).fetchone()
+        finally:
+            conn.close()
+        assert row["status"] == "running"
+        assert len(spawned) == 1
+        assert spawned[0][1:3] == ["-m", "workers.embed"]
+        assert str(job_id) in spawned[0]
 
     def test_terminal_jobs_are_left_alone(self, crash_recovery_env):
         jobs = crash_recovery_env["jobs"]

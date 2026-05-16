@@ -71,6 +71,83 @@ class TestJobsCrud:
         assert embed_jobs.count_running_jobs(conn, "simplewiki") == 0
 
 
+class TestQueueing:
+    def test_create_job_with_queued_status(self, tmp_path):
+        conn = _conn(tmp_path)
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log", status="queued")
+        job = embed_jobs.get_job(conn, job_id)
+        assert job["status"] == "queued"
+        # Queued jobs are NOT 'active' for the get_active_job purpose.
+        assert embed_jobs.get_active_job(conn, "simplewiki") is None
+
+    def test_count_active_jobs_includes_queued(self, tmp_path):
+        conn = _conn(tmp_path)
+        assert embed_jobs.count_active_jobs(conn, "simplewiki") == 0
+
+        embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        embed_jobs.create_job(conn, "simplewiki", "/tmp/y.log", status="queued")
+        embed_jobs.create_job(conn, "simplewiki", "/tmp/z.log", status="queued")
+        assert embed_jobs.count_active_jobs(conn, "simplewiki") == 3
+        assert embed_jobs.count_active_jobs(conn, "enwiki") == 0
+
+    def test_count_active_jobs_excludes_terminal_and_cancelled(self, tmp_path):
+        conn = _conn(tmp_path)
+        running = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        done = embed_jobs.create_job(conn, "simplewiki", "/tmp/y.log")
+        embed_jobs.mark_job(conn, done, "complete")
+        cancelled = embed_jobs.create_job(conn, "simplewiki", "/tmp/z.log", status="queued")
+        embed_jobs.request_cancel(conn, cancelled)
+
+        assert embed_jobs.count_active_jobs(conn, "simplewiki") == 1
+        assert embed_jobs.get_active_job(conn, "simplewiki")["id"] == running
+
+    def test_get_next_queued_for_wiki_oldest_first(self, tmp_path):
+        conn = _conn(tmp_path)
+        first = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log", status="queued")
+        embed_jobs.create_job(conn, "simplewiki", "/tmp/y.log", status="queued")
+        # Different wiki should be ignored.
+        embed_jobs.create_job(conn, "enwiki", "/tmp/z.log", status="queued")
+
+        nxt = embed_jobs.get_next_queued_for_wiki(conn, "simplewiki")
+        assert nxt["id"] == first
+
+    def test_get_next_queued_for_wiki_skips_cancelled(self, tmp_path):
+        conn = _conn(tmp_path)
+        cancelled = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log", status="queued")
+        embed_jobs.request_cancel(conn, cancelled)
+        keep = embed_jobs.create_job(conn, "simplewiki", "/tmp/y.log", status="queued")
+        assert embed_jobs.get_next_queued_for_wiki(conn, "simplewiki")["id"] == keep
+
+    def test_start_queued_job_promotes_to_running(self, tmp_path):
+        conn = _conn(tmp_path)
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log", status="queued")
+        assert embed_jobs.start_queued_job(conn, job_id) == 1
+        assert embed_jobs.get_job(conn, job_id)["status"] == "running"
+
+    def test_start_queued_job_returns_zero_on_lost_race(self, tmp_path):
+        conn = _conn(tmp_path)
+        job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")  # already running
+        # Already running — can't promote a non-queued row.
+        assert embed_jobs.start_queued_job(conn, job_id) == 0
+
+    def test_get_wikis_with_queued_jobs(self, tmp_path):
+        conn = _conn(tmp_path)
+        embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log", status="queued")
+        embed_jobs.create_job(conn, "enwiki", "/tmp/y.log", status="queued")
+        embed_jobs.create_job(conn, "simplewiki", "/tmp/z.log")  # running, not queued
+
+        wikis = sorted(embed_jobs.get_wikis_with_queued_jobs(conn))
+        assert wikis == ["enwiki", "simplewiki"]
+
+    def test_clear_orphaned_jobs_leaves_queued_alone(self, tmp_path):
+        conn = _conn(tmp_path)
+        running = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
+        queued = embed_jobs.create_job(conn, "simplewiki", "/tmp/y.log", status="queued")
+        embed_jobs.clear_orphaned_jobs(conn)
+        assert embed_jobs.get_job(conn, running)["status"] == "failed"
+        assert embed_jobs.get_job(conn, queued)["status"] == "queued"
+
+
 class TestItems:
     def test_append_items_dedupes(self, tmp_path):
         conn = _conn(tmp_path)
@@ -151,9 +228,7 @@ class TestItems:
     def test_get_items_page_paginates_in_insertion_order(self, tmp_path):
         conn = _conn(tmp_path)
         job_id = embed_jobs.create_job(conn, "simplewiki", "/tmp/x.log")
-        embed_jobs.append_items(
-            conn, job_id, [(f"T{i:03d}", "Src", 0) for i in range(250)]
-        )
+        embed_jobs.append_items(conn, job_id, [(f"T{i:03d}", "Src", 0) for i in range(250)])
 
         rows, total = embed_jobs.get_items_page(conn, job_id, page=1, per_page=100)
         assert total == 250

@@ -79,11 +79,12 @@ def create_job(
     log_path: str,
     triggered_by_title: str | None = None,
     include_links: int = 1,
+    status: str = "running",
 ) -> int:
-    """Insert a new running job and return its id."""
+    """Insert a new job in ``status`` (default ``running``) and return its id."""
     cur = conn.execute(
-        "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title, include_links) VALUES (?, ?, ?, ?)",
-        (wiki, log_path, triggered_by_title, include_links),
+        "INSERT INTO embed_jobs (wiki, log_path, triggered_by_title, include_links, status) VALUES (?, ?, ?, ?, ?)",
+        (wiki, log_path, triggered_by_title, include_links, status),
     )
     conn.commit()
     return cur.lastrowid
@@ -103,14 +104,55 @@ def get_active_job(conn: sqlite3.Connection, wiki: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def get_next_queued_for_wiki(conn: sqlite3.Connection, wiki: str) -> sqlite3.Row | None:
+    """Return the oldest ``queued`` job for ``wiki``, or None."""
+    return conn.execute(
+        "SELECT * FROM embed_jobs WHERE wiki = ? AND status = 'queued' "
+        "AND cancel_requested = 0 ORDER BY id ASC LIMIT 1",
+        (wiki,),
+    ).fetchone()
+
+
+def start_queued_job(conn: sqlite3.Connection, job_id: int) -> int:
+    """Promote a queued job to ``running`` atomically.
+
+    Returns the number of rows updated — 0 means someone else won the race
+    (or the row was no longer queued) and the caller should not spawn a worker.
+    """
+    cur = conn.execute(
+        "UPDATE embed_jobs SET status = 'running', "
+        "started_at = datetime('now'), updated_at = datetime('now') "
+        "WHERE id = ? AND status = 'queued'",
+        (job_id,),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 def count_running_jobs(conn: sqlite3.Connection, wiki: str) -> int:
     """Number of running, non-cancelled jobs for ``wiki``."""
     row = conn.execute(
-        "SELECT COUNT(*) FROM embed_jobs WHERE wiki = ? "
-        "AND status = 'running' AND cancel_requested = 0",
+        "SELECT COUNT(*) FROM embed_jobs WHERE wiki = ? AND status = 'running' AND cancel_requested = 0",
         (wiki,),
     ).fetchone()
     return int(row[0]) if row else 0
+
+
+def count_active_jobs(conn: sqlite3.Connection, wiki: str) -> int:
+    """Number of running OR queued jobs for ``wiki`` (excludes cancel-requested)."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM embed_jobs WHERE wiki = ? AND status IN ('running', 'queued') AND cancel_requested = 0",
+        (wiki,),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def get_wikis_with_queued_jobs(conn: sqlite3.Connection) -> list[str]:
+    """Return distinct wikis that currently have at least one queued job."""
+    rows = conn.execute(
+        "SELECT DISTINCT wiki FROM embed_jobs WHERE status = 'queued' AND cancel_requested = 0"
+    ).fetchall()
+    return [r[0] for r in rows]
 
 
 def get_latest_jobs(conn: sqlite3.Connection, wiki: str, limit: int = 5) -> list[sqlite3.Row]:

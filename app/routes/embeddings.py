@@ -255,9 +255,11 @@ def _enqueue_links(request: Request, title: str, link_depth: int) -> HTMLRespons
     1 for a 2-hop trigger (worker expands each link once more).
 
     The source article itself is included with ``hops_remaining=0`` because
-    the route has already enqueued its 1-hop neighbours. If a job is already
-    running for the active wiki, new items are appended to it; otherwise a
-    new job is created and a worker subprocess is spawned.
+    the route has already enqueued its 1-hop neighbours. Each trigger always
+    creates a new job: if a job is already running for the active wiki the new
+    job is created in ``queued`` status; otherwise it's created in ``running``
+    status and a worker subprocess is spawned. Queued jobs are picked up by
+    the finishing worker (see ``workers.embed._dispatch_next``).
     """
     wiki = active_wiki(request)
 
@@ -296,23 +298,20 @@ def _enqueue_links(request: Request, title: str, link_depth: int) -> HTMLRespons
     items = [(t, source_title, 0 if t == source_title else link_depth) for t in resolved]
 
     jobs_conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
-    started_new_job = False
+    status = "running"
     try:
         jobs_conn.execute("BEGIN IMMEDIATE")
         active = embed_jobs.get_active_job(jobs_conn, wiki)
-        if active is None:
-            log_path = str(paths.BASE_DIR / "dumps" / f"{wiki}_embed.log")
-            job_id = embed_jobs.create_job(
-                jobs_conn,
-                wiki,
-                log_path,
-                triggered_by_title=source_title,
-                include_links=1,
-            )
-            started_new_job = True
-        else:
-            job_id = active["id"]
-
+        status = "queued" if active else "running"
+        log_path = str(paths.BASE_DIR / "dumps" / f"{wiki}_embed.log")
+        job_id = embed_jobs.create_job(
+            jobs_conn,
+            wiki,
+            log_path,
+            triggered_by_title=source_title,
+            include_links=1,
+            status=status,
+        )
         if items:
             embed_jobs.append_items(jobs_conn, job_id, items)
         else:
@@ -320,7 +319,7 @@ def _enqueue_links(request: Request, title: str, link_depth: int) -> HTMLRespons
     finally:
         jobs_conn.close()
 
-    if started_new_job:
+    if status == "running":
         spawn_worker("workers.embed", wiki, job_id, "embed")
 
     return htmx_redirect("/active-embedding", request)
@@ -394,9 +393,11 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
         wiki_conn.close()
 
     jobs_conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
-    started_new_job = False
+    status = "running"
     try:
         jobs_conn.execute("BEGIN IMMEDIATE")
+        active = embed_jobs.get_active_job(jobs_conn, wiki)
+        status = "queued" if active else "running"
         log_path = str(paths.BASE_DIR / "dumps" / f"{wiki}_embed.log")
         job_id = embed_jobs.create_job(
             jobs_conn,
@@ -404,13 +405,13 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
             log_path,
             triggered_by_title=canonical_title,
             include_links=0,
+            status=status,
         )
         embed_jobs.append_items(jobs_conn, job_id, [(canonical_title, canonical_title, 0)])
-        started_new_job = True
     finally:
         jobs_conn.close()
 
-    if started_new_job:
+    if status == "running":
         spawn_worker("workers.embed", wiki, job_id, "embed")
 
     return htmx_redirect("/active-embedding", request)

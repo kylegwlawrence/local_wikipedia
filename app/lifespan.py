@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 import paths
 from jobs import embed as embed_jobs, refresh as refresh_jobs
+from workers.spawn import spawn_worker
 
 
 def recover_from_crash() -> None:
@@ -41,6 +42,20 @@ def recover_from_crash() -> None:
                 file=sys.stderr,
                 flush=True,
             )
+        # Any queued jobs left over by a crashed dispatcher won't move on their
+        # own. Promote one per wiki here so the queue resumes after restart.
+        for wiki in embed_jobs.get_wikis_with_queued_jobs(embed_conn):
+            nxt = embed_jobs.get_next_queued_for_wiki(embed_conn, wiki)
+            if nxt is None:
+                continue
+            if embed_jobs.start_queued_job(embed_conn, nxt["id"]) == 0:
+                continue
+            print(
+                f"[startup] resuming queued embed job {nxt['id']} for {wiki}",
+                file=sys.stderr,
+                flush=True,
+            )
+            spawn_worker("workers.embed", wiki, nxt["id"], "embed")
     finally:
         embed_conn.close()
 

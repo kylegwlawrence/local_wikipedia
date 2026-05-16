@@ -8,19 +8,17 @@ import json
 import random
 import re
 import sqlite3
-import subprocess
-import sys
 from datetime import UTC, date, datetime
 
 from fastapi import Request, Response
 from fastapi.responses import RedirectResponse
 
 import db as wiki_db
-import paths
 from app.config import SEARCH_LIMIT, WIKI_LABELS
 from app.deps import connect
 from paths import REDIRECT_MAX_HOPS
 from rag.chunker import _strip_wikitext
+from workers.spawn import spawn_worker as _spawn_worker
 
 
 def wiki_label(wiki: str) -> str:
@@ -142,17 +140,14 @@ def _extract_first_sentence(wikitext: str) -> str:
     return sentence if len(sentence) >= _SNIPPET_MIN_CHARS else ""
 
 
-def _pick_random_articles(
-    conn: sqlite3.Connection, n: int = 2, max_attempts: int = 20
-) -> list[dict[str, str]]:
+def _pick_random_articles(conn: sqlite3.Connection, n: int = 2, max_attempts: int = 20) -> list[dict[str, str]]:
     """Pick ``n`` non-redirect articles with usable lead snippets.
 
     Uses indexed ``page_id``-offset selection so it stays O(log n) on 19M-row
     DBs, unlike ``ORDER BY RANDOM()`` which scans the full table.
     """
     row = conn.execute(
-        "SELECT MAX(page_id) AS max_id FROM articles "
-        "WHERE namespace = 0 AND text_bytes >= ?",
+        "SELECT MAX(page_id) AS max_id FROM articles WHERE namespace = 0 AND text_bytes >= ?",
         (_MIN_DAILY_ARTICLE_BYTES,),
     ).fetchone()
     if not row or not row["max_id"]:
@@ -187,12 +182,8 @@ def daily_random_articles(conn: sqlite3.Connection) -> list[dict[str, str]]:
     """Return two articles featured today, cached daily in ``db_metadata``."""
     today = _today_iso()
     try:
-        date_row = conn.execute(
-            "SELECT value FROM db_metadata WHERE key = ?", (_DAILY_DATE_KEY,)
-        ).fetchone()
-        payload_row = conn.execute(
-            "SELECT value FROM db_metadata WHERE key = ?", (_DAILY_PAYLOAD_KEY,)
-        ).fetchone()
+        date_row = conn.execute("SELECT value FROM db_metadata WHERE key = ?", (_DAILY_DATE_KEY,)).fetchone()
+        payload_row = conn.execute("SELECT value FROM db_metadata WHERE key = ?", (_DAILY_PAYLOAD_KEY,)).fetchone()
     except sqlite3.OperationalError:
         date_row = payload_row = None
     if date_row and date_row["value"] == today and payload_row:
@@ -248,24 +239,8 @@ def format_embedded_at(ts: str | None) -> str:
 
 
 def spawn_worker(module: str, wiki: str, job_id: int, log_suffix: str) -> None:
-    """Spawn a worker subprocess as a detached, log-redirected process.
-
-    Args:
-        module: Dotted module path, e.g. ``"workers.refresh"``.
-        wiki: Wiki name used to derive the log file name.
-        job_id: Job id passed to the worker's CLI.
-        log_suffix: Tag for the log file name (``"refresh"`` or ``"embed"``).
-    """
-    log_path = paths.BASE_DIR / "dumps" / f"{wiki}_{log_suffix}.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "a") as log:
-        subprocess.Popen(
-            [sys.executable, "-m", module, "--wiki", wiki, "--job-id", str(job_id)],
-            cwd=paths.BASE_DIR,
-            start_new_session=True,
-            stdout=log,
-            stderr=log,
-        )
+    """Thin forwarder to ``workers.spawn.spawn_worker`` (kept for stable import path)."""
+    _spawn_worker(module, wiki, job_id, log_suffix)
 
 
 def htmx_redirect(url: str, request: Request) -> Response:
