@@ -158,3 +158,98 @@ class TestEmbeddingDim:
         conn.commit()
         assert get_embedding_dim(conn) == 768
         conn.close()
+
+
+class TestFullPaperSchema:
+    def test_papers_full_meta_table_created(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        assert "papers_full_meta" in _table_names(conn)
+        conn.close()
+
+    def test_papers_full_meta_columns(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(papers_full_meta)").fetchall()}
+        for required in (
+            "arxiv_id",
+            "oai_datestamp",
+            "status",
+            "chunk_count",
+            "html_path",
+            "markdown_path",
+            "error_message",
+            "embedded_at",
+        ):
+            assert required in cols, f"missing column: {required}"
+        conn.close()
+
+    def test_paper_chunks_table_created(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        assert "paper_chunks" in _table_names(conn)
+        conn.close()
+
+    def test_paper_chunks_columns(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(paper_chunks)").fetchall()}
+        for required in ("chunk_id", "arxiv_id", "section", "chunk_index", "text", "text_length"):
+            assert required in cols, f"missing column: {required}"
+        conn.close()
+
+    def test_paper_chunks_index_present(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        idx = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
+        assert "idx_paper_chunks_arxiv" in idx
+        conn.close()
+
+    def test_paper_chunks_fts_exists(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE name='paper_chunks_fts'").fetchall()
+        assert rows
+        conn.close()
+
+    def test_paper_chunks_vec_exists(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE name='paper_chunks_vec'").fetchall()
+        assert rows
+        conn.close()
+
+    def test_insert_full_meta_and_chunks_roundtrip(self, tmp_path):
+        conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        conn.execute(
+            "INSERT INTO papers_full_meta (arxiv_id, oai_datestamp, status, chunk_count, "
+            "html_path, markdown_path, embedded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "2310.06825",
+                "2024-01-22",
+                "embedded",
+                2,
+                "dumps/arxiv/papers/2310.06825.html",
+                "dumps/arxiv/papers/2310.06825.md",
+                "2024-01-23T00:00:00Z",
+            ),
+        )
+        for i, (section, text) in enumerate([("Introduction", "intro body"), ("Methods", "methods body")]):
+            conn.execute(
+                "INSERT INTO paper_chunks (arxiv_id, section, chunk_index, text, text_length) VALUES (?, ?, ?, ?, ?)",
+                ("2310.06825", section, i, text, len(text)),
+            )
+        conn.commit()
+        conn.execute("INSERT INTO paper_chunks_fts(paper_chunks_fts) VALUES('rebuild')")
+        conn.commit()
+
+        chunks = conn.execute(
+            "SELECT section, text FROM paper_chunks WHERE arxiv_id = ? ORDER BY chunk_index",
+            ("2310.06825",),
+        ).fetchall()
+        assert [(c["section"], c["text"]) for c in chunks] == [
+            ("Introduction", "intro body"),
+            ("Methods", "methods body"),
+        ]
+        # FTS5 indexed both rows
+        fts_hits = conn.execute("SELECT rowid FROM paper_chunks_fts WHERE paper_chunks_fts MATCH 'body'").fetchall()
+        assert len(fts_hits) == 2
+        conn.close()
+
+    def test_idempotent_re_create(self, tmp_path):
+        """Calling connect twice on the same DB must not raise on the new tables."""
+        connect_arxiv_rag(tmp_path / "arxiv_rag.db").close()
+        connect_arxiv_rag(tmp_path / "arxiv_rag.db").close()

@@ -5,14 +5,15 @@ Two physical databases live in ``dumps/``:
 * ``arxiv.db`` — paper metadata harvested from OAI-PMH. Source of truth for
   what the search results render. ``papers.oai_datestamp`` drives the
   re-embed decision.
-* ``arxiv_rag.db`` — one row per embedded paper in ``papers_meta`` plus the
-  FTS5 / sqlite-vec virtual tables. Kept separate from the metadata DB so an
-  ingest that rewrites ``papers`` never has to coordinate with an embed
-  worker holding the RAG DB open.
+* ``arxiv_rag.db`` — embeddings live here. ``papers_meta`` is one row per
+  embedded *abstract*; ``papers_full_meta`` + ``paper_chunks`` hold the
+  *full-paper* extraction state and per-chunk text/vectors. Kept separate
+  from the metadata DB so an ingest that rewrites ``papers`` never has to
+  coordinate with an embed worker holding the RAG DB open.
 
 Every connection must go through these helpers — ``connect_arxiv_rag`` in
 particular has to load the sqlite-vec extension before any query against
-``papers_vec`` will work.
+``papers_vec`` or ``paper_chunks_vec`` will work.
 """
 
 import pathlib
@@ -97,6 +98,41 @@ def create_arxiv_rag_schema(conn: sqlite3.Connection) -> None:
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS papers_vec USING vec0(
+            rowid INTEGER PRIMARY KEY,
+            embedding FLOAT[768]
+        );
+
+        CREATE TABLE IF NOT EXISTS papers_full_meta (
+            arxiv_id      TEXT PRIMARY KEY,
+            oai_datestamp TEXT NOT NULL,
+            status        TEXT NOT NULL,
+            chunk_count   INTEGER NOT NULL DEFAULT 0,
+            html_path     TEXT,
+            markdown_path TEXT,
+            error_message TEXT,
+            embedded_at   TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS paper_chunks (
+            chunk_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            arxiv_id     TEXT NOT NULL,
+            section      TEXT NOT NULL,
+            chunk_index  INTEGER NOT NULL,
+            text         TEXT NOT NULL,
+            text_length  INTEGER NOT NULL,
+            FOREIGN KEY (arxiv_id) REFERENCES papers_full_meta(arxiv_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_paper_chunks_arxiv ON paper_chunks(arxiv_id);
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS paper_chunks_fts USING fts5(
+            text,
+            content='paper_chunks',
+            content_rowid='chunk_id',
+            tokenize='porter ascii'
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS paper_chunks_vec USING vec0(
             rowid INTEGER PRIMARY KEY,
             embedding FLOAT[768]
         );

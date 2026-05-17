@@ -125,6 +125,45 @@ def iter_papers(papers_conn: sqlite3.Connection, limit: int | None = None) -> It
         }
 
 
+def embed_one_abstract(
+    arxiv_id: str,
+    *,
+    papers_conn: sqlite3.Connection,
+    rag_conn: sqlite3.Connection,
+    ollama_url: str = embedder.OLLAMA_BASE_URL,
+    embedded_at: str | None = None,
+) -> None:
+    """Embed (or re-embed) a single paper's abstract into ``papers_meta``.
+
+    Designed for per-paper UI triggers — the CLI loop in ``main`` calls
+    ``embed_papers`` directly for batch efficiency. Idempotent: any prior
+    row for ``arxiv_id`` is deleted before re-inserting. Bulk-rebuilds
+    ``papers_fts`` at the end because there is no batched end-of-run here.
+
+    Raises KeyError if ``arxiv_id`` is not present in ``papers``.
+    """
+    row = papers_conn.execute(
+        "SELECT id, oai_datestamp, title, abstract, categories FROM papers WHERE id = ?",
+        (arxiv_id,),
+    ).fetchone()
+    if row is None:
+        raise KeyError(f"arxiv_id not found in papers: {arxiv_id}")
+    paper = {
+        "id": row["id"],
+        "oai_datestamp": row["oai_datestamp"],
+        "title": row["title"],
+        "abstract": row["abstract"],
+        "categories": row["categories"],
+    }
+    if embedded_at is None:
+        embedded_at = datetime.now(UTC).isoformat()
+
+    delete_paper(rag_conn, arxiv_id)
+    embed_papers(rag_conn, [paper], embedded_at, ollama_url=ollama_url)
+    rag_conn.execute("INSERT INTO papers_fts(papers_fts) VALUES('rebuild')")
+    rag_conn.commit()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=None, help="Process at most N papers (smoke test).")

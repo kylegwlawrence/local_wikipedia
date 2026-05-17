@@ -10,7 +10,7 @@ import respx
 
 import paths
 from arxiv import embed as embed_mod
-from arxiv.embed import delete_paper, embed_papers, load_embedded, main, reset_rag
+from arxiv.embed import delete_paper, embed_one_abstract, embed_papers, load_embedded, main, reset_rag
 from arxiv.schema import connect_arxiv_rag, connect_papers
 from arxiv.templates_meta import format_embed_text
 from rag.embedder import EMBED_DOC_PREFIX, EMBEDDING_DIM, OLLAMA_BASE_URL
@@ -370,3 +370,145 @@ class TestMain:
     def test_imports_module(self):
         # Sanity check the module imports cleanly without side effects.
         assert hasattr(embed_mod, "main")
+
+
+class TestEmbedOneAbstract:
+    @respx.mock
+    def test_embeds_fresh_paper(self, tmp_path):
+        papers_conn = connect_papers(tmp_path / "arxiv.db")
+        _seed_papers(
+            papers_conn,
+            [
+                {
+                    "id": "2401.0001",
+                    "oai_datestamp": "2024-01-22",
+                    "title": "Hello",
+                    "abstract": "World.",
+                    "categories": "cs.CL",
+                }
+            ],
+        )
+        rag_conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        respx.post(f"{OLLAMA_BASE_URL}/api/embed").mock(
+            return_value=httpx.Response(200, json={"embeddings": [_FAKE_VEC]})
+        )
+
+        embed_one_abstract("2401.0001", papers_conn=papers_conn, rag_conn=rag_conn, embedded_at="2024-01-23T00:00:00Z")
+
+        rows = rag_conn.execute("SELECT arxiv_id, oai_datestamp, embedded_at FROM papers_meta").fetchall()
+        assert len(rows) == 1
+        assert rows[0]["arxiv_id"] == "2401.0001"
+        assert rows[0]["embedded_at"] == "2024-01-23T00:00:00Z"
+        assert rag_conn.execute("SELECT COUNT(*) FROM papers_vec").fetchone()[0] == 1
+        # FTS rebuilt so searches hit
+        assert rag_conn.execute("SELECT rowid FROM papers_fts WHERE papers_fts MATCH 'world'").fetchall()
+        papers_conn.close()
+        rag_conn.close()
+
+    @respx.mock
+    def test_re_embed_replaces_existing(self, tmp_path):
+        papers_conn = connect_papers(tmp_path / "arxiv.db")
+        _seed_papers(
+            papers_conn,
+            [
+                {
+                    "id": "2401.0001",
+                    "oai_datestamp": "2024-02-01",
+                    "title": "Updated title",
+                    "abstract": "Updated body.",
+                    "categories": "cs.CL",
+                }
+            ],
+        )
+        rag_conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        # Pre-seed a stale row so we can verify it gets replaced.
+        rag_conn.execute(
+            "INSERT INTO papers_meta (arxiv_id, oai_datestamp, embed_text, embedded_at) VALUES (?, ?, ?, ?)",
+            ("2401.0001", "2024-01-01", "stale", "old"),
+        )
+        rag_conn.commit()
+
+        respx.post(f"{OLLAMA_BASE_URL}/api/embed").mock(
+            return_value=httpx.Response(200, json={"embeddings": [_FAKE_VEC]})
+        )
+
+        embed_one_abstract("2401.0001", papers_conn=papers_conn, rag_conn=rag_conn, embedded_at="2024-02-02T00:00:00Z")
+
+        row = rag_conn.execute(
+            "SELECT oai_datestamp, embed_text, embedded_at FROM papers_meta WHERE arxiv_id = ?",
+            ("2401.0001",),
+        ).fetchone()
+        assert row["oai_datestamp"] == "2024-02-01"
+        assert "Updated title" in row["embed_text"]
+        assert row["embedded_at"] == "2024-02-02T00:00:00Z"
+        # Only one row — no duplicate from the stale insert
+        assert rag_conn.execute("SELECT COUNT(*) FROM papers_meta").fetchone()[0] == 1
+        papers_conn.close()
+        rag_conn.close()
+
+    def test_raises_when_paper_missing(self, tmp_path):
+        papers_conn = connect_papers(tmp_path / "arxiv.db")
+        rag_conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        with pytest.raises(KeyError):
+            embed_one_abstract("does-not-exist", papers_conn=papers_conn, rag_conn=rag_conn)
+        papers_conn.close()
+        rag_conn.close()
+
+    @respx.mock
+    def test_uses_default_embedded_at_when_none(self, tmp_path):
+        papers_conn = connect_papers(tmp_path / "arxiv.db")
+        _seed_papers(
+            papers_conn,
+            [
+                {
+                    "id": "2401.0001",
+                    "oai_datestamp": "2024-01-22",
+                    "title": "T",
+                    "abstract": "x",
+                    "categories": "cs.CL",
+                }
+            ],
+        )
+        rag_conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        respx.post(f"{OLLAMA_BASE_URL}/api/embed").mock(
+            return_value=httpx.Response(200, json={"embeddings": [_FAKE_VEC]})
+        )
+
+        embed_one_abstract("2401.0001", papers_conn=papers_conn, rag_conn=rag_conn)
+
+        ts = rag_conn.execute("SELECT embedded_at FROM papers_meta WHERE arxiv_id = ?", ("2401.0001",)).fetchone()[
+            "embedded_at"
+        ]
+        # Default ISO timestamp — sanity-check shape
+        assert "T" in ts and len(ts) >= 19
+        papers_conn.close()
+        rag_conn.close()
+
+    @respx.mock
+    def test_sends_prefixed_text_to_ollama(self, tmp_path):
+        papers_conn = connect_papers(tmp_path / "arxiv.db")
+        _seed_papers(
+            papers_conn,
+            [
+                {
+                    "id": "2401.0001",
+                    "oai_datestamp": "2024-01-22",
+                    "title": "T",
+                    "abstract": "x",
+                    "categories": "cs.CL",
+                }
+            ],
+        )
+        rag_conn = connect_arxiv_rag(tmp_path / "arxiv_rag.db")
+        route = respx.post(f"{OLLAMA_BASE_URL}/api/embed").mock(
+            return_value=httpx.Response(200, json={"embeddings": [_FAKE_VEC]})
+        )
+
+        embed_one_abstract("2401.0001", papers_conn=papers_conn, rag_conn=rag_conn)
+
+        import json
+
+        payload = json.loads(route.calls[0].request.read())
+        assert all(text.startswith(EMBED_DOC_PREFIX) for text in payload["input"])
+        papers_conn.close()
+        rag_conn.close()
