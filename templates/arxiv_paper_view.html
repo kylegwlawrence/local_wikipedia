@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ paper.title }} · arXiv · Local Wikipedia{% endblock %}
+
+{% block content %}
+<div class="reading-column">
+  <div class="page-header page-header--article">
+    <h1 class="article-title">{{ paper.title }}</h1>
+    <p class="paper-authors">{{ paper.authors | join(', ') }}</p>
+    <p class="article-meta">
+      <span class="arxiv-card__id">arXiv:{{ paper.id }}</span>
+      &middot; <span>{{ paper.primary_category }}</span>
+      &middot; Submitted <span class="u-tabular-nums">{{ paper.submitted_date }}</span>
+    </p>
+    <div class="article-controls">
+      <a class="btn-outlined btn-outlined--sm" href="/arxiv/{{ paper.id|urlencode }}">
+        ← Back to abstract
+      </a>
+      <a class="btn-outlined btn-outlined--sm"
+         href="https://arxiv.org/html/{{ paper.id|urlencode }}"
+         target="_blank" rel="noopener noreferrer">
+        View on arXiv
+      </a>
+    </div>
+  </div>
+
+  <div class="article-body arxiv-local-view">
+    {{ body_html|safe }}
+  </div>
+</div>
+{% endblock %}

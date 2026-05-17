@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from arxiv.render import html_to_markdown
+from arxiv.render import html_to_markdown, prepare_local_view
 
 FIXTURE_DIR = pathlib.Path(__file__).parent / "fixtures" / "arxiv"
 
@@ -198,6 +198,54 @@ class TestCleanup:
         out = html_to_markdown(_wrap("<p>Body.</p>"))
         assert out.endswith("\n")
         assert not out.endswith("\n\n\n")
+
+
+class TestPrepareLocalView:
+    def test_strips_nav_and_toc(self):
+        html = _wrap(
+            '<nav class="ltx_TOC">Contents</nav><nav class="ltx_page_navbar">Bar</nav><p class="ltx_p">Body.</p>'
+        )
+        out = prepare_local_view(html, "2401.0001")
+        assert "Contents" not in out
+        assert "Bar" not in out
+        assert "Body." in out
+
+    def test_strips_document_title_and_authors(self):
+        html = _wrap(
+            '<h1 class="ltx_title ltx_title_document">Title in HTML</h1>'
+            '<div class="ltx_authors">Alice</div>'
+            "<p>Body.</p>"
+        )
+        out = prepare_local_view(html, "2401.0001")
+        assert "Title in HTML" not in out
+        assert "Alice" not in out
+
+    def test_inline_math_becomes_katex_delimiter(self):
+        html = _wrap('<p><math alttext="\\alpha" display="inline">α</math></p>')
+        out = prepare_local_view(html, "2401.0001")
+        assert "\\(\\alpha\\)" in out
+
+    def test_block_math_becomes_double_dollars(self):
+        html = _wrap('<p><math alttext="\\sum_n" display="block">…</math></p>')
+        out = prepare_local_view(html, "2401.0001")
+        assert "$$\\sum_n$$" in out
+
+    def test_relative_img_src_rewritten_to_arxiv_org(self):
+        html = _wrap('<p><img src="2401v1/x1.png" alt="fig"></p>')
+        out = prepare_local_view(html, "2401.0001")
+        assert "https://arxiv.org/html/2401.0001/2401v1/x1.png" in out
+
+    def test_absolute_img_src_left_alone(self):
+        html = _wrap('<p><img src="https://example.com/x.png"></p>')
+        out = prepare_local_view(html, "2401.0001")
+        assert "https://example.com/x.png" in out
+        assert out.count("https://example.com/x.png") == 1  # not double-prefixed
+
+    def test_preserves_paragraph_structure(self):
+        html = _wrap('<p class="ltx_p">First.</p><p class="ltx_p">Second.</p>')
+        out = prepare_local_view(html, "2401.0001")
+        assert "First." in out and "Second." in out
+        assert out.count("<p") == 2
 
 
 @pytest.mark.skipif(

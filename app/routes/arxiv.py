@@ -23,6 +23,7 @@ from app.config import templates
 from app.helpers import htmx_redirect, spawn_worker
 from arxiv import jobs as arxiv_jobs, retriever
 from arxiv.embed import embed_one_abstract
+from arxiv.render import prepare_local_view
 from arxiv.schema import connect_arxiv_rag, connect_papers
 
 router = APIRouter()
@@ -205,6 +206,29 @@ def arxiv_embed_abstract(request: Request, arxiv_id: str) -> HTMLResponse:
             "full_status": full_status,
             "full_chunk_count": full_chunk_count,
         },
+    )
+
+
+@router.get("/arxiv/{arxiv_id}/view", response_class=HTMLResponse)
+def arxiv_paper_view(request: Request, arxiv_id: str) -> HTMLResponse:
+    """Render the locally cached arXiv HTML inside our base template.
+
+    Requires the paper to have been through the full-paper embed flow so the
+    HTML cache exists at ``ARXIV_PAPERS_DIR / "{id}.html"``. Returns 404 if
+    the cache is missing.
+    """
+    paper = _fetch_paper(arxiv_id)
+    html_path = paths.ARXIV_PAPERS_DIR / f"{arxiv_id}.html"
+    if not html_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No cached HTML for {arxiv_id}. Click 'Embed full paper' first.",
+        )
+    body_html = prepare_local_view(html_path.read_text(encoding="utf-8"), arxiv_id)
+    return templates.TemplateResponse(
+        request,
+        "arxiv_paper_view.html",
+        {"current_page": "arxiv", "paper": paper, "body_html": body_html},
     )
 
 

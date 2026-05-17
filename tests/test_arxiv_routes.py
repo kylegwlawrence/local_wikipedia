@@ -63,6 +63,7 @@ def arxiv_client(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "ARXIV_RAG_DB", arxiv_rag_db)
     monkeypatch.setattr(paths, "ARXIV_OAI_CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(paths, "ARXIV_EMBED_LOG", tmp_path / "arxiv_embed.log")
+    monkeypatch.setattr(paths, "ARXIV_PAPERS_DIR", tmp_path / "arxiv" / "papers")
     monkeypatch.setattr(paths, "JOBS_DB", jobs_db)
     monkeypatch.setenv("WIKI_DB", str(wiki_db))
     monkeypatch.setattr(rag.embedder, "_BACKOFF_BASE", 0)
@@ -416,6 +417,41 @@ class TestActiveEmbeddingPage:
         resp = arxiv_client.get("/arxiv/active-embedding/panel")
         assert resp.status_code == 200
         assert "<html" not in resp.text.lower()
+
+
+class TestPaperViewRoute:
+    def test_renders_cached_html(self, arxiv_client, tmp_path):
+        _seed_arxiv(
+            arxiv_client.arxiv_db,
+            arxiv_client.arxiv_rag_db,
+            [{"id": "2401.0001", "title": "T", "abstract": "a", "categories": "cs.CL"}],
+        )
+        # Write a fake cached HTML at the monkeypatched location
+        papers_dir = tmp_path / "arxiv" / "papers"
+        papers_dir.mkdir(parents=True, exist_ok=True)
+        (papers_dir / "2401.0001.html").write_text(
+            '<html><body><article class="ltx_document"><p class="ltx_p">Body content here.</p></article></body></html>',
+            encoding="utf-8",
+        )
+
+        resp = arxiv_client.get("/arxiv/2401.0001/view")
+        assert resp.status_code == 200
+        assert "Body content here." in resp.text
+        assert "Back to abstract" in resp.text
+
+    def test_404_when_html_not_cached(self, arxiv_client):
+        _seed_arxiv(
+            arxiv_client.arxiv_db,
+            arxiv_client.arxiv_rag_db,
+            [{"id": "2401.0001", "title": "T", "abstract": "a", "categories": "cs.CL"}],
+        )
+        resp = arxiv_client.get("/arxiv/2401.0001/view")
+        assert resp.status_code == 404
+
+    def test_404_when_paper_missing(self, arxiv_client):
+        _seed_arxiv(arxiv_client.arxiv_db, arxiv_client.arxiv_rag_db, [])
+        resp = arxiv_client.get("/arxiv/does-not-exist/view")
+        assert resp.status_code == 404
 
 
 class TestActiveEmbeddingCancel:

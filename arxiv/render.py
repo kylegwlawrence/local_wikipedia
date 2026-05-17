@@ -57,6 +57,43 @@ def html_to_markdown(html: str) -> str:
     return _cleanup("".join(parts))
 
 
+def prepare_local_view(html: str, arxiv_id: str) -> str:
+    """Return arXiv HTML body ready for inlining in our base template.
+
+    Strips chrome (TOC, navbar, scripts, styles, document title, authors —
+    those render from our metadata above the body), rewrites relative image
+    URLs to absolute ``arxiv.org/html/{id}/...`` paths, and replaces
+    ``<math alttext="…">`` elements with KaTeX delimiters (``\\(…\\)`` for
+    inline, ``$$…$$`` for block) so the auto-render in ``base.html`` can
+    typeset them.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    article = soup.select_one("article.ltx_document") or soup.body or soup
+
+    for selector in _DROP_SELECTORS:
+        for el in article.select(selector):
+            el.decompose()
+
+    base_url = f"https://arxiv.org/html/{arxiv_id}/"
+    for img in article.find_all("img"):
+        src = img.get("src", "")
+        if src and not src.startswith(("http://", "https://", "//", "/")):
+            img["src"] = base_url + src
+
+    # Convert <math alttext="..."> → KaTeX delimiters so our auto-render picks
+    # them up. Block math gets $$..$$; inline gets \(..\).
+    for math in article.find_all("math"):
+        alttext = math.get("alttext")
+        if alttext is None:
+            alttext = math.get_text("")
+        if math.get("display") == "block":
+            math.replace_with(f"$${alttext}$$")
+        else:
+            math.replace_with(f"\\({alttext}\\)")
+
+    return article.decode_contents()
+
+
 def _render(node: NavigableString | Tag, parts: list[str]) -> None:
     """Walk ``node`` recursively, appending markdown fragments to ``parts``."""
     if isinstance(node, NavigableString):
