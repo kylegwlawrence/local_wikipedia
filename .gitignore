@@ -28,5 +28,6 @@ htmlcov/
 # Project-specific
 dumps/
 static/katex/
+docs/plans/
 *.tmp
 *.bak
