@@ -37,11 +37,25 @@ local_wikipedia/
     __init__.py
     refresh.py      CRUD helpers for refresh_jobs table in dumps/jobs.db
     embed.py        CRUD helpers for embed_jobs / embed_job_items tables in dumps/jobs.db
+  arxiv/            arXiv RAG pipeline (OAI-PMH ingest, embed, full-paper extract)
+    __init__.py
+    schema.py       connect_papers / connect_arxiv_rag; papers + papers_meta + papers_full_meta + paper_chunks + FTS / vec tables
+    oai.py          OAI-PMH harvester (List Records walking, response cache)
+    ingest.py       CLI: drain OAI-PMH into dumps/arxiv.db
+    embed.py        CLI + embed_one_abstract() — abstract embedding (one chunk per paper)
+    download.py     download_html() — fetch arxiv.org/html/{id} into dumps/arxiv/papers/
+    render.py       html_to_markdown() (chunker input) + prepare_local_view() (in-browser reader)
+    chunker.py      chunk_paper() — section-aware markdown splitting
+    embed_paper.py  embed_one_paper() — full pipeline (download → render → chunk → embed)
+    jobs.py         CRUD for arxiv_embed_jobs / arxiv_embed_job_items in dumps/jobs.db
+    retriever.py    hybrid (dense + sparse) abstract search with RRF merge
+    templates_meta.py  format_embed_text() — single source of truth for indexed string
   workers/          background-subprocess package
     __init__.py
     runner.py       shared harness (log redirect, exception capture, mark-failed)
     refresh.py      download → refresh → FTS rebuild
     embed.py        drains embed_job_items queue via rag.embed.embed_one
+    arxiv_embed.py  drains arxiv_embed_job_items queue via arxiv.embed_paper.embed_one_paper
   start.sh          tmux helper — start/stop/attach the uvicorn server in a persistent session
   render/           wikitext → HTML converter (package)
     __init__.py     public API: convert_wikitext_to_html
@@ -81,6 +95,9 @@ local_wikipedia/
   dumps/            (gitignored) downloaded .xml.bz2 + parsed .db + jobs.db
                     also stores {wiki}_rag.db (RAG chunks + vectors)
                     also stores {wiki}_embed.log (embed worker output)
+                    arxiv.db (paper metadata), arxiv_rag.db (abstract + chunk embeddings),
+                    arxiv/papers/{id}.html + .md (cached full-paper content),
+                    arxiv_embed.log (full-paper embed worker output)
 ```
 
 ## Setup and Dependencies
@@ -92,7 +109,7 @@ pip install -r requirements.txt
 python download/download_katex.py   # one-time: vendors KaTeX for offline math rendering
 ```
 
-Dependencies (pinned in `requirements.txt` and mirrored in `pyproject.toml`): `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`, `uvicorn[standard]`, `jinja2`, `sqlite-vec`.
+Dependencies (pinned in `requirements.txt` and mirrored in `pyproject.toml`): `httpx`, `tqdm`, `pytest`, `respx`, `mwparserfromhell`, `fastapi`, `uvicorn[standard]`, `jinja2`, `sqlite-vec`, `beautifulsoup4`.
 
 Dev tooling: install `ruff` (`pip install ruff`) to lint and format. Config lives in `pyproject.toml` (`[tool.ruff]`). Run `ruff check .` and `ruff format .` from the project root.
 
@@ -127,6 +144,12 @@ WIKI_DB=dumps/enwiki.db uvicorn app:app --reload
 python -m rag.embed --wiki simplewiki            # full run
 python -m rag.embed --wiki simplewiki --limit 100 # smoke test (first 100 articles)
 python -m rag.embed --wiki simplewiki --reset     # re-embed from scratch
+
+# arXiv pipeline
+python -m arxiv.ingest                            # harvest OAI-PMH → dumps/arxiv.db
+python -m arxiv.ingest --from-cache               # replay cached XML responses (no network)
+python -m arxiv.embed                             # embed abstracts → dumps/arxiv_rag.db
+python -m workers.arxiv_embed --job-id N          # drain a queued full-paper embed job (UI-triggered)
 
 # Tests
 pytest
@@ -285,6 +308,37 @@ Offline embedding pipeline that chunks articles into sections and embeds them us
 - FTS5 uses `tokenize='porter ascii'` (not trigram): trigram is ideal for partial-title substring search, porter stemming improves recall on free-text questions ("running" matches "run")
 - Sparse search quotes each word individually (`"word1" "word2"`) so FTS5 applies AND-of-terms, not phrase-match — phrase quoting would require verbatim adjacent sequences
 
+### arXiv RAG (`arxiv/`)
+
+Parallel to the wiki RAG but for academic papers. Two SQLite DBs:
+
+* `dumps/arxiv.db` — paper metadata harvested from OAI-PMH (`papers` table; `papers.oai_datestamp` is the diff key for re-embedding).
+* `dumps/arxiv_rag.db` — abstract embeddings (`papers_meta` + `papers_fts` + `papers_vec`, one row per paper) **and** full-paper chunk embeddings (`papers_full_meta` + `paper_chunks` + `paper_chunks_fts` + `paper_chunks_vec`).
+
+**Abstract flow** (one chunk per paper):
+- `python -m arxiv.ingest` walks OAI-PMH `ListRecords` pages, caches raw XML in `dumps/arxiv_oai_cache/`, upserts `papers`.
+- `python -m arxiv.embed` diffs `papers` vs `papers_meta` by `oai_datestamp` and embeds `format_embed_text(paper) = "{title}\n\n{abstract}\n\nCategories: {cats}"`.
+- `arxiv.embed.embed_one_abstract(arxiv_id, ...)` is the per-paper entry point used by `POST /arxiv/{id}/embed-abstract`. Does a bulk FTS rebuild after one embed — acceptable at the current scale.
+
+**Full-paper flow** (chunks per paper, UI-triggered):
+- `POST /arxiv/{id}/embed-paper` creates / appends an `arxiv_embed_jobs` row and spawns `workers.arxiv_embed` if no job is active.
+- The worker calls `arxiv.embed_paper.embed_one_paper(arxiv_id, ...)` per item: `download_html → html_to_markdown → chunk_paper → embed_texts_batch → INSERT paper_chunks + paper_chunks_vec → INSERT INTO paper_chunks_fts('rebuild')`.
+- `arxiv/render.py` is BeautifulSoup-only (no `lxml`): preserves `<math alttext>` as `$...$` / `$$...$$` for the chunker, and `prepare_local_view()` keeps the source HTML structure but rewrites relative `<img src>` to `arxiv.org/html/{id}/...` and converts `<math>` to KaTeX delimiters for the in-app reader.
+- arxiv.org/html/{id} 404 → status `'no_html'` on `papers_full_meta` (button greys out next time).
+
+**UI**:
+- `/arxiv` — search shell (existing); cards link to `/arxiv/{id}`.
+- `/arxiv/{id}` — abstract page with metadata + embed buttons.
+- `/arxiv/{id}/view` — locally cached HTML, re-rendered inside our base template (KaTeX auto-render handles math).
+- `/arxiv/active-embedding` (+ `/panel`, `/cancel/{job_id}`) — full-paper job status, polled every 3s while running.
+
+**Key non-obvious decisions**:
+- arXiv jobs are scoped *globally*, not per-wiki — `arxiv_embed_jobs` has no `wiki` column. The `--wiki` arg on `workers.arxiv_embed` is only used by the shared `workers.spawn.spawn_worker` helper to derive the log file name (`dumps/arxiv_embed.log`); the worker hard-codes `"arxiv"`.
+- `paper_chunks_fts` uses `tokenize='porter ascii'` (same as wiki RAG and abstract FTS) — natural-language queries beat trigram for full-paper text.
+- `paper_chunks_vec` rowid mirrors `paper_chunks.chunk_id`, so deleting chunks by `arxiv_id` is a two-statement DELETE (vec first via subquery, then meta).
+- Section detection in the chunker splits on every `## … ######` heading, *not just h2*, so subsection-targeted retrieval works (search "sliding window attention" → the specific subsection chunk).
+- Both `arxiv/render.py` entry points (`html_to_markdown`, `prepare_local_view`) walk via BS4 once, mutating a shared copy of the tree. `_DROP_SELECTORS` lists ``.ltx_authors`` / ``.ltx_title_document`` — drop them here because metadata renders above the body content from the `papers` table; ``.ltx_tag`` is NOT in the global drop list (figure / table captions use the same span) and is decomposed only inside heading handlers.
+
 ### Test organisation
 
 Shared fixtures live in `tests/conftest.py` and are auto-discovered by pytest. The key ones are `build_fixture_db(path)` (creates a hermetic articles + FTS5 DB matching the parser schema), `wiki_db_path` (fresh per-test DB), `client` (`TestClient` with `WIKI_DB` pointing at the fixture), `embed_client` (adds `paths.JOBS_DB` / `paths.BASE_DIR` redirection plus a `subprocess.Popen` stub), and `crash_recovery_env` (dirs + monkeypatches for the lifespan startup-recovery tests).
@@ -302,3 +356,15 @@ Shared fixtures live in `tests/conftest.py` and are auto-discovered by pytest. T
 | `tests/test_rag_math.py` | `normalize_math` unit + chunker integration tests for math/chem constructs |
 | `tests/test_rag_embedder.py` | `embed_text`, `embed_texts_batch`, `pack/unpack_embedding` — Ollama calls mocked with respx |
 | `tests/test_rag_retriever.py` | Retrieval tests against fixture RAG DB; Ollama not required |
+| `tests/test_arxiv_schema.py` | papers / papers_meta / papers_full_meta / paper_chunks tables; idempotence |
+| `tests/test_arxiv_oai.py` | OAI-PMH XML parsing + cache replay |
+| `tests/test_arxiv_ingest.py` | OAI-PMH → papers upsert CLI |
+| `tests/test_arxiv_embed.py` | Abstract embedding (CLI + `embed_one_abstract`); Ollama mocked with respx |
+| `tests/test_arxiv_download.py` | `download_html` — caching, 404, retry with `respx` |
+| `tests/test_arxiv_render.py` | `html_to_markdown` + `prepare_local_view`; includes real-arxiv fixture (`tests/fixtures/arxiv/2310.06825.html`) |
+| `tests/test_arxiv_chunker.py` | Section-aware markdown splitting |
+| `tests/test_arxiv_embed_paper.py` | End-to-end per-paper pipeline; Ollama + arxiv.org both mocked |
+| `tests/test_arxiv_jobs.py` | `arxiv_embed_jobs` / `_job_items` CRUD |
+| `tests/test_arxiv_embed_worker.py` | `workers.arxiv_embed` drains queue end-to-end |
+| `tests/test_arxiv_retriever.py` | Hybrid abstract search; Ollama mocked |
+| `tests/test_arxiv_routes.py` | Search, abstract page, embed buttons, status panel, view page |
