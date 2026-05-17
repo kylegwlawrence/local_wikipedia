@@ -1,0 +1,61 @@
+<section id="arxiv-active-embedding-panel"
+         class="card"
+         style="margin-top: var(--space-4)"
+         {% if job and job.status == 'running' and not job.cancel_requested %}
+         hx-get="/arxiv/active-embedding/panel"
+         hx-trigger="every 3s"
+         hx-target="this"
+         hx-swap="outerHTML"
+         {% endif %}>
+  <header class="card__header">
+    <h2 class="card__title">{% if job %}arXiv embed job #{{ job.id }}{% else %}Active arXiv embed job{% endif %}</h2>
+  </header>
+  <div class="card__body">
+    {% if not job %}
+      <p class="empty-state">No full-paper embed job is running. Open a paper and click <strong>Embed full paper</strong> to start one.</p>
+    {% else %}
+      <div class="status-row">
+        <span class="chip chip--status-{{ job.status }}">
+          {{ job.status }}{% if job.cancel_requested and job.status == 'running' %} (cancelling…){% endif %}
+        </span>
+        {% if job.triggered_by_arxiv_id %}
+          <span class="meta-text">
+            triggered by <a class="link-primary" href="/arxiv/{{ job.triggered_by_arxiv_id|urlencode }}">arXiv:{{ job.triggered_by_arxiv_id }}</a>
+          </span>
+        {% endif %}
+        {% if job.status == 'running' and not job.cancel_requested %}
+          <form hx-post="/arxiv/active-embedding/cancel/{{ job.id }}"
+                hx-target="#arxiv-active-embedding-panel" hx-swap="outerHTML">
+            <button class="btn-outlined btn-danger btn-outlined--sm" type="submit">Cancel</button>
+          </form>
+        {% endif %}
+      </div>
+
+      {% if counts %}
+      <dl class="stat-grid">
+        {% for status, n in counts.items() %}
+          <div class="stat"><dt>{{ status.replace('_', ' ') }}</dt><dd>{{ "{:,}".format(n) }}</dd></div>
+        {% endfor %}
+      </dl>
+      {% endif %}
+
+      {% if job.error_message %}<p class="callout callout--error">{{ job.error_message }}</p>{% endif %}
+
+      {% if items %}
+      <table class="data-table">
+        <thead><tr><th>arXiv ID</th><th>Status</th><th>Chunks</th><th>Note</th></tr></thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td><a class="link-primary" href="/arxiv/{{ item.arxiv_id|urlencode }}">{{ item.arxiv_id }}</a></td>
+            <td><span class="chip chip--status-{{ item.status }}">{{ item.status.replace('_', ' ') }}</span></td>
+            <td class="u-tabular-nums">{{ item.chunk_count or "" }}</td>
+            <td class="meta-text">{% if item.error_message %}{{ item.error_message }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>

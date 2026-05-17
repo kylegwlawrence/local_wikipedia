@@ -2,12 +2,14 @@
   <ul class="arxiv-results-list" role="list">
     {% for paper in hits %}
       <li class="arxiv-card">
-        <a class="arxiv-card__title"
-           href="https://arxiv.org/abs/{{ paper.arxiv_id }}"
-           target="_blank"
-           rel="noopener noreferrer">
+        <a class="arxiv-card__title" href="/arxiv/{{ paper.arxiv_id|urlencode }}">
           {{ paper.title }}
         </a>
+        <a class="arxiv-card__external"
+           href="https://arxiv.org/abs/{{ paper.arxiv_id }}"
+           target="_blank"
+           rel="noopener noreferrer"
+           title="Open on arxiv.org">↗</a>
         <p class="arxiv-card__meta">
           {%- set shown = paper.authors[:3] -%}
           {{ shown | join(', ') }}{% if paper.authors|length > 3 %} et al.{% endif %}

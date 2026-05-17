@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ paper.title }} · arXiv · Local Wikipedia{% endblock %}
+
+{% block content %}
+<div class="reading-column">
+  <div class="page-header page-header--article">
+    <h1 class="article-title">{{ paper.title }}</h1>
+    <p class="paper-authors">
+      {{ paper.authors | join(', ') }}
+    </p>
+    <p class="article-meta">
+      <span class="arxiv-card__id">arXiv:{{ paper.id }}</span>
+      &middot; <span>{{ paper.primary_category }}</span>
+      &middot; Submitted <span class="u-tabular-nums">{{ paper.submitted_date }}</span>
+      {% if paper.updated_date %}
+        &middot; Updated <span class="u-tabular-nums">{{ paper.updated_date }}</span>
+      {% endif %}
+      {% if paper.doi %}
+        &middot; DOI: <span>{{ paper.doi }}</span>
+      {% endif %}
+      {% if paper.journal_ref %}
+        &middot; {{ paper.journal_ref }}
+      {% endif %}
+    </p>
+    <p class="arxiv-card__cats">
+      {% for cat in paper.categories.split() %}
+        <span class="arxiv-card__cat">{{ cat }}</span>
+      {% endfor %}
+    </p>
+    {% if paper.comments %}
+      <p class="paper-comments meta-text">{{ paper.comments }}</p>
+    {% endif %}
+  </div>
+
+  <section class="paper-abstract">
+    <h2 class="section-title">Abstract</h2>
+    <p>{{ paper.abstract }}</p>
+  </section>
+
+  {% include "arxiv_paper_actions.html" %}
+</div>
+{% endblock %}

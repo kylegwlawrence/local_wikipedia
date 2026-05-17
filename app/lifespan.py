@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 import paths
+from arxiv import jobs as arxiv_jobs
 from jobs import embed as embed_jobs, refresh as refresh_jobs
 from workers.spawn import spawn_worker
 
@@ -32,6 +33,18 @@ def recover_from_crash() -> None:
         dirty_wikis = refresh_jobs.get_fts_dirty_wikis(conn)
     finally:
         conn.close()
+
+    arxiv_conn = arxiv_jobs.connect_arxiv_jobs(paths.JOBS_DB)
+    try:
+        n_arxiv = arxiv_jobs.clear_orphaned_jobs(arxiv_conn)
+        if n_arxiv:
+            print(
+                f"[startup] cleared {n_arxiv} orphaned arxiv embed job(s)",
+                file=sys.stderr,
+                flush=True,
+            )
+    finally:
+        arxiv_conn.close()
 
     embed_conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
     try:

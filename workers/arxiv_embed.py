@@ -43,6 +43,11 @@ def _process_item(item, jobs_conn, papers_conn, rag_conn) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    # ``--wiki`` accepted (default "arxiv") for compatibility with the shared
+    # ``workers.spawn.spawn_worker`` helper, which always passes it. The arxiv
+    # worker doesn't have a wiki dimension and the value is only used for the
+    # log file path.
+    parser.add_argument("--wiki", default="arxiv")
     parser.add_argument("--job-id", type=int, required=True)
     args = parser.parse_args(argv)
     job_id: int = args.job_id

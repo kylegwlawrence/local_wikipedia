@@ -1,0 +1,37 @@
+<aside class="paper-actions" id="paper-actions">
+  <form hx-post="/arxiv/{{ paper.id|urlencode }}/embed-abstract"
+        hx-target="#paper-actions" hx-swap="outerHTML"
+        hx-indicator="#abstract-embed-spinner">
+    <button class="btn-primary btn-outlined--sm" type="submit">
+      {{ "Re-embed abstract" if abstract_embedded else "Embed abstract" }}
+    </button>
+    <span id="abstract-embed-spinner" class="spinner htmx-indicator" aria-hidden="true"></span>
+  </form>
+
+  <form hx-post="/arxiv/{{ paper.id|urlencode }}/embed-paper"
+        hx-target="#paper-actions" hx-swap="outerHTML">
+    <button class="btn-primary btn-outlined--sm"
+            type="submit"
+            {% if full_status == 'no_html' %}disabled title="arXiv has no HTML version of this paper"{% endif %}>
+      {%- if full_status == 'embedded' -%}Re-embed full paper
+      {%- elif full_status == 'no_html' -%}No HTML available
+      {%- else -%}Embed full paper
+      {%- endif -%}
+    </button>
+    {% if full_status == 'embedded' and full_chunk_count %}
+      <span class="meta-text">({{ full_chunk_count }} chunk{{ "s" if full_chunk_count != 1 }})</span>
+    {% endif %}
+  </form>
+
+  {% if full_status == 'embedded' %}
+    <a class="btn-outlined btn-outlined--sm" href="/arxiv/{{ paper.id|urlencode }}/view">
+      View formatted (local)
+    </a>
+  {% endif %}
+
+  <a class="btn-outlined btn-outlined--sm"
+     href="https://arxiv.org/html/{{ paper.id|urlencode }}"
+     target="_blank" rel="noopener noreferrer">
+    View on arXiv
+  </a>
+</aside>

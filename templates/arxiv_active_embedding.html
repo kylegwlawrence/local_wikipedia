@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}arXiv embed jobs · Local Wikipedia{% endblock %}
+
+{% block content %}
+<div class="reading-column">
+  <div class="page-header">
+    <h1 class="page-title">arXiv embed jobs</h1>
+    <p class="page-header__subtitle">Full-paper download → extract → chunk → embed status.</p>
+  </div>
+
+  {% include "arxiv_active_embedding_panel.html" %}
+</div>
+{% endblock %}
