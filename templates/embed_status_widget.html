@@ -18,6 +18,10 @@
   <a href="/chunks/{{ title|urlencode }}" class="btn-outlined btn-outlined--sm">
     {% from "_icons.html" import eye %}{{ eye(size=14) }} View chunks
   </a>
+  <button class="btn-outlined btn-outlined--sm"
+          hx-post="/embed/reembed/{{ wiki }}/{{ title|urlencode }}" hx-swap="none">
+    {% from "_icons.html" import refresh_cw %}{{ refresh_cw(size=14) }} Re-embed
+  </button>
 </span>
 {% elif error %}
 <span id="embed-widget" class="embed-controls">

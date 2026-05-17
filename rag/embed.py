@@ -263,13 +263,7 @@ def embed_one(
         return 0
 
     texts = [embedder.format_document(title, c["section"], c["text"]) for c in chunks_data]
-    try:
-        vecs = embedder.embed_texts_batch(texts, base_url=ollama_url)
-    except httpx.HTTPError:
-        rag_conn.commit()
-        if wiki_conn is not None:
-            recompute_link_counts(rag_conn, wiki_conn, title, wikitext, include_2hop=False)
-        return 0
+    vecs = embedder.embed_texts_batch(texts, base_url=ollama_url)
 
     _check_embedding_dim(rag_conn, vecs[0])
     for chunk, vec in zip(chunks_data, vecs, strict=True):

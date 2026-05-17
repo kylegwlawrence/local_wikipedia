@@ -154,12 +154,13 @@ def _pick_random_articles(conn: sqlite3.Connection, n: int = 2, max_attempts: in
     if not row or not row["max_id"]:
         return []
     max_id = int(row["max_id"])
+    rng = random.Random(date.today().toordinal() ^ max_id)
     picks: list[dict[str, str]] = []
     seen: set[int] = set()
     for _ in range(max_attempts):
         if len(picks) >= n:
             break
-        offset = random.randint(1, max_id)
+        offset = rng.randint(1, max_id)
         cur = conn.execute(
             "SELECT page_id, title, text_content FROM articles "
             "WHERE namespace = 0 AND text_bytes >= ? AND page_id >= ? "

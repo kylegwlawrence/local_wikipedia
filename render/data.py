@@ -23,6 +23,8 @@ IMAGE_FIELD_PREFIXES = frozenset(
     }
 )
 
+TAXONOMY_TEMPLATE_NAMES = frozenset({"speciesbox", "taxobox", "automatic taxobox"})
+
 IMAGE_VALUE_RE = re.compile(
     r"^\s*\S+\.(jpe?g|png|svg|gif|webp|tiff?|ogg|ogv|oga|wav|mp[34]|flac|webm)\s*$",
     re.IGNORECASE,

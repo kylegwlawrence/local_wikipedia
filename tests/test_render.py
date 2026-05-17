@@ -1430,3 +1430,47 @@ class TestTableTemplateHandlers:
         assert "288" in result
         assert "72" in result
         assert "⁄" in result
+
+
+class TestTaxonomyBoxes:
+    def test_speciesbox_renders_as_infobox(self) -> None:
+        wikitext = "{{speciesbox|name=Barley|image=foo.jpg|genus=Hordeum|species=vulgare|authority=L.}}"
+        result = convert_wikitext_to_html(wikitext)
+        assert '<table class="infobox">' in result
+        assert "<caption>Barley</caption>" in result
+        assert "Hordeum" in result
+
+    def test_speciesbox_name_not_a_row(self) -> None:
+        wikitext = "{{speciesbox|name=Barley|genus=Hordeum|species=vulgare}}"
+        result = convert_wikitext_to_html(wikitext)
+        assert "<th>Name</th>" not in result
+
+    def test_speciesbox_image_skipped(self) -> None:
+        wikitext = "{{speciesbox|name=Barley|image=foo.jpg|genus=Hordeum}}"
+        result = convert_wikitext_to_html(wikitext)
+        assert "foo.jpg" not in result
+
+    def test_taxobox_renders_as_infobox(self) -> None:
+        wikitext = "{{taxobox|name=Banana|regnum=Plantae|ordo=Zingiberales|genus=Musa}}"
+        result = convert_wikitext_to_html(wikitext)
+        assert '<table class="infobox">' in result
+        assert "<caption>Banana</caption>" in result
+        assert "Plantae" in result
+
+    def test_taxobox_no_name_falls_back(self) -> None:
+        wikitext = "{{speciesbox|genus=Hordeum|species=vulgare}}"
+        result = convert_wikitext_to_html(wikitext)
+        assert "<caption>Species</caption>" in result
+
+    def test_speciesbox_synonyms_via_collapsible_plainlist(self) -> None:
+        wikitext = (
+            "{{speciesbox|name=Barley|genus=Hordeum|synonyms="
+            "{{Collapsible list|{{Plainlist|style=x|"
+            "*''Frumentum hordeum'' nom. illeg.\n"
+            "*''Hordeum hexastichon''\n"
+            "}}}}}}"
+        )
+        result = convert_wikitext_to_html(wikitext)
+        assert "<th>Synonyms</th>" in result
+        assert "Frumentum hordeum" in result
+        assert "Hordeum hexastichon" in result

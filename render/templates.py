@@ -23,6 +23,7 @@ from render.data import (
     MONTH_NAMES,
     MVAR_TEMPLATE_NAMES,
     PASSTHROUGH_FIRST_ARG_TEMPLATES,
+    TAXONOMY_TEMPLATE_NAMES,
     UNIT_NAMES,
     lang_code_to_name,
 )
@@ -1185,6 +1186,26 @@ def _render_infobox_value_template(template) -> str | None:
                 return f'<ul class="infobox-list">{lis}</ul>'
             break
 
+    # collapsible list: either a single block-content param (e.g. wrapping a
+    # {{Plainlist}}) or multiple positional items. Render recursively so the
+    # inner {{Plainlist}} handler runs on the extracted content.
+    if name == "collapsible list":
+        _CL_NAMED = {"class", "style", "title", "expand", "framestyle", "titlestyle", "liststyle", "bullet"}
+        content_params = [
+            str(p.value).strip()
+            for p in params
+            if str(p.name).strip() not in _CL_NAMED and str(p.value).strip()
+        ]
+        if len(content_params) == 1:
+            return _render_infobox_value(content_params[0])
+        if content_params:
+            rendered_items = [_render_infobox_value(v) for v in content_params]
+            rendered_items = [i for i in rendered_items if i]
+            if rendered_items:
+                lis = "".join(f"<li>{item}</li>" for item in rendered_items)
+                return f'<ul class="infobox-list">{lis}</ul>'
+        return None
+
     # ubl / unbulleted list / bulleted list: positional params are items
     if name in ("unbulleted list", "ubl", "bulleted list"):
         items = []
@@ -1286,18 +1307,28 @@ def convert_infobox_templates(wikicode: mwparserfromhell.wikicode.Wikicode) -> N
     """Replace {{Infobox ...}} templates with HTML <table class="infobox">."""
     for template in wikicode.filter_templates():
         name = str(template.name).strip()
-        if not name.lower().startswith("infobox"):
+        name_lower = name.lower()
+        is_infobox = name_lower.startswith("infobox")
+        is_taxobox = name_lower in TAXONOMY_TEMPLATE_NAMES
+        if not is_infobox and not is_taxobox:
             continue
 
-        display_type = name[len("infobox") :].strip()
-        if display_type:
-            display_type = display_type[0].upper() + display_type[1:]
+        if is_infobox:
+            display_type = name[len("infobox") :].strip()
+            if display_type:
+                display_type = display_type[0].upper() + display_type[1:]
+            skip_field = None
+        else:
+            display_type = str(template.get("name").value).strip() if template.has("name") else "Species"
+            skip_field = "name"
 
         rows: list[tuple[str, str]] = []
         for param in template.params:
             field_name = str(param.name).strip()
             raw_value = str(param.value).strip()
 
+            if skip_field and field_name.lower() == skip_field:
+                continue
             if not raw_value or raw_value.startswith("<!--"):
                 continue
             if _is_image_field(field_name):

@@ -49,7 +49,7 @@ def _expand_links(
     try:
         raw_targets = extract_article_links(wikitext, source_title=canonical_title)
         next_hops = hops - 1
-        children: list[tuple[str, str, int]] = []
+        children: list[tuple[str, str, int, int]] = []
         seen: set[str] = set()
         for target in raw_targets:
             resolved = wiki_db.resolve_redirect(wiki_conn, target, REDIRECT_MAX_HOPS)
@@ -57,7 +57,7 @@ def _expand_links(
             if picked == canonical_title or picked in seen:
                 continue
             seen.add(picked)
-            children.append((picked, canonical_title, next_hops))
+            children.append((picked, canonical_title, next_hops, 0))
         if children:
             embed_jobs.append_items(jobs_conn, item["job_id"], children)
             print(
@@ -169,7 +169,7 @@ def _process_item(
         embed_jobs.update_item(jobs_conn, item_id, "skipped_redirect")
         return
 
-    if already_embedded.get(page_id) == revision_id:
+    if already_embedded.get(page_id) == revision_id and not item["force"]:
         embed_jobs.update_item(jobs_conn, item_id, "skipped_unchanged")
         # Still expand: re-triggering 2-hop on a previously 1-hop'd article
         # must still reach hop 2 even though we don't re-embed this article.

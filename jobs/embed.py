@@ -67,6 +67,10 @@ def ensure_embed_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE embed_job_items ADD COLUMN hops_remaining INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass  # column already exists (existing database)
+    try:
+        conn.execute("ALTER TABLE embed_job_items ADD COLUMN force INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # column already exists (existing database)
     conn.commit()
 
 
@@ -232,33 +236,36 @@ def clear_orphaned_jobs(conn: sqlite3.Connection) -> int:
 def append_items(
     conn: sqlite3.Connection,
     job_id: int,
-    items: list[tuple[str, str, int]],
+    items: list[tuple],
 ) -> int:
-    """Insert ``(title, source_title, hops_remaining)`` triples.
+    """Insert ``(title, source_title, hops_remaining[, force])`` tuples.
 
-    On conflict with an existing ``(job_id, title)`` row whose status is still
-    ``queued``, ``hops_remaining`` is bumped to the MAX of existing/incoming —
-    this matters when a 2-hop trigger collides with a same-job row inserted
-    earlier at a shallower depth, otherwise that title would never get its
-    links expanded. Rows already past ``queued`` are left untouched.
+    The optional 4th element ``force`` (default 0) bypasses the skip-unchanged
+    check in the worker so the article is re-embedded even if its revision_id
+    hasn't changed. On conflict with an existing ``(job_id, title)`` row still
+    in ``queued`` status, ``hops_remaining`` is bumped to the MAX and ``force``
+    is OR'd — a re-embed request wins even when merged into a running job.
+    Rows already past ``queued`` are left untouched.
 
     Args:
         conn: jobs.db connection.
         job_id: Parent job id.
-        items: List of ``(canonical_title, source_title, hops_remaining)`` triples.
+        items: List of ``(canonical_title, source_title, hops_remaining[, force])`` tuples.
 
     Returns:
         Number of rows touched by the statement (inserts + qualifying updates).
     """
     if not items:
         return 0
+    rows = [(job_id, item[0], item[1], item[2], item[3] if len(item) > 3 else 0) for item in items]
     cur = conn.executemany(
-        "INSERT INTO embed_job_items (job_id, title, source_title, hops_remaining) "
-        "VALUES (?, ?, ?, ?) "
+        "INSERT INTO embed_job_items (job_id, title, source_title, hops_remaining, force) "
+        "VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT(job_id, title) DO UPDATE SET "
-        "    hops_remaining = MAX(embed_job_items.hops_remaining, excluded.hops_remaining) "
+        "    hops_remaining = MAX(embed_job_items.hops_remaining, excluded.hops_remaining), "
+        "    force = MAX(embed_job_items.force, excluded.force) "
         "    WHERE embed_job_items.status = 'queued'",
-        [(job_id, t, s, h) for t, s, h in items],
+        rows,
     )
     conn.commit()
     return cur.rowcount

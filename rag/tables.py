@@ -9,11 +9,47 @@ import re
 
 import mwparserfromhell
 
-from render.data import IMAGE_FIELD_PREFIXES
+from render.data import IMAGE_FIELD_PREFIXES, TAXONOMY_TEMPLATE_NAMES
 
 MAX_TABLE_CHARS = 1600  # mirror chunker.MAX_CHUNK_CHARS
 
 _TABLE_OPEN_RE = re.compile(r"^[:\s]*\{\|")
+
+_WIKILINK_RE = re.compile(r'\[\[(?:[^|\]]+\|)?([^\]]+)\]\]')
+_BOLD_ITALIC_RE = re.compile(r"'{2,5}(.*?)'{2,5}")
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+_REF_RE = re.compile(r'<ref[^>]*>.*?</ref>|<ref[^>]*/>', re.DOTALL | re.IGNORECASE)
+_LIST_TEMPLATE_NAMES = frozenset({"plainlist", "flatlist"})
+_LIST_CONTAINER_NAMES = frozenset({"collapsible list"}) | _LIST_TEMPLATE_NAMES
+
+
+def _extract_list_items(parsed_val) -> str:
+    """Extract plain-text items from {{Plainlist}} / {{Flatlist}} field values.
+
+    Walks the parsed value for a plainlist or flatlist template and returns
+    ``" / "``-joined item strings with wikitext markup stripped.  Returns ``""``
+    when no such template is found.
+    """
+    for tpl in parsed_val.filter_templates():
+        if str(tpl.name).strip().lower() not in _LIST_TEMPLATE_NAMES:
+            continue
+        for p in tpl.params:
+            if str(p.name).strip() in ("style", "class", "indent"):
+                continue
+            items = []
+            for line in str(p.value).split("\n"):
+                item = line.strip().lstrip("*#").strip()
+                if not item:
+                    continue
+                item = _REF_RE.sub("", item)
+                item = _WIKILINK_RE.sub(r"\1", item)
+                item = _BOLD_ITALIC_RE.sub(r"\1", item)
+                item = _HTML_TAG_RE.sub("", item).strip()
+                if item:
+                    items.append(item)
+            if items:
+                return " / ".join(items)
+    return ""
 _TABLE_INNER_OPEN_RE = re.compile(r"^\s*\{\|")
 _TABLE_INNER_CLOSE_RE = re.compile(r"^\s*\|\}")
 
@@ -215,11 +251,12 @@ def _serialize_table(table_lines: list[str], section: str | None) -> list[dict]:
 
 
 def extract_infoboxes(wikitext: str, article_title: str) -> list[dict]:
-    """Extract ``{{Infobox …}}`` templates and serialize them to plain-text chunk dicts.
+    """Extract ``{{Infobox …}}`` and taxonomy templates and serialize them to plain-text chunk dicts.
 
-    Each infobox becomes one or more chunks with ``chunk_type='infobox'``:
+    Each infobox or taxonomy box becomes one or more chunks with ``chunk_type='infobox'``:
 
-        Infobox: {article_title}[ — {kind}]
+        Infobox: {article_title}[ — {kind}]   (for infoboxes)
+        Taxon: {article_title}[ ({name})]      (for speciesbox / taxobox / automatic taxobox)
         Field: Value
         Field: Value
         …
@@ -233,7 +270,7 @@ def extract_infoboxes(wikitext: str, article_title: str) -> list[dict]:
 
     Returns:
         List of chunk dicts: ``{section=None, chunk_index, text, chunk_type='infobox'}``.
-        Returns ``[]`` if no infobox templates are found.
+        Returns ``[]`` if no infobox or taxonomy templates are found.
     """
     try:
         parsed = mwparserfromhell.parse(wikitext)
@@ -245,14 +282,24 @@ def extract_infoboxes(wikitext: str, article_title: str) -> list[dict]:
 
     for tpl in parsed.filter_templates(recursive=False):
         name = str(tpl.name).strip()
-        if not name.lower().startswith("infobox"):
+        name_lower = name.lower()
+        is_infobox = name_lower.startswith("infobox")
+        is_taxobox = name_lower in TAXONOMY_TEMPLATE_NAMES
+        if not is_infobox and not is_taxobox:
             continue
 
-        kind = name[len("infobox") :].strip(" _")
-
-        header = f"Infobox: {article_title}"
-        if kind:
-            header = f"{header} — {kind}"
+        if is_infobox:
+            kind = name[len("infobox") :].strip(" _")
+            header = f"Infobox: {article_title}"
+            if kind:
+                header = f"{header} — {kind}"
+            skip_field = None
+        else:
+            common_name = str(tpl.get("name").value).strip() if tpl.has("name") else ""
+            header = f"Taxon: {article_title}"
+            if common_name:
+                header = f"{header} ({common_name})"
+            skip_field = "name"
 
         field_lines: list[str] = []
         for param in tpl.params:
@@ -264,6 +311,8 @@ def extract_infoboxes(wikitext: str, article_title: str) -> list[dict]:
 
             # Skip image fields by checking the lowercase field name prefix.
             field_lower = field.lower()
+            if skip_field and field_lower == skip_field:
+                continue
             if any(field_lower.startswith(prefix) for prefix in IMAGE_FIELD_PREFIXES):
                 continue
 
@@ -271,9 +320,13 @@ def extract_infoboxes(wikitext: str, article_title: str) -> list[dict]:
                 parsed_val = mwparserfromhell.parse(raw_value)
                 value = parsed_val.strip_code().strip()
                 if not value:
-                    # strip_code() drops template content entirely; fall back to
-                    # collecting positional args from nested templates (e.g.
-                    # {{birth date|1980|1|1}} → "1980 1 1").
+                    # Try extracting plain-text items from list-type templates
+                    # ({{Plainlist}}, {{Flatlist}}, {{Collapsible list | {{Plainlist}} }})
+                    # before falling back to the noisy positional-arg collector.
+                    value = _extract_list_items(parsed_val)
+                if not value:
+                    # Generic fallback: collect positional args from nested templates
+                    # (e.g. {{birth date|1980|1|1}} → "1980 1 1").
                     parts = []
                     for nested_tpl in parsed_val.filter_templates():
                         for nested_param in nested_tpl.params:

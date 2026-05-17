@@ -209,6 +209,41 @@ class TestExtractInfoboxes:
         chunks = extract_infoboxes(wikitext, "Test")
         assert chunks == []
 
+    def test_speciesbox_produces_taxon_chunk(self):
+        wikitext = "{{speciesbox|name=Barley|image=foo.jpg|genus=Hordeum|species=vulgare}}"
+        chunks = extract_infoboxes(wikitext, "Barley")
+        assert len(chunks) == 1
+        text = chunks[0]["text"]
+        assert "Taxon: Barley (Barley)" in text
+        assert "genus: Hordeum" in text
+
+    def test_speciesbox_name_field_not_duplicated(self):
+        wikitext = "{{speciesbox|name=Barley|genus=Hordeum|species=vulgare}}"
+        chunks = extract_infoboxes(wikitext, "Barley")
+        text = chunks[0]["text"]
+        # "name" should only appear in the header, not as a field row
+        lines = text.split("\n")
+        field_lines = lines[1:]
+        assert not any(line.lower().startswith("name:") for line in field_lines)
+
+    def test_speciesbox_image_skipped(self):
+        wikitext = "{{speciesbox|name=Barley|image=foo.jpg|genus=Hordeum}}"
+        chunks = extract_infoboxes(wikitext, "Barley")
+        assert "foo.jpg" not in chunks[0]["text"]
+
+    def test_taxobox_produces_taxon_chunk(self):
+        wikitext = "{{taxobox|name=Banana|regnum=Plantae|ordo=Zingiberales}}"
+        chunks = extract_infoboxes(wikitext, "Banana")
+        assert len(chunks) == 1
+        assert "Taxon: Banana (Banana)" in chunks[0]["text"]
+        assert "Plantae" in chunks[0]["text"]
+
+    def test_taxobox_no_name_fallback(self):
+        wikitext = "{{speciesbox|genus=Hordeum|species=vulgare}}"
+        chunks = extract_infoboxes(wikitext, "Barley")
+        assert len(chunks) == 1
+        assert "Taxon: Barley\n" in chunks[0]["text"]
+
 
 # ---------------------------------------------------------------------------
 # Integration tests via chunk_article

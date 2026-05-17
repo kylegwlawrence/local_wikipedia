@@ -129,6 +129,7 @@ def embed_status(request: Request, title: str) -> HTMLResponse:
         "embed_status_widget.html",
         {
             "title": title,
+            "wiki": wiki,
             "embedded": embedded,
             "links_embedded": links_embedded,
             "links_embedded_2hop": links_embedded_2hop,
@@ -298,7 +299,7 @@ def _enqueue_links(request: Request, title: str, link_depth: int) -> HTMLRespons
     finally:
         wiki_conn.close()
 
-    items = [(t, source_title, 0 if t == source_title else link_depth) for t in resolved]
+    items = [(t, source_title, 0 if t == source_title else link_depth, 0) for t in resolved]
 
     jobs_conn = embed_jobs.connect_embed_jobs(paths.JOBS_DB)
     status = "running"
@@ -410,7 +411,7 @@ def reembed_article(request: Request, wiki: str, title: str) -> Response:
             include_links=0,
             status=status,
         )
-        embed_jobs.append_items(jobs_conn, job_id, [(canonical_title, canonical_title, 0)])
+        embed_jobs.append_items(jobs_conn, job_id, [(canonical_title, canonical_title, 0, 1)])
     finally:
         jobs_conn.close()
 
