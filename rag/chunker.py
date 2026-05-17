@@ -69,7 +69,7 @@ def _strip_wikitext(raw: str) -> str:
         return raw.strip()
 
 
-def _split_long_text(text: str, max_chars: int) -> list[str]:
+def split_long_text(text: str, max_chars: int) -> list[str]:
     """Split text into parts of at most max_chars, breaking at paragraph boundaries.
 
     Paragraph boundaries (double newlines) are preferred split points.
@@ -163,7 +163,7 @@ def chunk_article(
             continue
         # Collapse excess blank lines that may appear after table lines are removed.
         plain = re.sub(r"\n{3,}", "\n\n", plain)
-        parts = _split_long_text(plain, max_chars)
+        parts = split_long_text(plain, max_chars)
         for idx, part in enumerate(parts):
             if part:
                 chunks.append(
