@@ -9,6 +9,10 @@ DEFAULT_WIKI = "enwiki"
 JOBS_DB = DUMPS_DIR / "jobs.db"
 KNOWN_WIKIS: frozenset[str] = frozenset({"enwiki", "simplewiki"})
 
+ARXIV_DB = DUMPS_DIR / "arxiv.db"
+ARXIV_RAG_DB = DUMPS_DIR / "arxiv_rag.db"
+ARXIV_OAI_CACHE_DIR = DUMPS_DIR / "arxiv_oai_cache"
+
 # Cap redirect-chain following so a cycle can't hang. MediaWiki's own limit is 5.
 # Lives here (not app/config.py) so worker subprocesses can import it without
 # pulling in FastAPI / Jinja2.

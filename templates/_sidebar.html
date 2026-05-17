@@ -15,6 +15,10 @@
       {{ icon.database(size=20, class_='sidebar-item__icon') }}
       <span class="sidebar-item__label">Embeddings</span>
     </a>
+    <a class="sidebar-item {% if current_page == 'arxiv' %}sidebar-item--active{% endif %}" href="/arxiv">
+      {{ icon.file_text(size=20, class_='sidebar-item__icon') }}
+      <span class="sidebar-item__label">arXiv</span>
+    </a>
     <a class="sidebar-item {% if current_page == 'jobs' %}sidebar-item--active{% endif %}" href="/active-embedding">
       {{ icon.activity(size=20, class_='sidebar-item__icon') }}
       <span class="sidebar-item__label">Jobs</span>

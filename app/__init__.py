@@ -12,6 +12,7 @@ from app.lifespan import lifespan
 from app.routes import (
     active_embedding,
     article,
+    arxiv,
     embeddings,
     home,
     rag,
@@ -22,5 +23,5 @@ from paths import BASE_DIR
 app = FastAPI(title="Local Wikipedia", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
-for _module in (home, article, refresh, embeddings, active_embedding, rag):
+for _module in (home, article, refresh, embeddings, active_embedding, rag, arxiv):
     app.include_router(_module.router)

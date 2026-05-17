@@ -1,0 +1,39 @@
+{% if hits %}
+  <ul class="arxiv-results-list" role="list">
+    {% for paper in hits %}
+      <li class="arxiv-card">
+        <a class="arxiv-card__title"
+           href="https://arxiv.org/abs/{{ paper.arxiv_id }}"
+           target="_blank"
+           rel="noopener noreferrer">
+          {{ paper.title }}
+        </a>
+        <p class="arxiv-card__meta">
+          {%- set shown = paper.authors[:3] -%}
+          {{ shown | join(', ') }}{% if paper.authors|length > 3 %} et al.{% endif %}
+          · <span class="arxiv-card__date">{{ paper.submitted_date }}</span>
+          · <span class="arxiv-card__id">arXiv:{{ paper.arxiv_id }}</span>
+        </p>
+        <p class="arxiv-card__abstract">
+          {%- if paper.abstract|length > 400 -%}
+            {{ paper.abstract[:400] }}…
+          {%- else -%}
+            {{ paper.abstract }}
+          {%- endif -%}
+        </p>
+        <p class="arxiv-card__cats">
+          {% for cat in paper.categories.split() %}
+            <span class="arxiv-card__cat">{{ cat }}</span>
+          {% endfor %}
+        </p>
+      </li>
+    {% endfor %}
+  </ul>
+{% elif q %}
+  {% if not ready %}
+    <p class="no-results">arXiv index not yet built. Run
+      <code>python -m arxiv.ingest</code> then <code>python -m arxiv.embed</code>.</p>
+  {% else %}
+    <p class="no-results">No papers match &ldquo;{{ q }}&rdquo;.</p>
+  {% endif %}
+{% endif %}

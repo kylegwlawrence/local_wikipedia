@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}arXiv search · Local Wikipedia{% endblock %}
+
+{% block content %}
+<div class="home-hero">
+  <h1 class="home-hero__brand">arXiv</h1>
+  <p class="home-hero__sub">Semantic search over paper metadata</p>
+
+  <form class="search-hero" onsubmit="return false;" role="search">
+    <label class="input-with-icon">
+      {% from "_icons.html" import search as search_icon %}
+      {{ search_icon(size=20, class_='input-with-icon__icon') }}
+      <input
+        class="input input--pill"
+        type="search"
+        name="q"
+        placeholder="Search arXiv abstracts..."
+        autocomplete="off"
+        autofocus
+        hx-get="/arxiv/search"
+        hx-trigger="keyup changed delay:300ms, search"
+        hx-target="#arxiv-results"
+        hx-swap="innerHTML"
+        hx-indicator="#arxiv-spinner">
+      <span id="arxiv-spinner" class="spinner htmx-indicator input-with-icon__spinner" aria-hidden="true"></span>
+    </label>
+  </form>
+
+  <section id="arxiv-results" class="arxiv-results" aria-live="polite"></section>
+</div>
+{% endblock %}
